@@ -180,6 +180,28 @@ void toolbar_draw_symbol(HDC hdc, ToolKind tool, int cx, int cy, BOOL active) {
         Ellipse(hdc, 17, 7, 27, 17);
         SelectObject(hdc, ob3);
         DeleteObject(br);
+    } else if (tool == TOOL_BOX) {
+        /* ikon kotak putus-putus + 2 komponen mini di dalamnya */
+        INT oldmode = SetBkMode(hdc, TRANSPARENT);
+        HPEN bp2 = CreatePen(PS_DASH, 2, active ? RGB(50,128,255) : RGB(40,40,40));
+        HPEN obp2 = (HPEN)SelectObject(hdc, bp2);
+        Rectangle(hdc, -30, -26, 30, 26);
+        SelectObject(hdc, obp2);
+        DeleteObject(bp2);
+        HPEN sp = CreatePen(PS_SOLID, 2, active ? RGB(50,128,255) : RGB(90,90,90));
+        HPEN osp2 = (HPEN)SelectObject(hdc, sp);
+        Rectangle(hdc, -22, -12, -6, 2);            /* resistor mini */
+        MoveToEx(hdc, -26, -5, NULL); LineTo(hdc, -22, -5);
+        MoveToEx(hdc, -6, -5, NULL); LineTo(hdc, 2, -5);
+        POINT tri[3] = { {6,-8}, {6,0}, {14,-4} };  /* dioda/LED mini */
+        HBRUSH brf = CreateSolidBrush(active ? RGB(50,128,255) : RGB(90,90,90));
+        HBRUSH obrf = (HBRUSH)SelectObject(hdc, brf);
+        Polygon(hdc, tri, 3);
+        SelectObject(hdc, obrf);
+        DeleteObject(brf);
+        SelectObject(hdc, osp2);
+        DeleteObject(sp);
+        SetBkMode(hdc, oldmode);
     } else if (tool == TOOL_DELETE) {
         HPEN dp = CreatePen(PS_SOLID, 3, RGB(200,40,40));
         HPEN odp = (HPEN)SelectObject(hdc, dp);
@@ -213,6 +235,7 @@ const wchar_t *toolbar_tool_shortname(ToolKind tool) {
     if (tool == TOOL_BUZZER) return L"BZR";
     if (tool == TOOL_GROUND) return L"GND";
     if (tool == TOOL_SELECT) return L"Select";
+    if (tool == TOOL_BOX) return L"Blok";
     if (tool == TOOL_WIRE) return L"Wire";
     return L"Hapus";
 }
