@@ -4,6 +4,8 @@ int sim_running = 0;
 int sim_led_count = 0;
 int sim_short = 0;
 int sim_has_battery = 0;
+int sim_has_ac = 0;
+int sim_ac_mode = 0;
 
 /* Hasil perhitungan kuantitatif (Ohm + hukum tegangan Kirchhoff) */
 double sim_vsrc = 0.0;
@@ -104,6 +106,8 @@ void sim_recompute(void) {
     sim_led_count = 0;
     sim_short = 0;
     sim_has_battery = 0;
+    sim_has_ac = 0;
+    sim_ac_mode = 0;
     sim_vsrc = 0.0;
     sim_rloop = 0.0;
     sim_iled_max = 0.0;
@@ -120,21 +124,42 @@ void sim_recompute(void) {
     }
 
     /* Pass 1: penghantar pasif. Resistor & saklar-ON tembus.
-       Kapasitor (biasa & polar) = blokir DC (tidak digabung).
+       Kapasitor (biasa & polar) = blokir DC (tidak digabung), kecuali
+       mode murni-AC (ada sumber AC, tanpa baterai): kapasitor dianggap
+       menghantar (impedansi AC) agar loop AC bisa dianalisis.
        Dioda ditunda (butuh arah tegangan), transistor ditunda. */
+    int ac_only = 0;
+    {
+        int has_ac = 0, has_dc = 0;
+        for (int i = 0; i < comp_count; i++) {
+            if (comps[i].type == COMP_ACSOURCE) has_ac = 1;
+            if (comps[i].type == COMP_BATTERY)  has_dc = 1;
+        }
+        ac_only = (has_ac && !has_dc);
+    }
     for (int i = 0; i < comp_count; i++) {
         if (comps[i].type == COMP_RESISTOR) {
             unite(node_of(i, 0), node_of(i, 1));
         } else if (comps[i].type == COMP_SWITCH && comps[i].on) {
             unite(node_of(i, 0), node_of(i, 1));
+        } else if (ac_only &&
+                   (comps[i].type == COMP_CAPACITOR || comps[i].type == COMP_CAPOLAR)) {
+            unite(node_of(i, 0), node_of(i, 1));
         }
         if (comps[i].type == COMP_BATTERY) sim_has_battery = 1;
+        if (comps[i].type == COMP_ACSOURCE) sim_has_ac = 1;
     }
+    /* Mode AC: tak ada baterai DC tapi ada sumber AC -> pakai V RMS AC. */
+    sim_ac_mode = (!sim_has_battery && sim_has_ac);
 
     int plus_root[MAX_COMP * 3], minus_root[MAX_COMP * 3];
     int n_plus = 0, n_minus = 0;
     for (int i = 0; i < comp_count; i++) {
         if (comps[i].type == COMP_BATTERY) {
+            plus_root[n_plus++] = find_root(node_of(i, 0));
+            minus_root[n_minus++] = find_root(node_of(i, 1));
+        } else if (comps[i].type == COMP_ACSOURCE) {
+            /* Sumber AC: pin0 = Live (+ sesaat), pin1 = Netral (-/ground). */
             plus_root[n_plus++] = find_root(node_of(i, 0));
             minus_root[n_minus++] = find_root(node_of(i, 1));
         } else if (comps[i].type == COMP_GROUND) {
@@ -163,12 +188,16 @@ void sim_recompute(void) {
            SEBELUM pass-2 & evaluasi LED (sama seperti pada transistor).
            Catatan: sim_short sengaja TIDAK dihitung ulang — dioda ideal
            yang menghubungkan (+) ke (-) tetap dilaporkan sebagai korslet. */
-        for (int i = 0; i < comp_count; i++) {
-            if (comps[i].type == COMP_BATTERY) {
-                plus_root[i]   = find_root(node_of(i, 0));
-                minus_root[i]  = find_root(node_of(i, 1));
-            } else if (comps[i].type == COMP_GROUND) {
-                minus_root[i]  = find_root(node_of(i, 0));
+        {
+            int kp = 0, km = 0;
+            for (int i = 0; i < comp_count; i++) {
+                if (comps[i].type == COMP_BATTERY ||
+                    comps[i].type == COMP_ACSOURCE) {
+                    plus_root[kp++]  = find_root(node_of(i, 0));
+                    minus_root[km++] = find_root(node_of(i, 1));
+                } else if (comps[i].type == COMP_GROUND) {
+                    minus_root[km++] = find_root(node_of(i, 0));
+                }
             }
         }
     }
@@ -191,16 +220,21 @@ void sim_recompute(void) {
             if (tr_on[i]) { cond_[i] = 1; unite(node_of(i, 0), node_of(i, 1)); }
         }
         /* root bisa bergeser setelah union C-E -> segarkan acuan (+)/(-) */
-        for (int i = 0, k = 0; i < comp_count; i++) {
-            if (comps[i].type == COMP_BATTERY) {
-                plus_root[k++] = find_root(node_of(i, 0));
+        {
+            int kp = 0, km = 0;
+            for (int i = 0; i < comp_count; i++) {
+                if (comps[i].type == COMP_BATTERY ||
+                    comps[i].type == COMP_ACSOURCE) {
+                    plus_root[kp++] = find_root(node_of(i, 0));
+                }
             }
-        }
-        for (int i = 0, k = 0; i < comp_count; i++) {
-            if (comps[i].type == COMP_BATTERY) {
-                minus_root[k++] = find_root(node_of(i, 1));
-            } else if (comps[i].type == COMP_GROUND) {
-                minus_root[k++] = find_root(node_of(i, 0));
+            for (int i = 0; i < comp_count; i++) {
+                if (comps[i].type == COMP_BATTERY ||
+                    comps[i].type == COMP_ACSOURCE) {
+                    minus_root[km++] = find_root(node_of(i, 1));
+                } else if (comps[i].type == COMP_GROUND) {
+                    minus_root[km++] = find_root(node_of(i, 0));
+                }
             }
         }
     }
@@ -211,7 +245,9 @@ void sim_recompute(void) {
        net (-)), telusuri jalur dari anoda kembali ke kutub (+):
          R_total = jumlah resistor sepanjang jalur
          V_drops = Vf LED + Vf dioda forward + 0.2 V transistor saturasi
-         I = (V_baterai - V_drops) / R_total
+         I = (V_sumber - V_drops) / R_total
+       V_sumber = baterai DC bila ada; bila hanya sumber AC, dipakai nilai
+       RMS AC (mode AC). Kapasitor dianggap tembus hanya pada mode AC.
        Tanpa resistor pengaman -> arus praktis tak hingga -> LED MELEDAK.
        Percabangan paralel -> arus TERBESAR dipakai (konservatif). ---- */
     {
@@ -219,9 +255,22 @@ void sim_recompute(void) {
         static int nn_led[MAX_COMP];      /* jumlah net untaian per LED */
         static int start_net_[MAX_COMP];  /* indeks net awal per LED */
         double vsrc_max = 0.0;
-        for (int i = 0; i < comp_count; i++)
-            if (comps[i].type == COMP_BATTERY && comps[i].v > vsrc_max)
+        int vsrc_is_ac = 0;
+        for (int i = 0; i < comp_count; i++) {
+            if (comps[i].type == COMP_BATTERY && comps[i].v > vsrc_max) {
                 vsrc_max = comps[i].v;
+                vsrc_is_ac = 0;
+            }
+        }
+        if (vsrc_max <= 0.0) {
+            /* tak ada DC: pakai sumber AC terbesar (RMS) */
+            for (int i = 0; i < comp_count; i++) {
+                if (comps[i].type == COMP_ACSOURCE && comps[i].v > vsrc_max) {
+                    vsrc_max = comps[i].v;
+                    vsrc_is_ac = 1;
+                }
+            }
+        }
         sim_vsrc = vsrc_max;
 
         for (int i = 0; i < comp_count; i++) {
@@ -262,6 +311,9 @@ void sim_recompute(void) {
                     /* ideal: tanpa drop */
                 } else if (hc->type == COMP_TRANSISTOR && cond_[h]) {
                     vdrop += 0.2;                    /* V_CE saturasi */
+                } else if (sim_ac_mode &&
+                           (hc->type == COMP_CAPACITOR || hc->type == COMP_CAPOLAR)) {
+                    /* ideal AC: kapasitor tembus tanpa drop */
                 } else {
                     break;   /* baterai/ground/kapasitor/dioda reverse -> stop */
                 }
@@ -316,7 +368,8 @@ void sim_set_running(int on) {
     wiring_active = 0;
     sim_recompute();
     if (sim_running) {
-        if (!sim_has_battery) set_status(L"RUN: pasang Baterai dulu, lalu sambungkan kabel.");
+        if (!sim_has_battery && !sim_has_ac)
+            set_status(L"RUN: pasang Baterai atau Sumber AC dulu, lalu sambungkan kabel.");
         else set_status(L"RUN: %ls", sim_message());
     } else {
         set_status(L"Mode Edit. Klik ikon di toolbar, lalu klik canvas.");
@@ -380,7 +433,8 @@ double sim_comp_current(const Component *c) {
 static wchar_t g_msg[256];
 const wchar_t *sim_message(void) {
     wchar_t vi[32], vr[32];
-    if (!sim_has_battery) return L"Belum ada baterai — LED tidak bisa menyala.";
+    if (!sim_has_battery && !sim_has_ac)
+        return L"Belum ada sumber (baterai/AC) — LED tidak bisa menyala.";
     if (sim_short) return L"KORSLETING! (+) tersambung langsung ke (-).";
     if (sim_exploded) {
         sim_format_si(sim_iled_max, L"A", vi, 32);
@@ -399,9 +453,15 @@ const wchar_t *sim_message(void) {
     if (sim_led_count > 0) {
         sim_format_si(sim_iled_max, L"A", vi, 32);
         sim_format_si(sim_rloop, L"\x03A9", vr, 32);
-        swprintf(g_msg, 256,
-            L"Rangkaian BENAR — LED MENYALA. I = %ls, R_loop = %ls, Vbat = %.4g V.",
-            vi, vr, sim_vsrc);
+        if (sim_ac_mode) {
+            swprintf(g_msg, 256,
+                L"Rangkaian AC BENAR — LED MENYALA (pendekatan RMS). I = %ls, R_loop = %ls, VAC = %.4g V.",
+                vi, vr, sim_vsrc);
+        } else {
+            swprintf(g_msg, 256,
+                L"Rangkaian BENAR — LED MENYALA. I = %ls, R_loop = %ls, Vbat = %.4g V.",
+                vi, vr, sim_vsrc);
+        }
         return g_msg;
     }
     return L"Rangkaian belum lengkap — LED mati. Tutup saklar & sambungkan kabel.";
