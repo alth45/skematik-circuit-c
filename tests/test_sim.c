@@ -1,13 +1,15 @@
 /* test_sim.c — Unit test untuk src/sim.c (analisis rangkaian saat RUN)
    Mencakup: deteksi korslet, LED nyala + hukum Ohm, overcurrent/meledak,
    dioda arah, transistor NPN, kapasitor (blokir DC / tembus AC), sumber AC,
-   hot-wire, pesan status, formatter SI, serta kontrak fungsi stub LDR/Buzzer
-   (sim_ldr_effective_r / sim_buzzer_on — lihat tests/unit_stubs.c). */
+   hot-wire, pesan status, formatter SI, serta kontrak fungsi LDR/Buzzer
+   (sim_ldr_effective_r / sim_buzzer_on — implementasi produksi di src/sim.c,
+   TIDAK ada stub/seam: tes berjalan langsung terhadap kode yang dibuild). */
 
 #include "schematic.h"
 #include "tinytest.h"
 
-void test_reset_model(void); /* dari tests/unit_stubs.c */
+/* test_reset_model() dideklarasikan di schematic.h (blok SCHEMATIC_TEST_STUBS);
+   realisasinya di tests/test_support.c — berkas penunjang murni tes. */
 
 /* ---------- Helper perakit rangkaian ---------- */
 static Component *add_at(CompType t, int x, int y) {
@@ -441,58 +443,40 @@ TEST(sim, format_si_presisi_3_angka) {
     ASSERT_TRUE(wcscmp(o, L"1 nF") == 0);
 }
 
-/* ===================== Kontrak stub LDR / Buzzer (test seam) =============
-   Implementasi produksi sim_ldr_effective_r()/sim_buzzer_on() masih ditunda;
-   suite ini mengunci KONTRAK yang diharapkan pemanggil UI (events.c,
-   komponen_buzzer.c) terhadap kedua fungsi lewat seam yang bisa disuntik. */
+/* ===================== Kontrak LDR / Buzzer (implementasi produksi) =======
+   Tidak ada test seam lagi: kedua fungsi di bawah diuji LANGSUNG terhadap
+   src/sim.c — berkas yang sama yang ditautkan build.bat ke executable
+   produksi. Dengan begitu mustahil ada "fungsi tes" yang ikut ter-build. */
 
-static int stub_buzzer_altar(const Component *c) {
-    return (c && c->type == COMP_BUZZER && c->on == 7) ? 1 : 0; /* kode uji */
-}
-static double stub_ldr_altar(const Component *c) {
-    if (!c || c->type != COMP_LDR) return -1.0;
-    return c->on ? c->v * LDR_LIGHT_RATIO : c->v;               /* perilaku target */
-}
-
-TEST(sim, ldr_effective_r_default_stub_netral) {
+TEST(sim, ldr_effective_r_gelap_terang_dan_bukan_ldr) {
     test_reset_model();
     Component *ldr = add_at(COMP_LDR, 200, 200);
-    /* stub default: "-1 bukan LDR" sesuai komentar header — UI menampilkan netral */
-    ASSERT_DBL_NEAR(-1.0, sim_ldr_effective_r(ldr), 1e-12);
+    ASSERT_TRUE(ldr->type == COMP_LDR);          /* guard tipe tidak boleh menolak */
+    ldr->on = 0;                                 /* GELAP: R = nilai penuh */
+    ASSERT_DBL_NEAR(LDR_DARK_DEFAULT, sim_ldr_effective_r(ldr), 1e-6);
+    ldr->v = 47e3;                               /* nilai custom dihormati */
+    ASSERT_DBL_NEAR(47e3, sim_ldr_effective_r(ldr), 1e-6);
+    ldr->on = 1;                                 /* TERANG: R ~ 1% nilai gelap */
+    ASSERT_DBL_NEAR(47e3 * LDR_LIGHT_RATIO, sim_ldr_effective_r(ldr), 1e-9);
+    /* v <= 0 -> fallback default gelap */
+    ldr->v = 0.0; ldr->on = 0;
+    ASSERT_DBL_NEAR(LDR_DARK_DEFAULT, sim_ldr_effective_r(ldr), 1e-6);
+    /* komponen non-LDR dan NULL -> -1 ("bukan LDR") sesuai kontrak header */
+    Component *r = add_at(COMP_RESISTOR, 400, 200);
+    ASSERT_DBL_NEAR(-1.0, sim_ldr_effective_r(r), 1e-12);
     ASSERT_DBL_NEAR(-1.0, sim_ldr_effective_r(NULL), 1e-12);
 }
 
-TEST(sim, ldr_effective_r_gelap_dan_terang_sesuai_kontrak) {
-    test_reset_model();
-    g_sim_ldr_effective_r_impl = stub_ldr_altar;   /* suntik perilaku target */
-    Component *ldr = add_at(COMP_LDR, 200, 200);
-    ldr->on = 0;                                    /* GELAP */
-    ASSERT_DBL_NEAR(LDR_DARK_DEFAULT, sim_ldr_effective_r(ldr), 1e-6);
-    ldr->on = 1;                                    /* TERANG ~ 1% nilai gelap */
-    ASSERT_DBL_NEAR(LDR_DARK_DEFAULT * LDR_LIGHT_RATIO, sim_ldr_effective_r(ldr), 1e-6);
-    ASSERT_DBL_NEAR(10e3, sim_ldr_effective_r(ldr), 1e-6);   /* ~10 kOhm */
-    /* komponen non-LDR -> -1 */
-    Component *r = add_at(COMP_RESISTOR, 400, 200);
-    ASSERT_DBL_NEAR(-1.0, sim_ldr_effective_r(r), 1e-12);
-}
-
-TEST(sim, buzzer_on_default_stub_diam) {
+TEST(sim, buzzer_on_patuh_guard_tipe_dan_mode) {
     test_reset_model();
     Component *bz = add_at(COMP_BUZZER, 200, 200);
-    ASSERT_INT_EQ(0, sim_buzzer_on(bz));            /* stub kuning: selalu diam */
-    ASSERT_INT_EQ(0, sim_buzzer_on(NULL));
-}
-
-TEST(sim, buzzer_on_seam_bisa_disuntik) {
-    test_reset_model();
-    g_sim_buzzer_on_impl = stub_buzzer_altar;
-    Component *bz = add_at(COMP_BUZZER, 200, 200);
-    bz->on = 0;
-    ASSERT_INT_EQ(0, sim_buzzer_on(bz));
-    bz->on = 7;                                     /* kondisi "berbunyi" utk stub */
-    ASSERT_INT_EQ(1, sim_buzzer_on(bz));
+    ASSERT_INT_EQ(0, sim_buzzer_on(bz));         /* mode EDIT -> selalu diam */
     Component *r = add_at(COMP_RESISTOR, 400, 200);
-    ASSERT_INT_EQ(0, sim_buzzer_on(r));             /* hanya buzzer dgn on==7 */
+    sim_running = 1;                             /* RUN tapi tanpa rangkaian lengkap:
+                                                    buzz_[] tetap 0 utk komponen non-buzzer */
+    ASSERT_INT_EQ(0, sim_buzzer_on(r));          /* guard tipe: bukan buzzer -> 0 */
+    ASSERT_INT_EQ(0, sim_buzzer_on(NULL));       /* guard NULL -> 0, tidak crash */
+    sim_running = 0;
 }
 
 /* Entry point suite ini (dipanggil dari test_main.c). */
@@ -520,8 +504,6 @@ void suite_sim(void) {
     RUN(sim, set_running_mengatur_flag_dan_status);
     RUN(sim, sim_comp_lit_guard_null_dan_non_led);
     RUN(sim, format_si_presisi_3_angka);
-    RUN(sim, ldr_effective_r_default_stub_netral);
-    RUN(sim, ldr_effective_r_gelap_dan_terang_sesuai_kontrak);
-    RUN(sim, buzzer_on_default_stub_diam);
-    RUN(sim, buzzer_on_seam_bisa_disuntik);
+    RUN(sim, ldr_effective_r_gelap_terang_dan_bukan_ldr);
+    RUN(sim, buzzer_on_patuh_guard_tipe_dan_mode);
 }

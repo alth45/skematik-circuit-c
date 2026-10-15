@@ -349,29 +349,32 @@ void   sim_format_si(double v, const wchar_t *unit, wchar_t *out, int cap);
 /* ===================== Window Procedure (main.c) ===================== */
 LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp);
 
-/* ===================== Test seam ==========================================
-   Dua fungsi di bawah dipanggil oleh kode produksi (events.c & komponen_
-   buzzer.c) tetapi implementasinya BELUM ada di src/ (sim.c belum menangani
-   tipe COMP_LDR / COMP_BUZZER). Blok ini menyediakan:
-     - mode PRODUKSI (default): stub kuning + TODO agar aplikasi tetap bisa
-       di-link; lihat tests/stubs_production.c.
-     - mode TEST (SCHEMATIC_TEST_STUBS=1, dipakai unit test): stub yang bisa
-       dioverride lewat function pointer g_*_impl sehingga perilaku tiap
-       fungsi bisa disuntik per-test. Lihat tests/unit_stubs.c. */
-#ifndef SCHEMATIC_TEST_STUBS
+/* ===================== Pemisah mode PRODUKSI vs mode TES ==================
+   Aturan keras (dijaga oleh #error di bawah dan oleh build.bat / run_tests.sh):
+     - Build PRODUKSI TIDAK PERNAH mendefinisikan SCHEMATIC_TEST_STUBS dan
+       tidak pernah menautkan berkas apa pun dari tests/ — pengecualian
+       historis (tests/stubs_production.c) sudah DIHAPUS karena implementasi
+       aslinya kini ada di src/sim.c.
+     - Build TES WAJIB menyetel -DSCHEMATIC_TEST_STUBS=1. Simbol khusus uji
+       (helper reset state) hanya diekspos di mode tes sehingga tidak ikut
+       ter-compile/ter-link ke executable produksi. */
+#if defined(SCHEMATIC_PRODUCTION) && defined(SCHEMATIC_TEST_STUBS)
+#error "Konflik mode build: SCHEMATIC_PRODUCTION dan SCHEMATIC_TEST_STUBS tidak boleh didefinisikan bersamaan."
+#endif
 
-int sim_buzzer_on(const Component *c);    /* 1 = buzzer ini aktif (berbunyi) saat RUN */
-double sim_ldr_effective_r(const Component *c); /* R efektif LDR: gelap=v, terang~1% v; -1 bukan LDR */
+/* ===================== Kontrak simulasi LDR / Buzzer =====================
+   Implementasi produksi: src/sim.c (sim_buzzer_on, sim_ldr_effective_r).
+   Unit test menguji KONTRAK ini langsung terhadap src/sim.c — tanpa stub
+   dan tanpa seam suntik, jadi tidak ada kode tes yang bocor ke binary produksi. */
 
-#else /* SCHEMATIC_TEST_STUBS */
+int    sim_buzzer_on(const Component *c);         /* 1 = buzzer aktif (berbunyi) saat RUN */
+double sim_ldr_effective_r(const Component *c);   /* R efektif LDR: gelap=v, terang~1% v; -1 bukan LDR */
 
-typedef int    (*sim_buzzer_on_fn)(const Component *c);
-typedef double (*sim_ldr_effective_r_fn)(const Component *c);
-extern sim_buzzer_on_fn        g_sim_buzzer_on_impl;        /* default = stub kuning */
-extern sim_ldr_effective_r_fn  g_sim_ldr_effective_r_impl;  /* default = stub kuning */
-static inline int sim_buzzer_on(const Component *c) { return g_sim_buzzer_on_impl(c); }
-static inline double sim_ldr_effective_r(const Component *c) { return g_sim_ldr_effective_r_impl(c); }
-
+#ifdef SCHEMATIC_TEST_STUBS
+/* ---- Helper khusus suite uji (realisasi: tests/test_support.c) ----
+   Berkas tersebut HANYA ditautkan oleh run_tests.sh; build.bat produksi
+   tidak pernah melihatnya. */
+void test_reset_model(void); /* reset state global model -> antar-test independen */
 #endif /* SCHEMATIC_TEST_STUBS */
 
 #endif /* SCHEMATIC_H */
