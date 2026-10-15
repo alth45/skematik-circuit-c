@@ -58,3 +58,17 @@ void test_reset_model(void) {
     g_sim_buzzer_on_impl = default_stub_buzzer_on;
     g_sim_ldr_effective_r_impl = default_stub_ldr_effective_r;
 }
+
+/* ---- Stub set_status/g_status (realisasi di src/fileio.c tidak ditautkan
+       ke binary uji agar suite bebas dari dialog Win32) ---- */
+#include <stdarg.h>
+
+wchar_t g_status[256] = L"";
+
+void set_status(const wchar_t *fmt, ...) {
+    va_list ap;
+    va_start(ap, fmt);
+    _vsnwprintf(g_status, 256, fmt, ap);
+    g_status[255] = L'\0';
+    va_end(ap);
+}

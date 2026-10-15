@@ -14,7 +14,7 @@ static Component *add_at(CompType t, int x, int y) {
     model_add_component(t, x, y);
     return &comps[comp_count - 1];
 }
-static void connect(Component *a, int pa, Component *b, int pb) {
+static void wire_pins(Component *a, int pa, Component *b, int pb) {
     PinRef x = { a->id, pa }, y = { b->id, pb };
     model_add_wire(x, y);
 }
@@ -28,14 +28,14 @@ static void build_basic_loop(double r_ohm, Component **out_bat, Component **out_
     r->v = r_ohm;
     if (out_sw && *out_sw) {
         Component *sw = *out_sw;
-        connect(bat, 0, sw, 0);
-        connect(sw, 1, r, 0);
+        wire_pins(bat, 0, sw, 0);
+        wire_pins(sw, 1, r, 0);
     } else {
-        connect(bat, 0, r, 0);
+        wire_pins(bat, 0, r, 0);
     }
-    connect(r, 1, led, 0);
-    connect(led, 1, gnd, 0);
-    connect(bat, 1, gnd, 0);
+    wire_pins(r, 1, led, 0);
+    wire_pins(led, 1, gnd, 0);
+    wire_pins(bat, 1, gnd, 0);
     if (out_bat) *out_bat = bat;
     if (out_led) *out_led = led;
 }
@@ -44,11 +44,11 @@ static void build_basic_loop(double r_ohm, Component **out_bat, Component **out_
    sebelumnya dipakai kembali (posisi x,y-nya tidak memengaruhi analisis). */
 static void rebuild_loop_with_switch(Component *bat, Component *sw, Component *r,
                                      Component *led, Component *gnd) {
-    connect(bat, 0, sw, 0);
-    connect(sw, 1, r, 0);
-    connect(r, 1, led, 0);
-    connect(led, 1, gnd, 0);
-    connect(bat, 1, gnd, 0);
+    wire_pins(bat, 0, sw, 0);
+    wire_pins(sw, 1, r, 0);
+    wire_pins(r, 1, led, 0);
+    wire_pins(led, 1, gnd, 0);
+    wire_pins(bat, 1, gnd, 0);
 }
 
 /* ===================== State awal & sumber ===================== */
@@ -119,10 +119,10 @@ TEST(sim, polaritas_terbalik_led_mati) {
     Component *gnd = add_at(COMP_GROUND, 800, 200);
     r->v = 350.0;
     /* sengaja terbalik: (-) baterai -> anoda LED, (+) -> ground/katoda */
-    connect(bat, 1, r, 0);
-    connect(r, 1, led, 0);
-    connect(led, 1, gnd, 0);
-    connect(bat, 0, gnd, 0);
+    wire_pins(bat, 1, r, 0);
+    wire_pins(r, 1, led, 0);
+    wire_pins(led, 1, gnd, 0);
+    wire_pins(bat, 0, gnd, 0);
     sim_recompute();
     ASSERT_INT_EQ(0, sim_led_count);
     ASSERT_INT_EQ(0, sim_comp_lit(led));
@@ -134,7 +134,7 @@ TEST(sim, korslet_langsung_plus_ke_minus) {
     test_reset_model();
     Component *bat = add_at(COMP_BATTERY, 200, 200);
     Component *gnd = add_at(COMP_GROUND, 400, 200);
-    connect(bat, 0, gnd, 0);                    /* (+) langsung ke (-) */
+    wire_pins(bat, 0, gnd, 0);                    /* (+) langsung ke (-) */
     sim_recompute();
     ASSERT_INT_EQ(1, sim_short);
     ASSERT_WSTR_HAS(sim_message(), L"KORSLETING");
@@ -145,9 +145,9 @@ TEST(sim, korslet_lewat_saklar_on) {
     Component *bat = add_at(COMP_BATTERY, 200, 200);
     Component *sw  = add_at(COMP_SWITCH, 400, 200);
     Component *gnd = add_at(COMP_GROUND, 600, 200);
-    connect(bat, 0, sw, 0);
-    connect(sw, 1, gnd, 0);
-    connect(bat, 1, gnd, 0);
+    wire_pins(bat, 0, sw, 0);
+    wire_pins(sw, 1, gnd, 0);
+    wire_pins(bat, 1, gnd, 0);
     sw->on = 0;
     sim_recompute();
     ASSERT_INT_EQ(0, sim_short);                /* saklar terbuka: aman */
@@ -175,9 +175,9 @@ TEST(sim, led_meledak_tanpa_resistor) {
     Component *bat = add_at(COMP_BATTERY, 200, 200);
     Component *led = add_at(COMP_LED, 400, 200);
     Component *gnd = add_at(COMP_GROUND, 600, 200);
-    connect(bat, 0, led, 0);
-    connect(led, 1, gnd, 0);
-    connect(bat, 1, gnd, 0);
+    wire_pins(bat, 0, led, 0);
+    wire_pins(led, 1, gnd, 0);
+    wire_pins(bat, 1, gnd, 0);
     sim_recompute();
     ASSERT_INT_EQ(1, sim_exploded);
     ASSERT_INT_EQ(1, sim_comp_blown(led));
@@ -186,7 +186,7 @@ TEST(sim, led_meledak_tanpa_resistor) {
     ASSERT_WSTR_HAS(sim_message(), L"MELEDAK");
 }
 
-TEST(sim, led_meledak_arus_di atas_5x_if_max) {
+TEST(sim, led_meledak_arus_di_atas_5x_if_max) {
     test_reset_model();
     Component *bat, *led;
     build_basic_loop(50.0, &bat, &led, NULL);   /* I = 7/50 = 140 mA > 100 mA */
@@ -204,10 +204,10 @@ TEST(sim, vled_ge_vsumber_led_tidak_menyala_terang) {
     Component *gnd = add_at(COMP_GROUND, 800, 200);
     bat->v = 1.5;                               /* < Vf LED 2.0 V */
     r->v = 350.0;
-    connect(bat, 0, r, 0);
-    connect(r, 1, led, 0);
-    connect(led, 1, gnd, 0);
-    connect(bat, 1, gnd, 0);
+    wire_pins(bat, 0, r, 0);
+    wire_pins(r, 1, led, 0);
+    wire_pins(led, 1, gnd, 0);
+    wire_pins(bat, 1, gnd, 0);
     sim_recompute();
     ASSERT_INT_EQ(1, sim_led_count);            /* secara topologi tersambung */
     ASSERT_DBL_NEAR(0.0, sim_comp_current(led), 1e-12); /* tapi I = 0 (dv <= 0) */
@@ -223,11 +223,11 @@ TEST(sim, dioda_forward_menghantar_reverse_memblokir) {
     Component *d2 = add_at(COMP_DIODE, 200, 400);   /* katoda ke (+): reverse */
     Component *bat = add_at(COMP_BATTERY, 500, 200);
     Component *gnd = add_at(COMP_GROUND, 500, 400);
-    connect(bat, 0, d1, 0);                          /* (+) -> A1 */
-    connect(d1, 1, gnd, 0);                          /* K1 -> (-) : korslet via dioda */
-    connect(bat, 0, d2, 1);                          /* (+) -> K2 (terbalik) */
-    connect(d2, 0, gnd, 0);                          /* A2 -> (-) */
-    connect(bat, 1, gnd, 0);
+    wire_pins(bat, 0, d1, 0);                          /* (+) -> A1 */
+    wire_pins(d1, 1, gnd, 0);                          /* K1 -> (-) : korslet via dioda */
+    wire_pins(bat, 0, d2, 1);                          /* (+) -> K2 (terbalik) */
+    wire_pins(d2, 0, gnd, 0);                          /* A2 -> (-) */
+    wire_pins(bat, 1, gnd, 0);
     sim_recompute();
     ASSERT_INT_EQ(1, sim_diode_fwd(d1));
     ASSERT_INT_EQ(0, sim_diode_fwd(d2));
@@ -244,11 +244,11 @@ TEST(sim, dioda_seri_menambah_vdrop) {
     Component *led = add_at(COMP_LED, 650, 200);
     Component *gnd = add_at(COMP_GROUND, 800, 200);
     r->v = 350.0;
-    connect(bat, 0, d, 0);       /* (+) -> A */
-    connect(d, 1, r, 0);         /* K -> R */
-    connect(r, 1, led, 0);
-    connect(led, 1, gnd, 0);
-    connect(bat, 1, gnd, 0);
+    wire_pins(bat, 0, d, 0);       /* (+) -> A */
+    wire_pins(d, 1, r, 0);         /* K -> R */
+    wire_pins(r, 1, led, 0);
+    wire_pins(led, 1, gnd, 0);
+    wire_pins(bat, 1, gnd, 0);
     sim_recompute();
     ASSERT_INT_EQ(1, sim_diode_fwd(d));
     ASSERT_INT_EQ(1, sim_led_count);
@@ -268,13 +268,13 @@ TEST(sim, transistor_on_mengalirkan_led) {
     Component *led = add_at(COMP_LED, 700, 200);
     Component *gnd = add_at(COMP_GROUND, 850, 200);
     rb->v = 1000.0; rc->v = 350.0;
-    connect(bat, 0, rb, 0);      /* (+) -> basis lewat Rb */
-    connect(rb, 1, q, 2);        /* B */
-    connect(q, 1, gnd, 0);       /* E -> (-) */
-    connect(bat, 1, gnd, 0);     /* (-) -> gnd */
-    connect(bat, 0, rc, 0);      /* (+) -> kolektor lewat Rc */
-    connect(rc, 1, led, 0);
-    connect(led, 1, gnd, 0);
+    wire_pins(bat, 0, rb, 0);      /* (+) -> basis lewat Rb */
+    wire_pins(rb, 1, q, 2);        /* B */
+    wire_pins(q, 1, gnd, 0);       /* E -> (-) */
+    wire_pins(bat, 1, gnd, 0);     /* (-) -> gnd */
+    wire_pins(bat, 0, rc, 0);      /* (+) -> kolektor lewat Rc */
+    wire_pins(rc, 1, led, 0);
+    wire_pins(led, 1, gnd, 0);
     sim_recompute();
     ASSERT_INT_EQ(1, sim_comp_conducting(q));
     ASSERT_INT_EQ(1, sim_led_count);
@@ -293,11 +293,11 @@ TEST(sim, transistor_off_basis_mengambang) {
     Component *led = add_at(COMP_LED, 700, 200);
     Component *gnd = add_at(COMP_GROUND, 850, 200);
     rc->v = 350.0;
-    connect(q, 1, gnd, 0);
-    connect(bat, 1, gnd, 0);
-    connect(bat, 0, rc, 0);
-    connect(rc, 1, led, 0);
-    connect(led, 1, gnd, 0);
+    wire_pins(q, 1, gnd, 0);
+    wire_pins(bat, 1, gnd, 0);
+    wire_pins(bat, 0, rc, 0);
+    wire_pins(rc, 1, led, 0);
+    wire_pins(led, 1, gnd, 0);
     /* basis (pin2) tidak terhubung ke mana-mana */
     sim_recompute();
     ASSERT_INT_EQ(0, sim_comp_conducting(q));
@@ -312,10 +312,10 @@ TEST(sim, kapasitor_memblokir_dc) {
     Component *cap = add_at(COMP_CAPACITOR, 400, 200);
     Component *led = add_at(COMP_LED, 600, 200);
     Component *gnd = add_at(COMP_GROUND, 800, 200);
-    connect(bat, 0, cap, 0);
-    connect(cap, 1, led, 0);
-    connect(led, 1, gnd, 0);
-    connect(bat, 1, gnd, 0);
+    wire_pins(bat, 0, cap, 0);
+    wire_pins(cap, 1, led, 0);
+    wire_pins(led, 1, gnd, 0);
+    wire_pins(bat, 1, gnd, 0);
     sim_recompute();
     ASSERT_INT_EQ(0, sim_led_count);            /* DC terblokir */
     ASSERT_INT_EQ(0, sim_ac_mode);
@@ -327,9 +327,9 @@ TEST(sim, sumber_ac_menyalakan_led_mode_rms) {
     Component *r   = add_at(COMP_RESISTOR, 400, 200);
     Component *led = add_at(COMP_LED, 600, 200);
     ac->v = 12.0;  r->v = 500.0;                /* (12-2)/500 = 20 mA tepat */
-    connect(ac, 0, r, 0);
-    connect(r, 1, led, 0);
-    connect(led, 1, ac, 1);                     /* Netral sebagai (-) */
+    wire_pins(ac, 0, r, 0);
+    wire_pins(r, 1, led, 0);
+    wire_pins(led, 1, ac, 1);                     /* Netral sebagai (-) */
     sim_recompute();
     ASSERT_INT_EQ(1, sim_has_ac);
     ASSERT_INT_EQ(0, sim_has_battery);
@@ -347,9 +347,9 @@ TEST(sim, ac_220v_tanpa_resistor_meledak_dengan_peringatan) {
     Component *r   = add_at(COMP_RESISTOR, 400, 200);
     Component *led = add_at(COMP_LED, 600, 200);
     r->v = 100.0;                                        /* I = 218/100 = 2.18 A */
-    connect(ac, 0, r, 0);
-    connect(r, 1, led, 0);
-    connect(led, 1, ac, 1);
+    wire_pins(ac, 0, r, 0);
+    wire_pins(r, 1, led, 0);
+    wire_pins(led, 1, ac, 1);
     sim_recompute();
     ASSERT_INT_EQ(1, sim_exploded);
     ASSERT_WSTR_HAS(sim_message(), L"MELEDAK");
@@ -362,10 +362,10 @@ TEST(sim, kapasitor_tembus_dalam_mode_ac) {
     Component *r   = add_at(COMP_RESISTOR, 600, 200);
     Component *led = add_at(COMP_LED, 800, 200);
     ac->v = 12.0; r->v = 500.0;
-    connect(ac, 0, cap, 0);                    /* AC -> C (tembus di mode AC) */
-    connect(cap, 1, r, 0);
-    connect(r, 1, led, 0);
-    connect(led, 1, ac, 1);
+    wire_pins(ac, 0, cap, 0);                    /* AC -> C (tembus di mode AC) */
+    wire_pins(cap, 1, r, 0);
+    wire_pins(r, 1, led, 0);
+    wire_pins(led, 1, ac, 1);
     sim_recompute();
     ASSERT_INT_EQ(1, sim_ac_mode);
     ASSERT_INT_EQ(1, sim_led_count);           /* loop AC tertutup via kapasitor */
@@ -379,9 +379,9 @@ TEST(sim, sim_wire_hot_dan_guard_indeks) {
     Component *bat = add_at(COMP_BATTERY, 200, 200);
     Component *r   = add_at(COMP_RESISTOR, 400, 200);
     Component *gnd = add_at(COMP_GROUND, 600, 200);
-    connect(bat, 0, r, 0);                     /* kabel 0: sisi (+) -> panas */
-    connect(r, 1, gnd, 0);                     /* kabel 1: sisi (-) -> dingin */
-    connect(bat, 1, gnd, 0);                   /* kabel 2: (-) -> dingin */
+    wire_pins(bat, 0, r, 0);                     /* kabel 0: sisi (+) -> panas */
+    wire_pins(r, 1, gnd, 0);                     /* kabel 1: sisi (-) -> dingin */
+    wire_pins(bat, 1, gnd, 0);                   /* kabel 2: (-) -> dingin */
     sim_recompute();
     ASSERT_INT_EQ(3, wire_count);
     ASSERT_INT_EQ(1, sim_wire_hot(0));

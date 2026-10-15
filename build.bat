@@ -19,7 +19,7 @@ if %ERRORLEVEL% NEQ 0 (
 )
 
 gcc -O2 -Wall -mwindows -municode -DUNICODE -D_UNICODE -Iinclude ^
-    src\main.c src\model.c src\fileio.c src\sim.c ^
+    src\main.c src\model.c src\fileio.c src\sim.c tests\stubs_production.c ^
     src\ui\draw.c src\ui\events.c ^
     src\ui\toolbar_menubar.c src\ui\toolbar_symbols.c ^
     src\ui\toolbar_actions.c src\ui\toolbar_palette.c ^

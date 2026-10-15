@@ -464,7 +464,6 @@ void on_mouse_move(HWND hwnd, int x, int y) {
             c->x = group_drag_items[i].x0 + dx;
             c->y = group_drag_items[i].y0 + dy;
         }
-        (void)anchor;
         InvalidateRect(hwnd, NULL, FALSE);
         return;
     }
