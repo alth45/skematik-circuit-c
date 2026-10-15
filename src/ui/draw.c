@@ -15,6 +15,11 @@
    File ini hanya berisi: utilitas rotasi dunia (with_rotation), dispatcher
    draw_component, label nilai, titik pin, kabel, dan canvas. */
 
+/* Deklarasi awal: helper seleksi multi (definisi di bagian bawah file ini). */
+static int comp_in_selection(int id);
+static void draw_selection_boxes(HDC hdc);
+static void draw_marquee(HDC hdc);
+
 /* Bungkus gambar simbol dengan rotasi dunia (GDI World Transform).
    Semua fungsi draw_* di file komponen menggambar asumsi rot=0 (horizontal). */
 void with_rotation(HDC hdc, Component *c,
@@ -41,7 +46,8 @@ void with_rotation(HDC hdc, Component *c,
 
 static void draw_pins(HDC hdc, Component *c) {
     int n = comp_pin_count(c);
-    int show = (current_tool == TOOL_WIRE || wiring_active || c->id == selected_id);
+    int show = (current_tool == TOOL_WIRE || wiring_active ||
+                c->id == selected_id || comp_in_selection(c->id));
     for (int p = 0; p < n; p++) {
         int px, py;
         comp_pin_pos(c, p, &px, &py);
@@ -144,6 +150,99 @@ void draw_component(HDC hdc, Component *c) {
     draw_pins(hdc, c);
 }
 
+/* ===================== Overlay Seleksi (dipakai WM_PAINT di main.c) ===================== */
+
+/* Gambar highlight blok multi-select + kotak marquee pada hdc yang sudah
+   memakai koordinat canvas (viewport offset TOOLBAR_H diterapkan pemanggil).
+   `hdc_screen` = HDC target akhir (untuk efek tint marquee); boleh sama hdc. */
+void draw_selection_overlay(HDC hdc, HDC hdc_screen) {
+    draw_selection_boxes(hdc);
+    if (box_selecting) draw_marquee(hdc_screen);
+}
+
+/* ===================== Multi-Select: Highlight & Kotak Marquee ===================== */
+
+/* 1 = komponen termasuk dalam blok multi-select (bukan seleksi primer). */
+static int comp_in_selection(int id) {
+    for (int i = 0; i < sel_count; i++)
+        if (selection[i] == id) return 1;
+    return 0;
+}
+
+/* Gambar kotak putus-putus hijau di sekeliling SEMUA anggota seleksi, plus
+   satu kotak pembatas grup (bounding box) agar blok terlihat sebagai satu
+   kesatuan yang siap di-drag and drop. */
+static void draw_selection_boxes(HDC hdc) {
+    if (sel_count <= 1) return;   /* tunggal sudah digambar draw_component */
+    int minx = 1 << 30, miny = 1 << 30, maxx = -(1 << 30), maxy = -(1 << 30);
+    HPEN pen = CreatePen(PS_DOT, 1, RGB(0, 160, 90));
+    HPEN oldp = (HPEN)SelectObject(hdc, pen);
+    HBRUSH ob = (HBRUSH)SelectObject(hdc, GetStockObject(NULL_BRUSH));
+    for (int i = 0; i < sel_count; i++) {
+        Component *c = find_comp_by_id(selection[i]);
+        if (!c) continue;
+        int hw, hh;
+        comp_bounding_half(c, &hw, &hh);
+        Rectangle(hdc, c->x - hw, c->y - hh, c->x + hw, c->y + hh);
+        if (c->x - hw < minx) minx = c->x - hw;
+        if (c->y - hh < miny) miny = c->y - hh;
+        if (c->x + hw > maxx) maxx = c->x + hw;
+        if (c->y + hh > maxy) maxy = c->y + hh;
+    }
+    SelectObject(hdc, ob);
+    SelectObject(hdc, oldp);
+    DeleteObject(pen);
+    if (minx <= maxx) {
+        /* bounding box grup + jumlah anggota */
+        HPEN gp = CreatePen(PS_SOLID, 1, RGB(0, 160, 90));
+        HPEN ogp = (HPEN)SelectObject(hdc, gp);
+        HBRUSH gb = (HBRUSH)SelectObject(hdc, GetStockObject(NULL_BRUSH));
+        Rectangle(hdc, minx - 6, miny - 6, maxx + 6, maxy + 6);
+        SelectObject(hdc, gb);
+        SelectObject(hdc, ogp);
+        DeleteObject(gp);
+        wchar_t buf[32];
+        swprintf(buf, 32, L"%d komponen (blok)", sel_count);
+        HFONT hf = CreateFontW(13, 0, 0, 0, FW_NORMAL, 0, 0, 0,
+            DEFAULT_CHARSET, 0, 0, CLEARTYPE_QUALITY, 0, L"Segoe UI");
+        HFONT ofh = (HFONT)SelectObject(hdc, hf);
+        SetBkMode(hdc, TRANSPARENT);
+        SetTextColor(hdc, RGB(0, 130, 75));
+        TextOutW(hdc, minx - 4, miny - 24, buf, (int)wcslen(buf));
+        SelectObject(hdc, ofh);
+        DeleteObject(hf);
+    }
+}
+
+/* Kotak "marquee" saat klik kiri ditekan & diseret: isian biru transparan
+   dengan garis tepi biru (gaya canvas umum). */
+static void draw_marquee(HDC hdc) {
+    if (!box_selecting) return;
+    int lx = (box_x1 < box_x2) ? box_x1 : box_x2;
+    int rx = (box_x1 < box_x2) ? box_x2 : box_x1;
+    int ty = (box_y1 < box_y2) ? box_y1 : box_y2;
+    int by = (box_y1 < box_y2) ? box_y2 : box_y1;
+
+    if (rx > lx && by > ty) {
+        HDC mdc = CreateCompatibleDC(hdc);
+        HBITMAP mono = CreateBitmap(rx - lx, by - ty, 1, 1, NULL);
+        HBITMAP omono = (HBITMAP)SelectObject(mdc, mono);
+        PatBlt(mdc, 0, 0, rx - lx, by - ty, BLACKNESS);   /* mask 0 -> warna inversi */
+        BitBlt(hdc, lx, ty, rx - lx, by - ty, mdc, 0, 0, MERGEPAINT);
+        SelectObject(mdc, omono);
+        DeleteObject(mono);
+        DeleteDC(mdc);
+    }
+
+    HPEN pen = CreatePen(PS_SOLID, 1, RGB(50, 128, 255));
+    HPEN old = (HPEN)SelectObject(hdc, pen);
+    HBRUSH ob = (HBRUSH)SelectObject(hdc, GetStockObject(NULL_BRUSH));
+    Rectangle(hdc, lx, ty, rx, by);
+    SelectObject(hdc, ob);
+    SelectObject(hdc, old);
+    DeleteObject(pen);
+}
+
 /* ===================== Kabel ===================== */
 static void stroke_ortho(HDC hdc, int x1, int y1, int x2, int y2) {
     MoveToEx(hdc, x1, y1, NULL);
@@ -235,6 +334,10 @@ void draw_canvas(HWND hwnd) {
     for (int i = 0; i < comp_count; i++) {
         draw_component(memDC, &comps[i]);
     }
+
+    // highlight blok multi-select + kotak marquee (klik kiri ditekan & diseret)
+    draw_selection_boxes(memDC);
+    if (box_selecting) draw_marquee(memDC);
 
     BitBlt(hdc, 0, 0, W, H, memDC, 0, 0, SRCCOPY);
 
