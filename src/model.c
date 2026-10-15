@@ -16,6 +16,10 @@ int wiring_active = 0;
 PinRef wiring_from = { -1, -1 };
 int wiring_mx = 0, wiring_my = 0;
 
+/* Preferensi tampilan (diubah lewat menu View) */
+int g_show_grid   = 1;
+int g_show_status = 1;
+
 /* Tombol toolbar (digambar manual di atas, bukan HWND).
    Urutan: Select, Wire, Resistor, Switch, Battery, Sumber AC, LED, Ground,
    Capacitor, Transistor, Diode, Kapasitor Polar, Delete. + 4 tombol aksi. */
