@@ -202,6 +202,12 @@ int    parse_value_text_a(const char *s, double *out);    /* varian ASCII (JSON)
 void   format_value(double v, const wchar_t *unit, wchar_t *out, int cap);
 void   edit_value_dialog(HWND hwnd, Component *c);        /* dialog input nilai */
 
+/* Peta nama tipe <-> string JSON (fileio.c). Nama kanonik dipakai model_save_json;
+   from_name menerima alias lama ("R", "SW", "BAT", "GND", "NPN", "CP", ...).
+   Diakses publik agar round-trip JSON bisa diuji dari unit test. */
+const char *comp_type_json_name(CompType t);
+int         comp_type_from_json_name(const char *s);
+
 /* ===================== Gambar Simbol (draw.c + komponen_*.c) =====================
    draw.c = dispatcher & utilitas rotasi; tiap simbol komponen hidup di file
    sendiri: komponen_resistor.c, komponen_switch.c, komponen_battery.c,
@@ -272,8 +278,9 @@ int sim_wire_hot(int idx);   /* 1 = kabel idx bertegangan (+) */
 int sim_comp_lit(const Component *c); /* 1 = LED ini menyala */
 int sim_comp_conducting(const Component *c); /* 1 = transistor ini ON (C-E tembus) */
 int sim_diode_fwd(const Component *c);    /* 1 = dioda ini menghantar (forward A->K) */
-int sim_buzzer_on(const Component *c);    /* 1 = buzzer ini aktif (berbunyi) saat RUN */
-double sim_ldr_effective_r(const Component *c); /* R efektif LDR: gelap=v, terang~1% v; -1 bukan LDR */
+/* NOTE: sim_buzzer_on() & sim_ldr_effective_r() dideklarasikan di blok
+   "Test seam" bagian paling bawah header ini (implementasi produksi masih
+   ditunda — lihat tests/stubs_production.c). */
 const wchar_t *sim_message(void);     /* pesan status hasil simulasi */
 
 /* ---- Hasil perhitungan kuantitatif (Ohm + hukum tegangan) ---- */
@@ -288,5 +295,30 @@ void   sim_format_si(double v, const wchar_t *unit, wchar_t *out, int cap);
 
 /* ===================== Window Procedure (main.c) ===================== */
 LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp);
+
+/* ===================== Test seam ==========================================
+   Dua fungsi di bawah dipanggil oleh kode produksi (events.c & komponen_
+   buzzer.c) tetapi implementasinya BELUM ada di src/ (sim.c belum menangani
+   tipe COMP_LDR / COMP_BUZZER). Blok ini menyediakan:
+     - mode PRODUKSI (default): stub kuning + TODO agar aplikasi tetap bisa
+       di-link; lihat tests/stubs_production.c.
+     - mode TEST (SCHEMATIC_TEST_STUBS=1, dipakai unit test): stub yang bisa
+       dioverride lewat function pointer g_*_impl sehingga perilaku tiap
+       fungsi bisa disuntik per-test. Lihat tests/unit_stubs.c. */
+#ifndef SCHEMATIC_TEST_STUBS
+
+int sim_buzzer_on(const Component *c);    /* 1 = buzzer ini aktif (berbunyi) saat RUN */
+double sim_ldr_effective_r(const Component *c); /* R efektif LDR: gelap=v, terang~1% v; -1 bukan LDR */
+
+#else /* SCHEMATIC_TEST_STUBS */
+
+typedef int    (*sim_buzzer_on_fn)(const Component *c);
+typedef double (*sim_ldr_effective_r_fn)(const Component *c);
+extern sim_buzzer_on_fn        g_sim_buzzer_on_impl;        /* default = stub kuning */
+extern sim_ldr_effective_r_fn  g_sim_ldr_effective_r_impl;  /* default = stub kuning */
+static inline int sim_buzzer_on(const Component *c) { return g_sim_buzzer_on_impl(c); }
+static inline double sim_ldr_effective_r(const Component *c) { return g_sim_ldr_effective_r_impl(c); }
+
+#endif /* SCHEMATIC_TEST_STUBS */
 
 #endif /* SCHEMATIC_H */
