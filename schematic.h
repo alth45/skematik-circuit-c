@@ -143,7 +143,27 @@ int    parse_value_text_a(const char *s, double *out);    /* varian ASCII (JSON)
 void   format_value(double v, const wchar_t *unit, wchar_t *out, int cap);
 void   edit_value_dialog(HWND hwnd, Component *c);        /* dialog input nilai */
 
-/* ===================== Gambar (draw.c) ===================== */
+/* ===================== Gambar Simbol (draw.c + komponen_*.c) =====================
+   draw.c = dispatcher & utilitas rotasi; tiap simbol komponen hidup di file
+   sendiri: komponen_resistor.c, komponen_switch.c, komponen_battery.c,
+   komponen_led.c, komponen_ground.c, komponen_capacitor.c, transistor.c,
+   komponen_diode.c, komponen_capolar.c. */
+
+/* Utilitas bersama (didefinisikan di draw.c):
+   gambar simbol dengan rotasi dunia GDI; fn menggambar dgn asumsi rot=0. */
+void with_rotation(HDC hdc, Component *c, void (*fn)(HDC, int, int, BOOL));
+
+/* Entry point per-file simbol — signature seragam (HDC, Component*). */
+void draw_k_resistor(HDC hdc, Component *c);
+void draw_k_switch(HDC hdc, Component *c);
+void draw_k_battery(HDC hdc, Component *c);
+void draw_k_led(HDC hdc, Component *c);
+void draw_k_ground(HDC hdc, Component *c);
+void draw_k_capacitor(HDC hdc, Component *c);
+void draw_k_transistor(HDC hdc, Component *c);
+void draw_k_diode(HDC hdc, Component *c);
+void draw_k_capolar(HDC hdc, Component *c);
+
 void draw_component(HDC hdc, Component *c);
 void draw_canvas(HWND hwnd);
 void draw_wires(HDC hdc);

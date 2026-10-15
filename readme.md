@@ -58,7 +58,10 @@ schematic_win.exe
 Isi `build.bat`:
 
 ```bat
-gcc -O2 -mwindows -municode -DUNICODE -D_UNICODE main.c model.c draw.c events.c toolbar.c fileio.c sim.c -o schematic_win.exe -lgdi32 -luser32 -lcomdlg32 -lm
+gcc -O2 -mwindows -municode -DUNICODE -D_UNICODE main.c model.c draw.c ^
+    komponen_resistor.c komponen_switch.c komponen_battery.c komponen_led.c ^
+    komponen_ground.c komponen_capacitor.c transistor.c komponen_diode.c komponen_capolar.c ^
+    events.c toolbar.c fileio.c sim.c -o schematic_win.exe -lgdi32 -luser32 -lcomdlg32 -lm
 ```
 
 > `schematic_win.c` monolitik lama sudah kedaluwarsa, yang dipakai file pecahan.
@@ -190,7 +193,17 @@ schematic-c/
   schematic.h  konstanta, struct, API semua modul (enum tipe komponen & tool)
   main.c       WndProc, toolbar_click, WM_PAINT, wWinMain
   model.c      state, pin/rotasi/hit-test, add/remove/wire, palet tombol toolbar
-  draw.c       simbol GDI + rotasi (R/SW/BAT/LED/GND/CAP/TR/D/CP), pin, kabel hot, LED glow
+  draw.c       dispatcher simbol + utilitas rotasi (with_rotation), label nilai,
+               pin, kabel hot/preview, canvas double-buffer
+  komponen_resistor.c   simbol resistor (draw_k_resistor)
+  komponen_switch.c     simbol saklar + status ON/OFF (draw_k_switch)
+  komponen_battery.c    simbol baterai (draw_k_battery)
+  komponen_led.c        simbol LED + glow saat nyala (draw_k_led)
+  komponen_ground.c     simbol ground (draw_k_ground)
+  komponen_capacitor.c  simbol kapasitor non-polar (draw_k_capacitor)
+  transistor.c          simbol transistor NPN + panah emitor presisi (draw_k_transistor)
+  komponen_diode.c      simbol dioda + panah arah alir (draw_k_diode)
+  komponen_capolar.c    simbol kapasitor polar/elektrolit (draw_k_capolar)
   events.c     mouse (drag/wiring/toggle) + keyboard (1-9, R, F5, Ctrl+S/O, Del, Esc)
   toolbar.c    toolbar 16 ikon + hit-test + status
   fileio.c     save/load JSON + dialog + status
