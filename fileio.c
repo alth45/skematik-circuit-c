@@ -61,9 +61,13 @@ int model_save_json(const wchar_t *path, wchar_t *err, int err_cap) {
     fwprintf(f, L"  \"version\": 1,\n");
     fwprintf(f, L"  \"components\": [\n");
     for (int i = 0; i < comp_count; i++) {
-        fwprintf(f, L"    {\"id\": %d, \"type\": \"%ls\", \"x\": %d, \"y\": %d, \"rot\": %d, \"on\": %d}%ls\n",
+        /* nilai ditulis sebagai number JSON dengan 6 desimal signifikan */
+        wchar_t vnum[40];
+        swprintf(vnum, 40, L"%.6g", comps[i].v);
+        fwprintf(f, L"    {\"id\": %d, \"type\": \"%ls\", \"x\": %d, \"y\": %d, \"rot\": %d, \"on\": %d, \"value\": %ls}%ls\n",
             comps[i].id, comp_type_name(comps[i].type),
             comps[i].x, comps[i].y, comps[i].rot % 4, comps[i].on ? 1 : 0,
+            vnum,
             (i + 1 < comp_count) ? L"," : L"");
     }
     fwprintf(f, L"  ],\n");
@@ -125,6 +129,17 @@ static int parse_int(const char **p, int *out) {
     return 1;
 }
 
+/* Parse number JSON apa adanya (integer / pecahan / notasi eksponen). */
+static int parse_double(const char **p, double *out) {
+    skip_ws(p);
+    char *end = NULL;
+    double v = strtod(*p, &end);
+    if (end == *p) return 0;
+    *p = end;
+    *out = v;
+    return 1;
+}
+
 static int find_key(const char **p, const char *key) {
     const char *s = strstr(*p, key);
     if (!s) return 0;
@@ -177,6 +192,7 @@ int model_load_json(const wchar_t *path, wchar_t *err, int err_cap) {
     else {
         while (1) {
             int id = tmp_next, x = 0, y = 0, rot = 0, on = 0;
+            double v = -1.0;             /* -1 = tidak ada di file -> pakai default */
             char tname[32] = "";
             if (!expect_char(&q, '{')) goto bad;
             while (1) {
@@ -191,6 +207,16 @@ int model_load_json(const wchar_t *path, wchar_t *err, int err_cap) {
                 else if (strcmp(key, "y") == 0) { if (!parse_int(&q, &y)) goto bad; }
                 else if (strcmp(key, "rot") == 0 || strcmp(key, "rotation") == 0) {
                     if (!parse_int(&q, &rot)) goto bad;
+                }
+                else if (strcmp(key, "value") == 0 || strcmp(key, "v") == 0) {
+                    if (*q == '\"') {
+                        char sv[64] = "";
+                        if (!parse_string(&q, sv, sizeof sv)) goto bad;
+                        double tv = 0.0;
+                        if (parse_value_text_a(sv, &tv)) v = tv;
+                    } else {
+                        if (!parse_double(&q, &v)) goto bad;
+                    }
                 }
                 else if (strcmp(key, "on") == 0 || strcmp(key, "closed") == 0 ||
                          strcmp(key, "state") == 0) {
@@ -221,6 +247,9 @@ int model_load_json(const wchar_t *path, wchar_t *err, int err_cap) {
                     tmp_comps[tmp_n].id = id;
                     tmp_comps[tmp_n].rot = ((rot % 4) + 4) % 4;
                     tmp_comps[tmp_n].on = (tp == COMP_SWITCH && on) ? 1 : 0;
+                    /* nilai: pakai dari file bila valid, kalau tidak default tipe */
+                    if (v > 0.0) tmp_comps[tmp_n].v = v;
+                    else         tmp_comps[tmp_n].v = comp_default_value((CompType)tp);
                     tmp_n++;
                     if (id >= tmp_next) tmp_next = id + 1;
                 }

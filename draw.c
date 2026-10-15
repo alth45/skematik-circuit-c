@@ -437,6 +437,51 @@ static void draw_pins(HDC hdc, Component *c) {
     }
 }
 
+/* Label NILAI komponen (R/BAT/LED/C/CP/D) — digambar TANPA rotasi agar
+   teks selalu tegak dan mudah dibaca. Dipanggil dari draw_component. */
+static void draw_value_label(HDC hdc, Component *c) {
+    if (!comp_has_value(c->type)) return;
+
+    const wchar_t *unit = comp_value_unit(c->type);
+    wchar_t vs[VALUE_STR_CAP];
+    format_value(c->v, unit, vs, VALUE_STR_CAP);
+
+    HFONT hf = CreateFontW(14, 0, 0, 0, FW_NORMAL, 0, 0, 0,
+        DEFAULT_CHARSET, 0, 0, CLEARTYPE_QUALITY, 0, L"Segoe UI");
+    HFONT of = (HFONT)SelectObject(hdc, hf);
+    SetBkMode(hdc, TRANSPARENT);
+
+    SIZE sz; GetTextExtentPoint32W(hdc, vs, (int)wcslen(vs), &sz);
+    int tw = sz.cx, th = sz.cy;
+
+    /* posisi default: horizontal -> atas; vertikal -> samping kiri/kanan */
+    int tx = c->x - tw / 2;
+    int ty = (c->rot % 2 == 0) ? c->y - 34 : c->y - th / 2;
+    if (c->rot % 2 != 0) {
+        /* vertikal: taruh di sisi yang kosong (kiri untuk rot 1, kanan rot 3) */
+        if ((c->rot % 4) == 1) tx = c->x - tw - 52;
+        else                   tx = c->x + 52;
+    }
+
+    /* kotak putih tipis agar terbaca di atas grid/kabel */
+    HPEN bp = CreatePen(PS_SOLID, 1, RGB(220,220,220));
+    HPEN obp = (HPEN)SelectObject(hdc, bp);
+    HBRUSH bb = CreateSolidBrush(RGB(255,255,255));
+    HBRUSH obb = (HBRUSH)SelectObject(hdc, bb);
+    Rectangle(hdc, tx - 4, ty - 2, tx + tw + 4, ty + th + 2);
+    SelectObject(hdc, obb); SelectObject(hdc, obp);
+    DeleteObject(bb); DeleteObject(bp);
+
+    COLORREF col = RGB(70, 70, 70);
+    if (sim_running && c->type == COMP_LED && sim_comp_blown(c))
+        col = RGB(200, 30, 30);                 /* LED meledak -> merah */
+    SetTextColor(hdc, col);
+    TextOutW(hdc, tx, ty, vs, (int)wcslen(vs));
+
+    SelectObject(hdc, of);
+    DeleteObject(hf);
+}
+
 void draw_component(HDC hdc, Component *c) {
     BOOL sel = (c->id == selected_id);
     switch (c->type) {
@@ -451,6 +496,7 @@ void draw_component(HDC hdc, Component *c) {
         case COMP_CAPOLAR:  with_rotation(hdc, c, draw_capolar); break;
         default: break;
     }
+    draw_value_label(hdc, c);   /* teks nilai selalu tegak (tanpa rotasi) */
     if (sel) {
         HPEN pen = CreatePen(PS_DOT, 1, RGB(50,128,255));
         HPEN old = (HPEN)SelectObject(hdc, pen);

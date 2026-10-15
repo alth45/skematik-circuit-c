@@ -19,6 +19,14 @@
 #define STATUS_H 26
 #define WIRE_HIT 8
 
+/* ---- Nilai (value) komponen & model perhitungan listrik ---- */
+#define VF_LED_DEFAULT   2.0   /* LED default: Vf = 2.0 V, If max = 20 mA */
+#define VF_LED_MAX       20e-3
+#define VF_DIODE         0.7   /* dioda Si: drop forward 0.7 V */
+#define I_LEAK           1e-9  /* arus bocor pA lewat kapasitor (DC steady) */
+#define V_EXPLODE        50.0  /* LED "meledak" bila tegangan bolak-balik > 50 V */
+#define VALUE_STR_CAP    48
+
 typedef enum {
     COMP_NONE = 0,
     COMP_RESISTOR,
@@ -54,6 +62,13 @@ typedef struct {
     int id;
     int rot;           // 0,1,2,3 = 0,90,180,270 derajat (CW)
     int on;            // saklar: 0 = terbuka/OFF, 1 = tertutup/ON
+    double v;          // nilai numerik komponen:
+                       //   resistor   = ohm      (default 220)
+                       //   battery    = volt     (default 9)
+                       //   LED        = Vf volt  (default 2.0)
+                       //   dioda      = Vf volt  (default 0.7)
+                       //   kapasitor & polar = farad (default 100e-9)
+                       //   switch/transistor/ground tidak dipakai (0)
 } Component;
 
 /* Pin = terminal komponen. Ground hanya 1 pin (atas). */
@@ -118,6 +133,16 @@ void model_rotate_selected(void);
 int model_add_wire(PinRef a, PinRef b);
 int model_remove_wire_at(int x, int y);
 
+/* Nilai komponen: default per tipe, parser teks ("2.2k", "100u", "4.7"),
+   formatter human-readable, dan dialog edit value (klik-kanan / double-klik). */
+double comp_default_value(CompType t);
+int    comp_has_value(CompType t);          /* 1 jika tipe punya value yang bisa diedit */
+const wchar_t *comp_value_unit(CompType t); /* "Ohm","V","Vf","F" atau NULL */
+int    parse_value_text(const wchar_t *s, double *out);   /* 1 = sukses */
+int    parse_value_text_a(const char *s, double *out);    /* varian ASCII (JSON) */
+void   format_value(double v, const wchar_t *unit, wchar_t *out, int cap);
+void   edit_value_dialog(HWND hwnd, Component *c);        /* dialog input nilai */
+
 /* ===================== Gambar (draw.c) ===================== */
 void draw_component(HDC hdc, Component *c);
 void draw_canvas(HWND hwnd);
@@ -126,9 +151,12 @@ void draw_wires(HDC hdc);
 /* ===================== Event Handler (events.c) ===================== */
 void on_lbutton_down(HWND hwnd, int x, int y);
 void on_lbutton_up(HWND hwnd, int x, int y);
-void on_rbutton_down(HWND hwnd, int x, int y);
+void on_rbutton_down(HWND hwnd, int x, int y); /* klik-kanan = menu konteks */
+void on_rbutton_dblclk(HWND hwnd, int x, int y);/* klik-kanan 2x = hapus */
 void on_mouse_move(HWND hwnd, int x, int y);
 void on_key_down(HWND hwnd, WPARAM key);
+void on_lbutton_dblclk(HWND hwnd, int x, int y); /* double-klik = edit value */
+void show_context_menu(HWND hwnd, int sx, int sy, Component *c); /* menu klik-kanan */
 
 /* ===================== File / JSON (fileio.c) ===================== */
 int model_save_json(const wchar_t *path, wchar_t *err, int err_cap);
@@ -157,6 +185,16 @@ int sim_comp_lit(const Component *c); /* 1 = LED ini menyala */
 int sim_comp_conducting(const Component *c); /* 1 = transistor ini ON (C-E tembus) */
 int sim_diode_fwd(const Component *c);    /* 1 = dioda ini menghantar (forward A->K) */
 const wchar_t *sim_message(void);     /* pesan status hasil simulasi */
+
+/* ---- Hasil perhitungan kuantitatif (Ohm + hukum tegangan) ---- */
+extern double sim_vsrc;       /* total tegangan seri baterai (V) */
+extern double sim_rloop;      /* resistansi loop LED paling panas (Ohm) */
+extern double sim_iled_max;   /* arus LED terbesar (A) */
+extern int    sim_exploded;   /* 1 = ada LED MeLEDAK (kelebihan arus/tegangan) */
+extern int    sim_overcur;    /* 1 = ada LED nyala tapi arus > 20 mA (berbahaya) */
+int    sim_comp_blown(const Component *c);   /* 1 = LED ini meledak */
+double sim_comp_current(const Component *c); /* arus lewat komponen ini (A), <0 = tak terdefinisi */
+void   sim_format_si(double v, const wchar_t *unit, wchar_t *out, int cap);
 
 /* ===================== Window Procedure (main.c) ===================== */
 LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp);
