@@ -6,13 +6,11 @@ static void setup_keyboard(HWND hwnd) {
 }
 
 static void toolbar_click(HWND hwnd, int x, int y) {
+    /* y relatif terhadap strip toolbar komponen (di bawah menubar) */
     int idx = toolbar_hit(x, y);
     if (idx < 0) return;
     if (idx == CLEAR_BTN_INDEX) {
-        if (sim_running) return;
-        model_clear_all();
-        sim_recompute();
-        set_status(L"Dibersihkan. Canvas kosong.");
+        menubar_command(hwnd, IDM_EDIT_CLEAR);
     } else if (idx == SAVE_BTN_INDEX) {
         model_save_dialog(hwnd);
     } else if (idx == OPEN_BTN_INDEX) {
@@ -40,7 +38,8 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         case WM_LBUTTONDOWN: {
             int x = (short)LOWORD(lp);
             int y = (short)HIWORD(lp);
-            if (y < TOOLBAR_H) { toolbar_click(hwnd, x, y); return 0; }
+            if (y < MENUBAR_H) { menubar_click(hwnd, x, y); return 0; }
+            if (y < TOOLBAR_H) { toolbar_click(hwnd, x, y - MENUBAR_H); return 0; }
             setup_keyboard(hwnd);
             y -= TOOLBAR_H;
             on_lbutton_down(hwnd, x, y);
@@ -50,7 +49,11 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         case WM_RBUTTONDOWN: {
             int x = (short)LOWORD(lp);
             int y = (short)HIWORD(lp);
-            if (y < TOOLBAR_H) return 0;
+            if (y < TOOLBAR_H) {
+                /* klik-kanan di area atas = buka menu yang sesuai */
+                if (y < MENUBAR_H) menubar_click(hwnd, x, y);
+                return 0;
+            }
             y -= TOOLBAR_H;
             on_rbutton_down(hwnd, x, y);
             return 0;
@@ -71,6 +74,26 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
             if (y < TOOLBAR_H) y = TOOLBAR_H;
             y -= TOOLBAR_H;
             on_lbutton_up(hwnd, x, y);
+            return 0;
+        }
+
+        case WM_LBUTTONDBLCLK: {
+            /* double-klik di canvas = edit nilai; di menubar = buka menu */
+            int x = (short)LOWORD(lp);
+            int y = (short)HIWORD(lp);
+            if (y < MENUBAR_H) { menubar_click(hwnd, x, y); return 0; }
+            if (y < TOOLBAR_H) return 0;
+            y -= TOOLBAR_H;
+            on_lbutton_dblclk(hwnd, x, y);
+            return 0;
+        }
+
+        case WM_RBUTTONDBLCLK: {
+            int x = (short)LOWORD(lp);
+            int y = (short)HIWORD(lp);
+            if (y < TOOLBAR_H) return 0;
+            y -= TOOLBAR_H;
+            on_rbutton_dblclk(hwnd, x, y);
             return 0;
         }
 
@@ -100,15 +123,18 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
             // Grid + komponen, offset Y = TOOLBAR_H
             SaveDC(memDC);
             SetViewportOrgEx(memDC, 0, TOOLBAR_H, NULL);
-            IntersectClipRect(memDC, 0, 0, W, H - TOOLBAR_H - STATUS_H);
+            int canvas_h = H - TOOLBAR_H - (g_show_status ? STATUS_H : 0);
+            IntersectClipRect(memDC, 0, 0, W, canvas_h);
 
             HPEN gridPen = CreatePen(PS_SOLID, 1, RGB(235,235,235));
             HPEN op = (HPEN)SelectObject(memDC, gridPen);
-            for (int x = 0; x < W; x += GRID) {
-                MoveToEx(memDC, x, 0, NULL); LineTo(memDC, x, H - TOOLBAR_H - STATUS_H);
-            }
-            for (int y = 0; y < H - TOOLBAR_H - STATUS_H; y += GRID) {
-                MoveToEx(memDC, 0, y, NULL); LineTo(memDC, W, y);
+            if (g_show_grid) {
+                for (int x = 0; x < W; x += GRID) {
+                    MoveToEx(memDC, x, 0, NULL); LineTo(memDC, x, canvas_h);
+                }
+                for (int y = 0; y < canvas_h; y += GRID) {
+                    MoveToEx(memDC, 0, y, NULL); LineTo(memDC, W, y);
+                }
             }
             SelectObject(memDC, op);
             DeleteObject(gridPen);
@@ -149,8 +175,8 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
 
             RestoreDC(memDC, -1);
 
-            /* Status bar bawah */
-            {
+            /* Status bar bawah (bisa disembunyikan via menu View) */
+            if (g_show_status) {
                 RECT sr = { 0, H - STATUS_H, W, H };
                 HBRUSH sb = CreateSolidBrush(RGB(245,245,245));
                 FillRect(memDC, &sr, sb);
@@ -223,10 +249,22 @@ int WINAPI wWinMain(HINSTANCE hInst, HINSTANCE hPrev, PWSTR cmd, int show) {
     ShowWindow(hwnd, show);
     UpdateWindow(hwnd);
 
+    /* Accelerator klasik untuk menu bar: Ctrl+N/O/S, F5 (Run/Stop), F9 */
+    ACCEL accels[] = {
+        { FCONTROL|FVIRTKEY, 'N', IDM_FILE_NEW },
+        { FCONTROL|FVIRTKEY, 'O', IDM_FILE_OPEN },
+        { FCONTROL|FVIRTKEY, 'S', IDM_FILE_SAVE },
+        { FVIRTKEY, VK_F5, IDM_SIM_RUN_TOGGLE },
+        { FVIRTKEY, VK_F9, IDM_SIM_RECOMPUTE },
+    };
+    HACCEL hAccel = CreateAcceleratorTableW(accels, (int)(sizeof(accels)/sizeof(accels[0])));
+
     MSG msg;
     while (GetMessageW(&msg, NULL, 0, 0) > 0) {
+        if (hAccel && TranslateAcceleratorW(hwnd, hAccel, &msg)) continue;
         TranslateMessage(&msg);
         DispatchMessageW(&msg);
     }
+    if (hAccel) DestroyAcceleratorTable(hAccel);
     return (int)msg.wParam;
 }

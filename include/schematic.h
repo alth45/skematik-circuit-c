@@ -12,7 +12,9 @@
 #define MAX_COMP 256
 #define MAX_WIRES 512
 #define GRID     20
-#define TOOLBAR_H 64
+#define MENUBAR_H   30   /* baris menu File/Edit/View/Simulasi/Bantu (paling atas) */
+#define TOOLBAR_H   94   /* total area UI atas = menubar + toolbar komponen (64 px) */
+#define PALETTE_H   64   /* tinggi strip tombol komponen di bawah menubar */
 #define TOOLBAR_BTN_W 46
 #define TOOLBAR_BTN_H 46
 #define PIN_R    7
@@ -120,6 +122,46 @@ extern const wchar_t *btnLabels[BTN_COUNT]; /* nama tool = tooltip/status */
 int toolbar_hit(int x, int y);
 int toolbar_tool_at(int x, int y, int *is_clear);
 void draw_toolbar(HDC hdc, int W);
+
+/* ===================== Menu Bar klasik (File/Edit/View/Simulasi/Bantu) ====
+   Digambar manual di strip paling atas window (tinggi MENUBAR_H), DI ATAS
+   toolbar tombol komponen. Koordinat fungsi ini memakai koordinat client
+   window utuh (belum di-offset). — toolbar.c */
+#define IDM_FILE_NEW      0x1101
+#define IDM_FILE_OPEN     0x1102
+#define IDM_FILE_SAVE     0x1103
+#define IDM_FILE_SAVEAS   0x1104
+#define IDM_FILE_EXIT     0x1105
+#define IDM_EDIT_UNDO     0x1110
+#define IDM_EDIT_DUPL     0x1111
+#define IDM_EDIT_DELSEL   0x1112
+#define IDM_EDIT_ROTATE   0x1113
+#define IDM_EDIT_CLEAR    0x1114
+#define IDM_VIEW_GRID     0x1120
+#define IDM_VIEW_STATUS   0x1121
+#define IDM_VIEW_ZOOMIN   0x1122
+#define IDM_VIEW_ZOOMOUT  0x1123
+#define IDM_VIEW_ZOOMFIT  0x1124
+#define IDM_SIM_RUN       0x1130
+#define IDM_SIM_STOP      0x1131
+#define IDM_SIM_RECOMPUTE 0x1132
+#define IDM_SIM_RUN_TOGGLE 0x1133  /* untuk accelerator F5 */
+#define IDM_HELP_SHORTCUT 0x1140
+#define IDM_HELP_ABOUT    0x1141
+
+/* Hit-test menubar: -1 = tidak kena; >=0 = indeks menu utama (0=File...). */
+int menubar_hit(int x, int y);
+/* Klik pada menubar: buka popup TrackPopupMenu; jika item dipilih, jalankan
+   aksinya. Mengembalikan ID command yang dieksekusi, atau 0 bila batal. */
+int menubar_click(HWND hwnd, int x, int y);
+/* Gambar strip menubar (baris pertama, tinggi MENUBAR_H). */
+void draw_menubar(HDC hdc, int W);
+/* Eksekusi command menubar (dipakai juga oleh accelerator WM_COMMAND). */
+void menubar_command(HWND hwnd, int cmd);
+
+/* Preferensi tampilan (model.c): grid tampil / status bar tampil. */
+extern int g_show_grid;
+extern int g_show_status;
 
 /* ===================== Utilitas (model.c) ===================== */
 int snap(int v);
