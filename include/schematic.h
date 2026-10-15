@@ -37,7 +37,9 @@ typedef enum {
     COMP_CAPACITOR,
     COMP_TRANSISTOR, /* NPN: pin0=C(kiri-atas) pin1=E(kanan-bawah) pin2=B(kiri-tengah) */
     COMP_DIODE,      /* pin0=A(anoda kiri) pin1=K(katoda kanan); arah sama dgn LED */
-    COMP_CAPOLAR     /* kapasitor polar/elektrolit: pin0=(+) anoda kiri, pin1=(-) katoda kanan */
+    COMP_CAPOLAR,    /* kapasitor polar/elektrolit: pin0=(+) anoda kiri, pin1=(-) katoda kanan */
+    COMP_ACSOURCE    /* sumber AC (tegangan bolak-balik): pin0=Hidup/Live, pin1=Netral.
+                        v = tegangan RMS dalam Volt (default 220 V, 50 Hz). */
 } CompType;
 
 /* Tool yang dipilih user di palette */
@@ -47,6 +49,7 @@ typedef enum {
     TOOL_RESISTOR,
     TOOL_SWITCH,
     TOOL_BATTERY,
+    TOOL_ACSOURCE,     /* sumber AC (tegangan bolak-balik) */
     TOOL_LED,
     TOOL_GROUND,
     TOOL_CAPACITOR,
@@ -65,6 +68,7 @@ typedef struct {
     double v;          // nilai numerik komponen:
                        //   resistor   = ohm      (default 220)
                        //   battery    = volt     (default 9)
+                       //   acsource   = VAC RMS  (default 220, 50 Hz)
                        //   LED        = Vf volt  (default 2.0)
                        //   dioda      = Vf volt  (default 0.7)
                        //   kapasitor & polar = farad (default 100e-9)
@@ -82,7 +86,7 @@ typedef struct {
 } Wire;
 
 /* Jumlah tombol palette */
-#define BTN_COUNT 12
+#define BTN_COUNT 13
 
 /* ===================== State Global (model.c) ===================== */
 extern Component comps[MAX_COMP];
@@ -147,7 +151,7 @@ void   edit_value_dialog(HWND hwnd, Component *c);        /* dialog input nilai 
    draw.c = dispatcher & utilitas rotasi; tiap simbol komponen hidup di file
    sendiri: komponen_resistor.c, komponen_switch.c, komponen_battery.c,
    komponen_led.c, komponen_ground.c, komponen_capacitor.c, transistor.c,
-   komponen_diode.c, komponen_capolar.c. */
+   komponen_diode.c, komponen_capolar.c, komponen_acsource.c. */
 
 /* Utilitas bersama (didefinisikan di draw.c):
    gambar simbol dengan rotasi dunia GDI; fn menggambar dgn asumsi rot=0. */
@@ -163,6 +167,7 @@ void draw_k_capacitor(HDC hdc, Component *c);
 void draw_k_transistor(HDC hdc, Component *c);
 void draw_k_diode(HDC hdc, Component *c);
 void draw_k_capolar(HDC hdc, Component *c);
+void draw_k_acsource(HDC hdc, Component *c);
 
 void draw_component(HDC hdc, Component *c);
 void draw_canvas(HWND hwnd);
@@ -187,10 +192,14 @@ void set_status(const wchar_t *fmt, ...);
 extern wchar_t g_status[256];
 
 /* ===================== Simulasi Run (sim.c) ===================== */
-/* Aturan Ideal: baterai pin0=(+), pin1=(-); ground = (-);
+/* Aturan Ideal: baterai pin0=(+), pin1=(-); sumber AC pin0=Live, pin1=Netral
+   (dipakai sebagai sumber tegangan bolak-balik; untuk analisis DC steady
+   dipakai pendekatan nilai RMS bila tak ada baterai DC);
+   ground = (-);
    resistor & saklar-ON menghantar; dioda menghantar jika anoda(pin0)
    berada di net (+) (ideal: satu arah A->K);
-   kapasitor & kapasitor polar = blokir DC (terbuka);
+   kapasitor & kapasitor polar = blokir DC (terbuka), TAPI menghantar AC
+   (digabung bila loop hanya disuplai sumber AC);
    transistor NPN menghantar C-E jika basis kena (+) dan emitor kena (-);
    LED nyala jika anoda(pin0) kena (+) dan katoda(pin1) kena (-)
    lewat jalur menghantar. */
@@ -198,6 +207,8 @@ extern int sim_running;      /* 1 = mode Run (simulasi jalan) */
 extern int sim_led_count;    /* jumlah LED menyala (hasil terakhir) */
 extern int sim_short;        /* 1 = (+) tersambung langsung ke (-) */
 extern int sim_has_battery;  /* 1 = ada baterai di canvas */
+extern int sim_has_ac;       /* 1 = ada sumber AC di canvas */
+extern int sim_ac_mode;      /* 1 = loop dihitung dari sumber AC (tanpa baterai DC) */
 void sim_recompute(void);    /* hitung ulang hasil simulasi */
 void sim_set_running(int on);/* masuk/keluar mode Run */
 int sim_wire_hot(int idx);   /* 1 = kabel idx bertegangan (+) */

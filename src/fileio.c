@@ -17,6 +17,7 @@ static const wchar_t *comp_type_name(CompType t) {
         case COMP_RESISTOR: return L"resistor";
         case COMP_SWITCH:   return L"switch";
         case COMP_BATTERY:  return L"battery";
+        case COMP_ACSOURCE: return L"acsource";
         case COMP_LED:      return L"led";
         case COMP_GROUND:   return L"ground";
         case COMP_CAPACITOR:  return L"capacitor";
@@ -32,6 +33,9 @@ static int comp_type_from_name(const char *s) {
     if (strcmp(s, "resistor") == 0) return COMP_RESISTOR;
     if (strcmp(s, "switch") == 0)   return COMP_SWITCH;
     if (strcmp(s, "battery") == 0)  return COMP_BATTERY;
+    if (strcmp(s, "acsource") == 0 || strcmp(s, "ACSource") == 0 ||
+        strcmp(s, "ac_source") == 0 || strcmp(s, "ac") == 0 ||
+        strcmp(s, "AC") == 0 || strcmp(s, "SumberAC") == 0) return COMP_ACSOURCE;
     if (strcmp(s, "led") == 0)      return COMP_LED;
     if (strcmp(s, "ground") == 0)   return COMP_GROUND;
     if (strcmp(s, "Resistor") == 0 || strcmp(s, "R") == 0) return COMP_RESISTOR;

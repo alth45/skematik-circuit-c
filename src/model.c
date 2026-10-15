@@ -17,17 +17,18 @@ PinRef wiring_from = { -1, -1 };
 int wiring_mx = 0, wiring_my = 0;
 
 /* Tombol toolbar (digambar manual di atas, bukan HWND).
-   Urutan: Select, Wire, Resistor, Switch, Battery, LED, Ground,
+   Urutan: Select, Wire, Resistor, Switch, Battery, Sumber AC, LED, Ground,
    Capacitor, Transistor, Diode, Kapasitor Polar, Delete. + 4 tombol aksi. */
 const ToolKind btnTools[BTN_COUNT] = {
     TOOL_SELECT, TOOL_WIRE,
-    TOOL_RESISTOR, TOOL_SWITCH, TOOL_BATTERY, TOOL_LED, TOOL_GROUND,
+    TOOL_RESISTOR, TOOL_SWITCH, TOOL_BATTERY, TOOL_ACSOURCE, TOOL_LED, TOOL_GROUND,
     TOOL_CAPACITOR, TOOL_TRANSISTOR, TOOL_DIODE, TOOL_CAPOLAR,
     TOOL_DELETE
 };
 const wchar_t *btnLabels[BTN_COUNT] = {
     L"Select / Geser (V)", L"Kabel / Wire (W)",
-    L"Resistor (1)", L"Saklar / Switch (2)", L"Baterai (3)", L"LED (4)", L"Ground (5)",
+    L"Resistor (1)", L"Saklar / Switch (2)", L"Baterai (3)", L"Sumber AC (0)",
+    L"LED (4)", L"Ground (5)",
     L"Kapasitor (6)", L"Transistor NPN (7)", L"Dioda (8)", L"Kapasitor Polar (9)",
     L"Hapus / Delete (Del)"
 };
@@ -141,6 +142,7 @@ double comp_default_value(CompType t) {
     switch (t) {
         case COMP_RESISTOR:   return 220.0;          /* Ohm */
         case COMP_BATTERY:    return 9.0;            /* Volt */
+        case COMP_ACSOURCE:   return 220.0;          /* VAC RMS, 50 Hz */
         case COMP_LED:        return VF_LED_DEFAULT; /* Vf = 2.0 V */
         case COMP_DIODE:      return VF_DIODE;       /* Vf = 0.7 V */
         case COMP_CAPACITOR:  return 100e-9;         /* 100 nF */
@@ -150,7 +152,8 @@ double comp_default_value(CompType t) {
 }
 
 int comp_has_value(CompType t) {
-    return t == COMP_RESISTOR || t == COMP_BATTERY || t == COMP_LED ||
+    return t == COMP_RESISTOR || t == COMP_BATTERY || t == COMP_ACSOURCE ||
+           t == COMP_LED ||
            t == COMP_DIODE || t == COMP_CAPACITOR || t == COMP_CAPOLAR;
 }
 
@@ -158,6 +161,7 @@ const wchar_t *comp_value_unit(CompType t) {
     switch (t) {
         case COMP_RESISTOR:  return L"\x03A9";     /* Ω */
         case COMP_BATTERY:   return L"V";
+        case COMP_ACSOURCE:  return L"VAC";
         case COMP_LED:       return L"Vf";
         case COMP_DIODE:     return L"Vf";
         case COMP_CAPACITOR: return L"F";
@@ -466,7 +470,7 @@ static LRESULT CALLBACK ValEditProc(HWND hDlg, UINT msg, WPARAM wp, LPARAM lp) {
                     MessageBoxW(hDlg,
                         L"Nilai tidak valid.\n\nContoh yang diterima:\n"
                         L"  resistor   : 220, 4.7k, 1M, 10k\n"
-                        L"  baterai/Vf : 9, 4.5, 2.2, 0.7\n"
+                        L"  baterai/AC : 9, 4.5, 220 (AC = VAC RMS)\n"
                         L"  kapasitor  : 100n, 47u, 10uF",
                         L"Edit Nilai", MB_OK | MB_ICONWARNING);
                     return 0;
@@ -519,6 +523,7 @@ void edit_value_dialog(HWND hwnd, Component *c) {
     swprintf(title, 96, L"Edit Nilai Komponen — %s",
         (c->type == COMP_RESISTOR)  ? L"Resistor" :
         (c->type == COMP_BATTERY)   ? L"Baterai" :
+        (c->type == COMP_ACSOURCE)  ? L"Sumber AC (VAC RMS)" :
         (c->type == COMP_LED)       ? L"LED (Vf)" :
         (c->type == COMP_DIODE)     ? L"Dioda (Vf)" :
         (c->type == COMP_CAPACITOR) ? L"Kapasitor" :

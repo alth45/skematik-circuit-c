@@ -188,7 +188,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
 
         case WM_GETMINMAXINFO: {
             MINMAXINFO *mmi = (MINMAXINFO *)lp;
-            mmi->ptMinTrackSize.x = 1060;
+            mmi->ptMinTrackSize.x = 1120;
             mmi->ptMinTrackSize.y = 600;
             return 0;
         }

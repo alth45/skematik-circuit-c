@@ -5,6 +5,7 @@ static CompType tool_to_comp(ToolKind t) {
         case TOOL_RESISTOR:   return COMP_RESISTOR;
         case TOOL_SWITCH:     return COMP_SWITCH;
         case TOOL_BATTERY:    return COMP_BATTERY;
+        case TOOL_ACSOURCE:   return COMP_ACSOURCE;
         case TOOL_LED:        return COMP_LED;
         case TOOL_GROUND:     return COMP_GROUND;
         case TOOL_CAPACITOR:  return COMP_CAPACITOR;
@@ -30,6 +31,7 @@ static const wchar_t *comp_kind_name(CompType t) {
         case COMP_RESISTOR:   return L"Resistor";
         case COMP_SWITCH:     return L"Saklar";
         case COMP_BATTERY:    return L"Baterai";
+        case COMP_ACSOURCE:   return L"Sumber AC";
         case COMP_LED:        return L"LED";
         case COMP_GROUND:     return L"Ground";
         case COMP_CAPACITOR:  return L"Kapasitor";
@@ -350,6 +352,7 @@ void on_key_down(HWND hwnd, WPARAM key) {
     else if (key == '1') { current_tool = TOOL_RESISTOR; }
     else if (key == '2') { current_tool = TOOL_SWITCH; }
     else if (key == '3') { current_tool = TOOL_BATTERY; }
+    else if (key == '0') { current_tool = TOOL_ACSOURCE; }
     else if (key == '4') { current_tool = TOOL_LED; }
     else if (key == '5') { current_tool = TOOL_GROUND; }
     else if (key == '6') { current_tool = TOOL_CAPACITOR; }

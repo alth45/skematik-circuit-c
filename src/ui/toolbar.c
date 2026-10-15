@@ -42,6 +42,7 @@ static CompType toolbar_tool_comp(ToolKind t) {
         case TOOL_RESISTOR:   return COMP_RESISTOR;
         case TOOL_SWITCH:     return COMP_SWITCH;
         case TOOL_BATTERY:    return COMP_BATTERY;
+        case TOOL_ACSOURCE:   return COMP_ACSOURCE;
         case TOOL_LED:        return COMP_LED;
         case TOOL_GROUND:     return COMP_GROUND;
         case TOOL_CAPACITOR:  return COMP_CAPACITOR;
@@ -71,6 +72,22 @@ static void sym_battery(HDC hdc) {
     MoveToEx(hdc, 10, 0, NULL); LineTo(hdc, 40, 0);
     MoveToEx(hdc, -10, -15, NULL); LineTo(hdc, -10, 15);
     MoveToEx(hdc, 10, -8, NULL); LineTo(hdc, 10, 8);
+}
+
+static void sym_acsource(HDC hdc) {
+    MoveToEx(hdc, -40, 0, NULL); LineTo(hdc, -22, 0);
+    MoveToEx(hdc, 22, 0, NULL); LineTo(hdc, 40, 0);
+    Ellipse(hdc, -22, -22, 22, 22);
+    /* sinus mini */
+    {
+        int started = 0;
+        for (int px = -14; px <= 14; px++) {
+            double ph = (double)px / 14.0 * 3.14159265358979;
+            int py = (int)(-10.0 * sin(ph));
+            if (!started) { MoveToEx(hdc, px, py, NULL); started = 1; }
+            else LineTo(hdc, px, py);
+        }
+    }
 }
 
 static void sym_led(HDC hdc) {
@@ -141,6 +158,7 @@ static void draw_tool_symbol(HDC hdc, ToolKind tool, int cx, int cy, BOOL active
     if (ct == COMP_RESISTOR) sym_resistor(hdc);
     else if (ct == COMP_SWITCH) sym_switch(hdc);
     else if (ct == COMP_BATTERY) sym_battery(hdc);
+    else if (ct == COMP_ACSOURCE) sym_acsource(hdc);
     else if (ct == COMP_LED) sym_led(hdc);
     else if (ct == COMP_GROUND) sym_ground(hdc);
     else if (ct == COMP_CAPACITOR) sym_capacitor(hdc);
@@ -298,7 +316,7 @@ void draw_toolbar(HDC hdc, int W) {
             const wchar_t *rnm = sim_running ? L"Stop" : L"Run";
             TextOutW(hdc, bx + (sim_running ? 13 : 16), by + 28, rnm, (int)wcslen(rnm));
         } else if (tool == TOOL_RESISTOR || tool == TOOL_SWITCH ||
-                   tool == TOOL_BATTERY || tool == TOOL_LED ||
+                   tool == TOOL_BATTERY || tool == TOOL_ACSOURCE || tool == TOOL_LED ||
                    tool == TOOL_GROUND || tool == TOOL_CAPACITOR ||
                    tool == TOOL_TRANSISTOR || tool == TOOL_DIODE ||
                    tool == TOOL_CAPOLAR) {
@@ -309,6 +327,7 @@ void draw_toolbar(HDC hdc, int W) {
             if (tool == TOOL_RESISTOR) nm = L"R";
             else if (tool == TOOL_SWITCH) nm = L"SW";
             else if (tool == TOOL_BATTERY) nm = L"BAT";
+            else if (tool == TOOL_ACSOURCE) nm = L"AC";
             else if (tool == TOOL_LED) nm = L"LED";
             else if (tool == TOOL_CAPACITOR) nm = L"C";
             else if (tool == TOOL_TRANSISTOR) nm = L"Q";

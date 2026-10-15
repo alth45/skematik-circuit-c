@@ -5,6 +5,7 @@
      komponen_resistor.c  -> draw_k_resistor
      komponen_switch.c    -> draw_k_switch
      komponen_battery.c   -> draw_k_battery
+     komponen_acsource.c  -> draw_k_acsource
      komponen_led.c       -> draw_k_led
      komponen_ground.c    -> draw_k_ground
      komponen_capacitor.c -> draw_k_capacitor
@@ -108,6 +109,7 @@ void draw_component(HDC hdc, Component *c) {
         case COMP_RESISTOR:    draw_k_resistor(hdc, c);    break;
         case COMP_SWITCH:      draw_k_switch(hdc, c);      break;
         case COMP_BATTERY:     draw_k_battery(hdc, c);     break;
+        case COMP_ACSOURCE:    draw_k_acsource(hdc, c);    break;
         case COMP_LED:         draw_k_led(hdc, c);         break;
         case COMP_GROUND:      draw_k_ground(hdc, c);      break;
         case COMP_CAPACITOR:   draw_k_capacitor(hdc, c);   break;
