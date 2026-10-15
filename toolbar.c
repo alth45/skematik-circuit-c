@@ -39,11 +39,13 @@ int toolbar_tool_at(int x, int y, int *is_clear) {
 
 static CompType toolbar_tool_comp(ToolKind t) {
     switch (t) {
-        case TOOL_RESISTOR: return COMP_RESISTOR;
-        case TOOL_SWITCH:   return COMP_SWITCH;
-        case TOOL_BATTERY:  return COMP_BATTERY;
-        case TOOL_LED:      return COMP_LED;
-        case TOOL_GROUND:   return COMP_GROUND;
+        case TOOL_RESISTOR:   return COMP_RESISTOR;
+        case TOOL_SWITCH:     return COMP_SWITCH;
+        case TOOL_BATTERY:    return COMP_BATTERY;
+        case TOOL_LED:        return COMP_LED;
+        case TOOL_GROUND:     return COMP_GROUND;
+        case TOOL_CAPACITOR:  return COMP_CAPACITOR;
+        case TOOL_TRANSISTOR: return COMP_TRANSISTOR;
         default: return COMP_NONE;
     }
 }
@@ -86,6 +88,25 @@ static void sym_ground(HDC hdc) {
     MoveToEx(hdc, -5, 16, NULL); LineTo(hdc, 5, 16);
 }
 
+static void sym_capacitor(HDC hdc) {
+    MoveToEx(hdc, -40, 0, NULL); LineTo(hdc, -6, 0);
+    MoveToEx(hdc, 6, 0, NULL); LineTo(hdc, 40, 0);
+    MoveToEx(hdc, -6, -15, NULL); LineTo(hdc, -6, 15);
+    MoveToEx(hdc, 6, -15, NULL); LineTo(hdc, 6, 15);
+}
+
+static void sym_transistor(HDC hdc) {
+    Ellipse(hdc, -20, -20, 20, 20);
+    MoveToEx(hdc, -4, -12, NULL); LineTo(hdc, -4, 12);
+    MoveToEx(hdc, -40, 0, NULL); LineTo(hdc, -19, 0);
+    MoveToEx(hdc, -19, 0, NULL); LineTo(hdc, -4, -6);
+    MoveToEx(hdc, -4, 6, NULL); LineTo(hdc, 10, 12);
+    MoveToEx(hdc, 10, 12, NULL); LineTo(hdc, 40, 13);
+    MoveToEx(hdc, 10, 12, NULL); LineTo(hdc, 1, 11);
+    MoveToEx(hdc, 10, 12, NULL); LineTo(hdc, 7, 3);
+    MoveToEx(hdc, -4, 30, NULL); LineTo(hdc, -4, 12);
+}
+
 static void draw_tool_symbol(HDC hdc, ToolKind tool, int cx, int cy, BOOL active) {
     int saved = SaveDC(hdc);
     SetGraphicsMode(hdc, GM_ADVANCED);
@@ -104,6 +125,8 @@ static void draw_tool_symbol(HDC hdc, ToolKind tool, int cx, int cy, BOOL active
     else if (ct == COMP_BATTERY) sym_battery(hdc);
     else if (ct == COMP_LED) sym_led(hdc);
     else if (ct == COMP_GROUND) sym_ground(hdc);
+    else if (ct == COMP_CAPACITOR) sym_capacitor(hdc);
+    else if (ct == COMP_TRANSISTOR) sym_transistor(hdc);
     else if (tool == TOOL_SELECT) {
         POINT cur[7] = { {0,-14},{10,4},{4,4},{4,14},{-2,14},{-2,4},{-8,4} };
         HBRUSH br = CreateSolidBrush(active ? RGB(50,128,255) : RGB(40,40,40));
@@ -256,7 +279,8 @@ void draw_toolbar(HDC hdc, int W) {
             TextOutW(hdc, bx + (sim_running ? 13 : 16), by + 28, rnm, (int)wcslen(rnm));
         } else if (tool == TOOL_RESISTOR || tool == TOOL_SWITCH ||
                    tool == TOOL_BATTERY || tool == TOOL_LED ||
-                   tool == TOOL_GROUND) {
+                   tool == TOOL_GROUND || tool == TOOL_CAPACITOR ||
+                   tool == TOOL_TRANSISTOR) {
             draw_tool_symbol(hdc, tool, bx + TOOLBAR_BTN_W / 2, by + 17, active);
             SetTextColor(hdc, active ? RGB(30,90,200) : RGB(90,90,90));
             SetBkMode(hdc, TRANSPARENT);
@@ -265,6 +289,8 @@ void draw_toolbar(HDC hdc, int W) {
             else if (tool == TOOL_SWITCH) nm = L"SW";
             else if (tool == TOOL_BATTERY) nm = L"BAT";
             else if (tool == TOOL_LED) nm = L"LED";
+            else if (tool == TOOL_CAPACITOR) nm = L"C";
+            else if (tool == TOOL_TRANSISTOR) nm = L"Q";
             else nm = L"GND";
             TextOutW(hdc, bx + 19, by + 30, nm, (int)wcslen(nm));
         } else {

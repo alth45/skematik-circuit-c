@@ -25,7 +25,9 @@ typedef enum {
     COMP_SWITCH,
     COMP_BATTERY,
     COMP_LED,
-    COMP_GROUND
+    COMP_GROUND,
+    COMP_CAPACITOR,
+    COMP_TRANSISTOR /* NPN: pin0=C(kiri) pin1=E(kanan) pin2=B(bawah) */
 } CompType;
 
 /* Tool yang dipilih user di palette */
@@ -37,6 +39,8 @@ typedef enum {
     TOOL_BATTERY,
     TOOL_LED,
     TOOL_GROUND,
+    TOOL_CAPACITOR,
+    TOOL_TRANSISTOR,
     TOOL_DELETE
 } ToolKind;
 
@@ -59,7 +63,7 @@ typedef struct {
 } Wire;
 
 /* Jumlah tombol palette */
-#define BTN_COUNT 8
+#define BTN_COUNT 10
 
 /* ===================== State Global (model.c) ===================== */
 extern Component comps[MAX_COMP];
@@ -99,6 +103,7 @@ int snap(int v);
 Component *find_comp_by_id(int id);
 Component *find_comp_at(int x, int y);
 int comp_pin_count(const Component *c);
+int comp_pin_valid(const Component *c, int pin_idx);
 void comp_pin_pos(const Component *c, int pin_idx, int *px, int *py);
 void comp_local_to_world(const Component *c, int lx, int ly, int *wx, int *wy);
 int find_pin_at(int x, int y, PinRef *out, int *px, int *py);
@@ -131,8 +136,10 @@ extern wchar_t g_status[256];
 
 /* ===================== Simulasi Run (sim.c) ===================== */
 /* Aturan Ideal: baterai pin0=(+), pin1=(-); ground = (-);
-   resistor & saklar-ON menghantar; LED nyala jika anoda(pin0)
-   kena (+) dan katoda(pin1) kena (-) lewat jalur menghantar. */
+   resistor & saklar-ON menghantar; kapasitor = blokir DC (terbuka);
+   transistor NPN menghantar C-E jika basis kena (+) dan emitor kena (-);
+   LED nyala jika anoda(pin0) kena (+) dan katoda(pin1) kena (-)
+   lewat jalur menghantar. */
 extern int sim_running;      /* 1 = mode Run (simulasi jalan) */
 extern int sim_led_count;    /* jumlah LED menyala (hasil terakhir) */
 extern int sim_short;        /* 1 = (+) tersambung langsung ke (-) */
@@ -141,6 +148,7 @@ void sim_recompute(void);    /* hitung ulang hasil simulasi */
 void sim_set_running(int on);/* masuk/keluar mode Run */
 int sim_wire_hot(int idx);   /* 1 = kabel idx bertegangan (+) */
 int sim_comp_lit(const Component *c); /* 1 = LED ini menyala */
+int sim_comp_conducting(const Component *c); /* 1 = transistor ini ON (C-E tembus) */
 const wchar_t *sim_message(void);     /* pesan status hasil simulasi */
 
 /* ===================== Window Procedure (main.c) ===================== */

@@ -6,9 +6,11 @@ int sim_short = 0;
 int sim_has_battery = 0;
 
 /* Net listrik: tiap pin komponen = 1 node.
-   node = comp_index * 2 + pin (ground pin1 tak dipakai). */
-static int parent_[MAX_COMP * 2];
+   node = comp_index * 3 + pin (ground pin1/2, basis = pin2 tak dipakai
+   komponen 1-2 pin; transistor pakai pin0=C, pin1=E, pin2=B). */
+static int parent_[MAX_COMP * 3];
 static int lit_[MAX_COMP];
+static int cond_[MAX_COMP];
 static int hot_[MAX_WIRES];
 
 static int find_root(int a) {
@@ -26,12 +28,12 @@ static void unite(int a, int b) {
 
 
 static int node_of(int comp_idx, int pin) {
-    return comp_idx * 2 + pin;
+    return comp_idx * 3 + pin;
 }
 
 void sim_recompute(void) {
-    for (int i = 0; i < MAX_COMP * 2; i++) parent_[i] = i;
-    for (int i = 0; i < MAX_COMP; i++) lit_[i] = 0;
+    for (int i = 0; i < MAX_COMP * 3; i++) parent_[i] = i;
+    for (int i = 0; i < MAX_COMP; i++) { lit_[i] = 0; cond_[i] = 0; }
     for (int i = 0; i < MAX_WIRES; i++) hot_[i] = 0;
     sim_led_count = 0;
     sim_short = 0;
@@ -46,6 +48,8 @@ void sim_recompute(void) {
         unite(node_of(ia, wires[i].a.pin_idx), node_of(ib, wires[i].b.pin_idx));
     }
 
+    /* Pass 1: penghantar pasif. Resistor & saklar-ON tembus.
+       Kapasitor = blokir DC (tidak digabung). Transistor ditunda. */
     for (int i = 0; i < comp_count; i++) {
         if (comps[i].type == COMP_RESISTOR) {
             unite(node_of(i, 0), node_of(i, 1));
@@ -55,7 +59,7 @@ void sim_recompute(void) {
         if (comps[i].type == COMP_BATTERY) sim_has_battery = 1;
     }
 
-    int plus_root[MAX_COMP * 2], minus_root[MAX_COMP * 2];
+    int plus_root[MAX_COMP * 3], minus_root[MAX_COMP * 3];
     int n_plus = 0, n_minus = 0;
     for (int i = 0; i < comp_count; i++) {
         if (comps[i].type == COMP_BATTERY) {
@@ -69,6 +73,38 @@ void sim_recompute(void) {
     for (int a = 0; a < n_plus; a++)
         for (int b = 0; b < n_minus; b++)
             if (plus_root[a] == minus_root[b]) sim_short = 1;
+
+    /* Pass 2: transistor NPN — basis kena (+) dan emitor kena (-)
+       => C-E tembus (gabungkan pin0 & pin1). Cek dulu, gabung sesudahnya
+       supaya keputusan tiap transistor pakai net pass-1 (stabil). */
+    {
+        int tr_on[MAX_COMP] = { 0 };
+        for (int i = 0; i < comp_count; i++) {
+            if (comps[i].type != COMP_TRANSISTOR) continue;
+            int rb = find_root(node_of(i, 2));
+            int re = find_root(node_of(i, 1));
+            int b_plus = 0, e_minus = 0;
+            for (int k = 0; k < n_plus; k++) if (plus_root[k] == rb) { b_plus = 1; break; }
+            for (int k = 0; k < n_minus; k++) if (minus_root[k] == re) { e_minus = 1; break; }
+            if (b_plus && e_minus) tr_on[i] = 1;
+        }
+        for (int i = 0; i < comp_count; i++) {
+            if (tr_on[i]) { cond_[i] = 1; unite(node_of(i, 0), node_of(i, 1)); }
+        }
+        /* root bisa bergeser setelah union C-E -> segarkan acuan (+)/(-) */
+        for (int i = 0, k = 0; i < comp_count; i++) {
+            if (comps[i].type == COMP_BATTERY) {
+                plus_root[k++] = find_root(node_of(i, 0));
+            }
+        }
+        for (int i = 0, k = 0; i < comp_count; i++) {
+            if (comps[i].type == COMP_BATTERY) {
+                minus_root[k++] = find_root(node_of(i, 1));
+            } else if (comps[i].type == COMP_GROUND) {
+                minus_root[k++] = find_root(node_of(i, 0));
+            }
+        }
+    }
 
     for (int i = 0; i < comp_count; i++) {
         if (comps[i].type != COMP_LED) continue;
@@ -114,6 +150,13 @@ int sim_comp_lit(const Component *c) {
     int i = (int)(c - comps);
     if (i < 0 || i >= comp_count) return 0;
     return lit_[i];
+}
+
+int sim_comp_conducting(const Component *c) {
+    if (!c || c->type != COMP_TRANSISTOR) return 0;
+    int i = (int)(c - comps);
+    if (i < 0 || i >= comp_count) return 0;
+    return cond_[i];
 }
 
 const wchar_t *sim_message(void) {

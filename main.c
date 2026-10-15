@@ -188,7 +188,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
 
         case WM_GETMINMAXINFO: {
             MINMAXINFO *mmi = (MINMAXINFO *)lp;
-            mmi->ptMinTrackSize.x = 920;
+            mmi->ptMinTrackSize.x = 1060;
             mmi->ptMinTrackSize.y = 600;
             return 0;
         }
@@ -217,7 +217,7 @@ int WINAPI wWinMain(HINSTANCE hInst, HINSTANCE hPrev, PWSTR cmd, int show) {
         0, L"SchematicEditorWnd",
         L"Schematic Editor - Win32 GDI",
         WS_OVERLAPPEDWINDOW,
-        CW_USEDEFAULT, CW_USEDEFAULT, 1000, 650,
+        CW_USEDEFAULT, CW_USEDEFAULT, 1100, 650,
         NULL, NULL, hInst, NULL);
 
     ShowWindow(hwnd, show);

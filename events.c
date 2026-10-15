@@ -2,11 +2,13 @@
 
 static CompType tool_to_comp(ToolKind t) {
     switch (t) {
-        case TOOL_RESISTOR: return COMP_RESISTOR;
-        case TOOL_SWITCH:   return COMP_SWITCH;
-        case TOOL_BATTERY:  return COMP_BATTERY;
-        case TOOL_LED:      return COMP_LED;
-        case TOOL_GROUND:   return COMP_GROUND;
+        case TOOL_RESISTOR:   return COMP_RESISTOR;
+        case TOOL_SWITCH:     return COMP_SWITCH;
+        case TOOL_BATTERY:    return COMP_BATTERY;
+        case TOOL_LED:        return COMP_LED;
+        case TOOL_GROUND:     return COMP_GROUND;
+        case TOOL_CAPACITOR:  return COMP_CAPACITOR;
+        case TOOL_TRANSISTOR: return COMP_TRANSISTOR;
         default: return COMP_NONE;
     }
 }
@@ -168,6 +170,8 @@ void on_key_down(HWND hwnd, WPARAM key) {
     else if (key == '3') { current_tool = TOOL_BATTERY; }
     else if (key == '4') { current_tool = TOOL_LED; }
     else if (key == '5') { current_tool = TOOL_GROUND; }
+    else if (key == '6') { current_tool = TOOL_CAPACITOR; }
+    else if (key == '7') { current_tool = TOOL_TRANSISTOR; }
     else if (key == VK_DELETE || key == VK_BACK) {
         if (sim_running) return; /* hapus dikunci saat RUN */
         if (selected_id >= 0) {

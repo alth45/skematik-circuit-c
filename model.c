@@ -17,16 +17,18 @@ PinRef wiring_from = { -1, -1 };
 int wiring_mx = 0, wiring_my = 0;
 
 /* Tombol toolbar (digambar manual di atas, bukan HWND).
-   Urutan: Select, Wire, Resistor, Switch, Battery, LED, Ground, Delete.
-   + 1 tombol Clear terpisah. */
+   Urutan: Select, Wire, Resistor, Switch, Battery, LED, Ground,
+   Capacitor, Transistor, Delete. + 4 tombol aksi. */
 const ToolKind btnTools[BTN_COUNT] = {
     TOOL_SELECT, TOOL_WIRE,
     TOOL_RESISTOR, TOOL_SWITCH, TOOL_BATTERY, TOOL_LED, TOOL_GROUND,
+    TOOL_CAPACITOR, TOOL_TRANSISTOR,
     TOOL_DELETE
 };
 const wchar_t *btnLabels[BTN_COUNT] = {
     L"Select / Geser (V)", L"Kabel / Wire (W)",
     L"Resistor (1)", L"Saklar / Switch (2)", L"Baterai (3)", L"LED (4)", L"Ground (5)",
+    L"Kapasitor (6)", L"Transistor NPN (7)",
     L"Hapus / Delete (Del)"
 };
 
@@ -56,8 +58,14 @@ Component *find_comp_at(int x, int y) {
 int comp_pin_count(const Component *c) {
     if (!c) return 0;
     if (c->type == COMP_GROUND) return 1;
+    if (c->type == COMP_TRANSISTOR) return 3; /* C, E, B */
     if (c->type == COMP_NONE) return 0;
     return 2;
+}
+
+int comp_pin_valid(const Component *c, int pin_idx) {
+    if (!c || pin_idx < 0) return 0;
+    return pin_idx < comp_pin_count(c);
 }
 
 void comp_local_to_world(const Component *c, int lx, int ly, int *wx, int *wy) {
@@ -79,6 +87,12 @@ void comp_pin_pos(const Component *c, int pin_idx, int *px, int *py) {
     if (!c || !px || !py) return;
     if (c->type == COMP_GROUND) {
         comp_local_to_world(c, 0, -30, px, py);
+    } else if (c->type == COMP_TRANSISTOR) {
+        /* NPN: pin0 = Kolektor (kiri), pin1 = Emitor (kanan),
+           pin2 = Basis (bawah, segaris bar basis x=-4). */
+        if (pin_idx == 2)      comp_local_to_world(c, -4, 30, px, py);
+        else if (pin_idx == 1) comp_local_to_world(c, 40, 13, px, py);
+        else                   comp_local_to_world(c, -40, 0, px, py);
     } else {
         comp_local_to_world(c, (pin_idx == 0) ? -40 : 40, 0, px, py);
     }
@@ -172,7 +186,10 @@ void model_rotate_selected(void) {
 int model_add_wire(PinRef a, PinRef b) {
     if (a.comp_id < 0 || b.comp_id < 0) return 0;
     if (same_pin(a, b)) return 0;
-    if (!find_comp_by_id(a.comp_id) || !find_comp_by_id(b.comp_id)) return 0;
+    Component *ca = find_comp_by_id(a.comp_id);
+    Component *cb = find_comp_by_id(b.comp_id);
+    if (!ca || !cb) return 0;
+    if (!comp_pin_valid(ca, a.pin_idx) || !comp_pin_valid(cb, b.pin_idx)) return 0;
     for (int i = 0; i < wire_count; i++) {
         if ((same_pin(wires[i].a, a) && same_pin(wires[i].b, b)) ||
             (same_pin(wires[i].a, b) && same_pin(wires[i].b, a)))

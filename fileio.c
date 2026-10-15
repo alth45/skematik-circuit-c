@@ -19,6 +19,8 @@ static const wchar_t *comp_type_name(CompType t) {
         case COMP_BATTERY:  return L"battery";
         case COMP_LED:      return L"led";
         case COMP_GROUND:   return L"ground";
+        case COMP_CAPACITOR:  return L"capacitor";
+        case COMP_TRANSISTOR: return L"transistor";
         default: return L"none";
     }
 }
@@ -35,6 +37,10 @@ static int comp_type_from_name(const char *s) {
     if (strcmp(s, "Battery") == 0 || strcmp(s, "BAT") == 0) return COMP_BATTERY;
     if (strcmp(s, "LED") == 0) return COMP_LED;
     if (strcmp(s, "Ground") == 0 || strcmp(s, "GND") == 0) return COMP_GROUND;
+    if (strcmp(s, "capacitor") == 0) return COMP_CAPACITOR;
+    if (strcmp(s, "Capacitor") == 0 || strcmp(s, "C") == 0 || strcmp(s, "CAP") == 0) return COMP_CAPACITOR;
+    if (strcmp(s, "transistor") == 0) return COMP_TRANSISTOR;
+    if (strcmp(s, "Transistor") == 0 || strcmp(s, "Q") == 0 || strcmp(s, "NPN") == 0) return COMP_TRANSISTOR;
     return COMP_NONE;
 }
 

@@ -30,8 +30,10 @@ static void with_rotation(HDC hdc, Component *c,
    Bodinya di bawah setelah draw_switch/draw_led didefinisikan. */
 static int sw_at_on = 0;
 static int led_at_lit = 0;
+static int tr_at_closed = 0;
 static void with_rotation_sw(HDC hdc, Component *c);
 static void with_rotation_led(HDC hdc, Component *c);
+static void with_rotation_tr(HDC hdc, Component *c);
 
 
 /* Semua draw_* menerima state run: sw_on (saklar), lit (LED menyala). */
@@ -172,8 +174,141 @@ static void draw_ground(HDC hdc, int x, int y, BOOL sel) {
 static void sw_at(HDC hdc, int x, int y, BOOL sel) {
     draw_switch(hdc, x, y, sel, sw_at_on);
 }
+static void draw_capacitor(HDC hdc, int x, int y, BOOL sel) {
+    HPEN pen = CreatePen(PS_SOLID, 2, sel ? RGB(50,128,255) : RGB(20,20,20));
+    HPEN old = (HPEN)SelectObject(hdc, pen);
+    HBRUSH ob = (HBRUSH)SelectObject(hdc, GetStockObject(NULL_BRUSH));
+    MoveToEx(hdc, x-40, y, NULL); LineTo(hdc, x-6, y);
+    MoveToEx(hdc, x+6, y, NULL); LineTo(hdc, x+40, y);
+    MoveToEx(hdc, x-6, y-15, NULL); LineTo(hdc, x-6, y+15);
+    MoveToEx(hdc, x+6, y-15, NULL); LineTo(hdc, x+6, y+15);
+    SelectObject(hdc, ob);
+    SelectObject(hdc, old);
+    DeleteObject(pen);
+    SetTextColor(hdc, RGB(80,80,80));
+    SetBkMode(hdc, TRANSPARENT);
+    TextOutW(hdc, x-4, y-28, L"C", 1);
+}
+
+/* Transistor NPN: lingkaran + bar basis vertikal.
+   pin0 = Kolektor (kiri), pin1 = Emitor (kanan + panah keluar),
+   pin2 = Basis (bawah, segaris bar). Kaki lurus tanpa siku. */
+
+
+static void draw_transistor(HDC hdc, int x, int y, BOOL sel, int tr_closed)
+{
+    // Warna simbol mengikuti status simulasi
+    COLORREF col = sel
+        ? RGB(50, 128, 255)
+        : RGB(20, 20, 20);
+
+    if (sim_running && tr_closed)
+        col = RGB(20, 150, 60);
+
+    HPEN pen = CreatePen(PS_SOLID, 2, col);
+    if (!pen) return;
+
+    HPEN oldPen = (HPEN)SelectObject(hdc, pen);
+    HBRUSH oldBrush = (HBRUSH)SelectObject(
+        hdc, GetStockObject(NULL_BRUSH));
+
+    // Simpan kondisi GDI agar fungsi tidak merusak state pemanggil
+    int oldBkMode = SetBkMode(hdc, TRANSPARENT);
+    COLORREF oldTextColor = GetTextColor(hdc);
+
+    // =====================================================
+    // 1. Lingkaran badan transistor
+    // =====================================================
+    Ellipse(hdc, x - 21, y - 21, x + 21, y + 21);
+
+    // =====================================================
+    // 2. Basis: terminal kiri dan garis basis vertikal
+    // =====================================================
+    MoveToEx(hdc, x - 40, y, NULL);
+    LineTo(hdc, x - 6, y);
+
+    MoveToEx(hdc, x - 6, y - 12, NULL);
+    LineTo(hdc, x - 6, y + 12);
+
+    // =====================================================
+    // 3. Kolektor: cabang kanan atas
+    // =====================================================
+    MoveToEx(hdc, x + 1, y - 7, NULL);
+    LineTo(hdc, x + 12, y - 15);
+    LineTo(hdc, x + 38, y - 30);
+
+    // =====================================================
+    // 4. Emitor: cabang kanan bawah
+    // =====================================================
+    MoveToEx(hdc, x + 1, y + 7, NULL);
+    LineTo(hdc, x + 12, y + 15);
+    LineTo(hdc, x + 38, y + 30);
+
+    // =====================================================
+    // 5. Panah NPN: mengarah keluar pada jalur emitor
+    // =====================================================
+    // Pangkal panah berada di sepanjang garis emitor.
+    // Ujung panah mengarah ke kanan-bawah.
+    POINT arrow[3] = {
+        { x + 22, y + 21 },
+        { x + 11, y + 17 },
+        { x + 17, y + 10 }
+    };
+
+    // Isi kepala panah agar tampak tegas
+    HBRUSH arrowBrush = CreateSolidBrush(col);
+    if (arrowBrush) {
+        HBRUSH previousBrush =
+            (HBRUSH)SelectObject(hdc, arrowBrush);
+
+        Polygon(hdc, arrow, 3);
+
+        SelectObject(hdc, previousBrush);
+        DeleteObject(arrowBrush);
+    }
+
+    // =====================================================
+    // 6. Label transistor
+    // =====================================================
+    SetTextColor(hdc, RGB(80, 80, 80));
+    TextOutW(hdc, x + 25, y - 10, L"Q", 1);
+
+    // Status simulasi
+    if (sim_running) {
+        const wchar_t *st = tr_closed ? L"ON" : L"OFF";
+
+        SetTextColor(
+            hdc,
+            tr_closed
+                ? RGB(20, 150, 60)
+                : RGB(200, 40, 40));
+
+        TextOutW(
+            hdc,
+            x - 10,
+            y - 39,
+            st,
+            (int)wcslen(st));
+    }
+
+    // =====================================================
+    // 7. Pulihkan seluruh state GDI
+    // =====================================================
+    SetTextColor(hdc, oldTextColor);
+    SetBkMode(hdc, oldBkMode);
+
+    SelectObject(hdc, oldBrush);
+    SelectObject(hdc, oldPen);
+
+    DeleteObject(pen);
+}
+
+
 static void led_at(HDC hdc, int x, int y, BOOL sel) {
     draw_led(hdc, x, y, sel, led_at_lit);
+}
+static void tr_at(HDC hdc, int x, int y, BOOL sel) {
+    draw_transistor(hdc, x, y, sel, tr_at_closed);
 }
 static void with_rotation_sw(HDC hdc, Component *c) {
     sw_at_on = c->on;
@@ -182,6 +317,10 @@ static void with_rotation_sw(HDC hdc, Component *c) {
 static void with_rotation_led(HDC hdc, Component *c) {
     led_at_lit = sim_comp_lit(c);
     with_rotation(hdc, c, led_at);
+}
+static void with_rotation_tr(HDC hdc, Component *c) {
+    tr_at_closed = sim_running ? sim_comp_conducting(c) : 0;
+    with_rotation(hdc, c, tr_at);
 }
 
 static void draw_pins(HDC hdc, Component *c) {
@@ -210,6 +349,8 @@ void draw_component(HDC hdc, Component *c) {
         case COMP_BATTERY:  with_rotation(hdc, c, draw_battery); break;
         case COMP_LED:      with_rotation_led(hdc, c); break;
         case COMP_GROUND:   with_rotation(hdc, c, draw_ground); break;
+        case COMP_CAPACITOR: with_rotation(hdc, c, draw_capacitor); break;
+        case COMP_TRANSISTOR: with_rotation_tr(hdc, c); break;
         default: break;
     }
     if (sel) {
