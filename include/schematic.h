@@ -55,7 +55,8 @@ typedef enum {
 
 /* Tool yang dipilih user di palette */
 typedef enum {
-    TOOL_SELECT = 0,   /* geser/select komponen, default */
+    TOOL_SELECT = 0,   /* geser/select komponen (Ctrl+klik = tambah ke seleksi), default */
+    TOOL_BOX,          /* blok/rangeleksi: drag kotak untuk memilih banyak komponen */
     TOOL_WIRE,         /* tarik kabel antar pin */
     TOOL_RESISTOR,
     TOOL_SWITCH,
@@ -100,8 +101,11 @@ typedef struct {
     PinRef a, b;
 } Wire;
 
-/* Jumlah tombol palette */
-#define BTN_COUNT 15
+/* Jumlah tombol palette (tambah 1: tool Blok/Multi-Select) */
+#define BTN_COUNT 16
+
+/* Batas seleksi multi (model.c) */
+#define MAX_SEL 256
 
 /* ===================== State Global (model.c) ===================== */
 extern Component comps[MAX_COMP];
@@ -120,6 +124,50 @@ extern int  wire_count;
 extern int wiring_active;
 extern PinRef wiring_from;
 extern int wiring_mx, wiring_my;
+
+/* ---- Multi-select / blok rangkaian (fitur "Blok") --------------------
+   selection[]  : daftar id komponen yang sedang terseleksi (unik, urut klik)
+   sel_count    : jumlah anggota seleksi
+   selected_id  : id komponen "primer" — selalu sama dengan anggota seleksi
+                  terakhir bila ada >1, atau -1 bila seleksi tunggal/kosong.
+   add_to_selection(id)     : tambah id ke seleksi (tolak duplikat/invalid)
+   toggle_selection(id)     : Ctrl+klik — masukkan/keluarkan id dari seleksi
+   clear_selection()        : kosongkan seleksi multi + selected_id
+   model_select_rect(x1,y1,x2,y2,add) : blok semua komponen yang PENUH
+                  berada dalam kotak (koordinat sudut bebas); add=1 ->
+                  gabungkan dengan seleksi yang ada (Shift+drag).
+   model_translate_selection(dx,dy) : geser SEMUA anggota seleksi sebesar
+                  (dx,dy) pixel (sudah di-snap ke grid oleh pemanggil).
+   model_delete_selection() : hapus seluruh anggota seleksi + kabel ikutannya.
+   model_duplicate_selection(dx,dy) : salin blok terpilih sebagai grup baru
+                  dengan offset (dx,dy); kabel internal ikut tersalin;
+                  seleksi berpindah ke salinan. Return jumlah salinan. */
+extern int selection[MAX_SEL];
+extern int sel_count;
+int  add_to_selection(int id);
+void toggle_selection(int id);
+void clear_selection(void);
+int  model_select_rect(int x1, int y1, int x2, int y2, int add);
+void model_translate_selection(int dx, int dy);
+int  model_delete_selection(void);
+int  model_duplicate_selection(int dx, int dy);
+
+/* ---- State drag kotak seleksi (events.c, digambar di draw.c) ----
+   box_selecting = 1 saat user menyeret kotak blok; sudut-sudut dalam
+   koordinat canvas. model_select_rect() dipanggil saat mouse-up. */
+extern int box_selecting;
+extern int box_x1, box_y1, box_x2, box_y2;
+
+/* ---- Drag multi (grup terseleksi ikut bergerak) ----
+   group_dragging = 1 saat grup hasil seleksi sedang diseret.
+   gd_* menyimpan posisi awal tiap anggota + offset grab (dipakai
+   on_mouse_move agar seluruh blok bergerak rigid tanpa akumulasi error). */
+#define MAX_GROUP_DRAG 256
+typedef struct { int idx; int x0, y0; } GroupDragItem;
+extern int group_dragging;
+extern GroupDragItem group_drag_items[MAX_GROUP_DRAG];
+extern int group_drag_n;
+extern int group_drag_ox, group_drag_oy; /* selisih pusat-grab (pixel mentah) */
 
 /* Tombol toolbar (atas) */
 extern const ToolKind btnTools[BTN_COUNT];
@@ -150,6 +198,7 @@ void draw_toolbar(HDC hdc, int W);
 #define IDM_EDIT_DELSEL   0x1112
 #define IDM_EDIT_ROTATE   0x1113
 #define IDM_EDIT_CLEAR    0x1114
+#define IDM_EDIT_SELECTALL 0x1115  /* Edit > Pilih Semua (Ctrl+A) */
 #define IDM_VIEW_GRID     0x1120
 #define IDM_VIEW_STATUS   0x1121
 #define IDM_VIEW_ZOOMIN   0x1122
@@ -184,6 +233,10 @@ int comp_pin_count(const Component *c);
 int comp_pin_valid(const Component *c, int pin_idx);
 void comp_pin_pos(const Component *c, int pin_idx, int *px, int *py);
 void comp_local_to_world(const Component *c, int lx, int ly, int *wx, int *wy);
+/* Setengah lebar/tinggi kotak pembatas komponen (memperhitungkan rotasi &
+   bentuk khusus transistor). Dipakai hit-test badan, blok seleksi, dan
+   gambar kotak seleksi grup. */
+void comp_bounding_half(const Component *c, int *hw, int *hh);
 int find_pin_at(int x, int y, PinRef *out, int *px, int *py);
 void model_add_component(CompType type, int x, int y);
 void model_remove_at(int x, int y);

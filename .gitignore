@@ -1,2 +1,2 @@
-*.exe
-/REKOMENDASI-FITUR.md
+*.o
+build_tmp/

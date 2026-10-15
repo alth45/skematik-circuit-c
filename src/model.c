@@ -16,6 +16,16 @@ int wiring_active = 0;
 PinRef wiring_from = { -1, -1 };
 int wiring_mx = 0, wiring_my = 0;
 
+/* ---- Multi-select / blok rangkaian ---- */
+int selection[MAX_SEL];
+int sel_count = 0;
+int box_selecting = 0;
+int box_x1 = 0, box_y1 = 0, box_x2 = 0, box_y2 = 0;
+int group_dragging = 0;
+GroupDragItem group_drag_items[MAX_GROUP_DRAG];
+int group_drag_n = 0;
+int group_drag_ox = 0, group_drag_oy = 0;
+
 /* Preferensi tampilan (diubah lewat menu View) */
 int g_show_grid   = 1;
 int g_show_status = 1;
@@ -24,14 +34,14 @@ int g_show_status = 1;
    Urutan: Select, Wire, Resistor, Switch, Battery, Sumber AC, LED, Ground,
    Capacitor, Transistor, Diode, Kapasitor Polar, LDR, Buzzer, Delete. + 4 tombol aksi. */
 const ToolKind btnTools[BTN_COUNT] = {
-    TOOL_SELECT, TOOL_WIRE,
+    TOOL_SELECT, TOOL_BOX, TOOL_WIRE,
     TOOL_RESISTOR, TOOL_SWITCH, TOOL_BATTERY, TOOL_ACSOURCE, TOOL_LED, TOOL_GROUND,
     TOOL_CAPACITOR, TOOL_TRANSISTOR, TOOL_DIODE, TOOL_CAPOLAR,
     TOOL_LDR, TOOL_BUZZER,
     TOOL_DELETE
 };
 const wchar_t *btnLabels[BTN_COUNT] = {
-    L"Select / Geser (V)", L"Kabel / Wire (W)",
+    L"Select / Geser (V)", L"Blok / Multi-Select (B)", L"Kabel / Wire (W)",
     L"Resistor (1)", L"Saklar / Switch (2)", L"Baterai (3)", L"Sumber AC (0)",
     L"LED (4)", L"Ground (5)",
     L"Kapasitor (6)", L"Transistor NPN (7)", L"Dioda (8)", L"Kapasitor Polar (9)",
@@ -53,13 +63,22 @@ Component *find_comp_by_id(int id) {
 
 Component *find_comp_at(int x, int y) {
     for (int i = comp_count - 1; i >= 0; i--) {
-        int hw = (comps[i].rot % 2 == 0) ? 48 : 38;
-        int hh = (comps[i].rot % 2 == 0) ? 38 : 48;
+        int hw, hh;
+        comp_bounding_half(&comps[i], &hw, &hh);
         int dx = abs(comps[i].x - x);
         int dy = abs(comps[i].y - y);
         if (dx < hw && dy < hh) return &comps[i];
     }
     return NULL;
+}
+
+/* Setengah kotak pembatas: default hw=48/hh=38 (bertukar saat rotasi
+   ganjil); transistor sedikit lebih besar karena kaki C/E menjulur. */
+void comp_bounding_half(const Component *c, int *hw, int *hh) {
+    int w = 48, h = 38;
+    if (c->type == COMP_TRANSISTOR) { w = 52; h = 42; }
+    if (c->rot % 2 != 0) { int t = w; w = h; h = t; }
+    *hw = w; *hh = h;
 }
 
 int comp_pin_count(const Component *c) {
@@ -139,6 +158,141 @@ int find_pin_at(int x, int y, PinRef *out, int *px, int *py) {
 
 static int same_pin(PinRef a, PinRef b) {
     return a.comp_id == b.comp_id && a.pin_idx == b.pin_idx;
+}
+
+/* ===================== Multi-Select / Blok Rangkaian ===================== */
+
+void clear_selection(void) {
+    sel_count = 0;
+    selected_id = -1;
+}
+
+int add_to_selection(int id) {
+    if (id < 0 || !find_comp_by_id(id)) return 0;   /* id tak dikenal -> tolak */
+    for (int i = 0; i < sel_count; i++)
+        if (selection[i] == id) return 0;           /* sudah ada -> duplikat ditolak */
+    if (sel_count >= MAX_SEL) return 0;             /* kapasitas penuh */
+    selection[sel_count++] = id;
+    selected_id = id;                              /* anggota terakhir = primer */
+    return 1;
+}
+
+void toggle_selection(int id) {
+    for (int i = 0; i < sel_count; i++) {
+        if (selection[i] == id) {                  /* sudah terpilih -> keluarkan */
+            for (int j = i; j < sel_count - 1; j++) selection[j] = selection[j + 1];
+            sel_count--;
+            selected_id = (sel_count > 0) ? selection[sel_count - 1] : -1;
+            return;
+        }
+    }
+    add_to_selection(id);                          /* belum ada -> masukkan */
+}
+
+/* Blok semua komponen yang PENUH berada dalam kotak (sudut bebas).
+   add=1: gabungkan dengan seleksi yang ada (Shift+drag). Return jumlah kena. */
+int model_select_rect(int x1, int y1, int x2, int y2, int add) {
+    int lx = (x1 < x2) ? x1 : x2, rx = (x1 < x2) ? x2 : x1;
+    int ty = (y1 < y2) ? y1 : y2, by = (y1 < y2) ? y2 : y1;
+    if (!add) { sel_count = 0; selected_id = -1; }
+    int n = 0;
+    for (int i = 0; i < comp_count; i++) {
+        int hw, hh;
+        comp_bounding_half(&comps[i], &hw, &hh);
+        if (comps[i].x - hw >= lx && comps[i].x + hw <= rx &&
+            comps[i].y - hh >= ty && comps[i].y + hh <= by) {
+            if (add) { if (add_to_selection(comps[i].id)) n++; }
+            else if (sel_count < MAX_SEL) {
+                selection[sel_count++] = comps[i].id;
+                selected_id = comps[i].id;
+                n++;
+            }
+        }
+    }
+    return n;
+}
+
+/* Geser seluruh anggota seleksi sebesar (dx,dy) pixel. */
+void model_translate_selection(int dx, int dy) {
+    if (dx == 0 && dy == 0) return;
+    for (int i = 0; i < sel_count; i++) {
+        Component *c = find_comp_by_id(selection[i]);
+        if (c) { c->x += dx; c->y += dy; }
+    }
+}
+
+/* Hapus semua anggota seleksi + kabel yang menempel padanya. Return jumlah. */
+int model_delete_selection(void) {
+    if (sim_running) return 0;               /* edit dikunci saat RUN */
+    int removed = 0;
+    while (sel_count > 0) {
+        Component *c = find_comp_by_id(selection[0]);
+        if (!c) {                            /* anggota basi -> buang dari daftar */
+            for (int j = 0; j < sel_count - 1; j++) selection[j] = selection[j + 1];
+            sel_count--;
+            continue;
+        }
+        int cx = c->x, cy = c->y;
+        model_remove_at(cx, cy);             /* juga membersihkan selected_id/dragging */
+        /* model_remove_at tidak menyentuh selection[] -> sinkronkan ulang */
+        for (int j = 0; j < sel_count; ) {
+            if (!find_comp_by_id(selection[j])) {
+                for (int k = j; k < sel_count - 1; k++) selection[k] = selection[k + 1];
+                sel_count--;
+                removed++;
+            } else j++;
+        }
+    }
+    sel_count = 0;
+    selected_id = -1;
+    sim_recompute();
+    return removed;
+}
+
+/* Salin blok terpilih sebagai grup baru dengan offset (dx,dy).
+   Kabel antar anggota ikut tersalin; seleksi berpindah ke salinan. */
+int model_duplicate_selection(int dx, int dy) {
+    if (sim_running) return 0;
+    if (sel_count == 0) return 0;
+    if (comp_count + sel_count > MAX_COMP) return 0;   /* tak cukup ruang */
+
+    int old_ids[MAX_SEL], new_ids[MAX_SEL];
+    int n = sel_count;
+    for (int i = 0; i < n; i++) old_ids[i] = selection[i];
+
+    for (int i = 0; i < n; i++) {
+        Component *c = find_comp_by_id(old_ids[i]);
+        if (!c) { new_ids[i] = -1; continue; }
+        CompType t = c->type;
+        double v = c->v;
+        int rot = c->rot, on = c->on;
+        model_add_component(t, c->x + dx, c->y + dy);  /* selected_id := id baru */
+        Component *nc = find_comp_by_id(selected_id);
+        if (nc) { nc->v = v; nc->rot = rot; nc->on = on; }
+        new_ids[i] = selected_id;
+    }
+
+    /* salin kabel internal (kedua ujungnya termasuk yang diduplikasi) */
+    int nw = wire_count;                               /* batas kabel lama */
+    for (int i = 0; i < wire_count && i < nw; i++) {
+        int ai = -1, bi = -1;
+        for (int k = 0; k < n; k++) {
+            if (wires[i].a.comp_id == old_ids[k]) ai = k;
+            if (wires[i].b.comp_id == old_ids[k]) bi = k;
+        }
+        if (ai >= 0 && bi >= 0 && new_ids[ai] > 0 && new_ids[bi] > 0) {
+            PinRef a = { new_ids[ai], wires[i].a.pin_idx };
+            PinRef b = { new_ids[bi], wires[i].b.pin_idx };
+            model_add_wire(a, b);
+        }
+    }
+
+    /* seleksi kini menunjuk ke salinan baru */
+    sel_count = 0;
+    for (int i = 0; i < n; i++)
+        if (new_ids[i] > 0) add_to_selection(new_ids[i]);
+    sim_recompute();
+    return n;
 }
 
 /* ===================== Operasi Model ===================== */
@@ -304,6 +458,14 @@ void model_remove_at(int x, int y) {
     if (selected_id == dead_id) selected_id = -1;
     if (dragging_id == dead_id) dragging_id = -1;
     if (wiring_active && wiring_from.comp_id == dead_id) wiring_active = 0;
+    /* keluarkan dari seleksi multi agar daftar tidak basi */
+    for (int i = 0; i < sel_count; ) {
+        if (selection[i] == dead_id) {
+            for (int j = i; j < sel_count - 1; j++) selection[j] = selection[j + 1];
+            sel_count--;
+        } else i++;
+    }
+    if (sel_count > 0 && selected_id < 0) selected_id = selection[sel_count - 1];
 }
 
 void model_clear_all(void) {
@@ -312,6 +474,10 @@ void model_clear_all(void) {
     selected_id = -1;
     dragging_id = -1;
     wiring_active = 0;
+    sel_count = 0;
+    group_dragging = 0;
+    group_drag_n = 0;
+    box_selecting = 0;
     for (int i = 0; i < MAX_COMP; i++) { comps[i].on = 0; comps[i].v = 0.0; }
     sim_recompute();
 }
