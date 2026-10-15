@@ -255,11 +255,9 @@ void sim_recompute(void) {
         static int nn_led[MAX_COMP];      /* jumlah net untaian per LED */
         static int start_net_[MAX_COMP];  /* indeks net awal per LED */
         double vsrc_max = 0.0;
-        int vsrc_is_ac = 0;
         for (int i = 0; i < comp_count; i++) {
             if (comps[i].type == COMP_BATTERY && comps[i].v > vsrc_max) {
                 vsrc_max = comps[i].v;
-                vsrc_is_ac = 0;
             }
         }
         if (vsrc_max <= 0.0) {
@@ -267,7 +265,6 @@ void sim_recompute(void) {
             for (int i = 0; i < comp_count; i++) {
                 if (comps[i].type == COMP_ACSOURCE && comps[i].v > vsrc_max) {
                     vsrc_max = comps[i].v;
-                    vsrc_is_ac = 1;
                 }
             }
         }
@@ -291,6 +288,7 @@ void sim_recompute(void) {
             if (sn < 0) { nn_led[i] = 0; start_net_[i] = -1; continue; }
             nn_led[i] = nn;
             start_net_[i] = sn;
+            (void)nn_led[i]; (void)start_net_[i]; /* info debug per-LED, non-fatal */
 
             double rsum = 0.0;
             double vdrop = (comps[i].v > 0.0 ? comps[i].v : VF_LED_DEFAULT);

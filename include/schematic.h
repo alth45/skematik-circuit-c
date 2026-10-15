@@ -116,7 +116,7 @@ extern const wchar_t *btnLabels[BTN_COUNT]; /* nama tool = tooltip/status */
 #define OPEN_BTN_INDEX  (BTN_COUNT + 2) /* tombol aksi Open JSON */
 #define RUN_BTN_INDEX   (BTN_COUNT + 3) /* tombol aksi Run/Stop simulasi */
 
-/* Toolbar: hit-test & gambar (toolbar.c).
+/* Toolbar: hit-test & gambar (toolbar_palette.c + toolbar_actions.c).
    toolbar_hit: -1 = tidak kena; 0..BTN_COUNT-1 = indeks tool;
    CLEAR/SAVE/OPEN_BTN_INDEX = tombol aksi. */
 int toolbar_hit(int x, int y);
@@ -126,7 +126,7 @@ void draw_toolbar(HDC hdc, int W);
 /* ===================== Menu Bar klasik (File/Edit/View/Simulasi/Bantu) ====
    Digambar manual di strip paling atas window (tinggi MENUBAR_H), DI ATAS
    toolbar tombol komponen. Koordinat fungsi ini memakai koordinat client
-   window utuh (belum di-offset). — toolbar.c */
+   window utuh (belum di-offset). — toolbar_menubar.c */
 #define IDM_FILE_NEW      0x1101
 #define IDM_FILE_OPEN     0x1102
 #define IDM_FILE_SAVE     0x1103

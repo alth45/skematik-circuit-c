@@ -64,7 +64,9 @@ Isi `build.bat`:
 ```bat
 gcc -O2 -Wall -mwindows -municode -DUNICODE -D_UNICODE -Iinclude ^
     src\main.c src\model.c src\fileio.c src\sim.c ^
-    src\ui\draw.c src\ui\events.c src\ui\toolbar.c ^
+    src\ui\draw.c src\ui\events.c ^
+    src\ui\toolbar_menubar.c src\ui\toolbar_symbols.c ^
+    src\ui\toolbar_actions.c src\ui\toolbar_palette.c ^
     src\komponen\komponen_resistor.c src\komponen\komponen_switch.c ^
     src\komponen\komponen_battery.c src\komponen\komponen_led.c ^
     src\komponen\komponen_ground.c src\komponen\komponen_capacitor.c ^
@@ -245,7 +247,10 @@ schematic-c/
                        pin, kabel hot/preview, canvas double-buffer
       events.c         mouse (drag/wiring/toggle/double-klik/klik-kanan) +
                        keyboard (0-9, R, F5, Ctrl+S/O, Del, Esc) + menu konteks
-      toolbar.c        toolbar 17 ikon + hit-test + status
+      toolbar_menubar.c  menu File/Edit/View/Simulasi/Bantu + popup + aksi
+      toolbar_symbols.c  ikon mini tiap tool + shortname R/SW/BAT/AC/LED/...
+      toolbar_actions.c  gambar tombol aksi Clear/Save/Open/Run
+      toolbar_palette.c  hit-test + draw_toolbar strip tombol + status
     komponen/
       komponen_resistor.c    simbol resistor (draw_k_resistor)
       komponen_switch.c      simbol saklar + status ON/OFF (draw_k_switch)
@@ -271,7 +276,7 @@ draw/main baca sim_wire_hot / sim_comp_lit / sim_message.
 | Error | Solusi |
 |---|---|
 | `too few arguments to SetViewportOrgEx` | Pakai 4 argumen: `SetViewportOrgEx(hdc, x, y, NULL)`. |
-| `undefined reference to draw_toolbar` | `toolbar.c` belum ikut compile atau korup. Pastikan build.bat memuat semua file. |
+| `undefined reference to draw_toolbar` | File `toolbar_*.c` belum ikut compile. Pastikan build.bat memuat semua file. |
 | `invalid storage class for function` | Fungsi tertulis di dalam fungsi lain. Pisahkan ke level file. |
 | `continue/break not within loop` | Sisa parser di luar `while(1)`. Rapikan blok load JSON. |
 | Tombol `R` tidak jalan | Klik canvas dulu agar fokus keyboard ke window. |
