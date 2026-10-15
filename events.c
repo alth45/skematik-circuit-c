@@ -9,6 +9,8 @@ static CompType tool_to_comp(ToolKind t) {
         case TOOL_GROUND:     return COMP_GROUND;
         case TOOL_CAPACITOR:  return COMP_CAPACITOR;
         case TOOL_TRANSISTOR: return COMP_TRANSISTOR;
+        case TOOL_DIODE:      return COMP_DIODE;
+        case TOOL_CAPOLAR:    return COMP_CAPOLAR;
         default: return COMP_NONE;
     }
 }
@@ -172,6 +174,8 @@ void on_key_down(HWND hwnd, WPARAM key) {
     else if (key == '5') { current_tool = TOOL_GROUND; }
     else if (key == '6') { current_tool = TOOL_CAPACITOR; }
     else if (key == '7') { current_tool = TOOL_TRANSISTOR; }
+    else if (key == '8') { current_tool = TOOL_DIODE; }
+    else if (key == '9') { current_tool = TOOL_CAPOLAR; }
     else if (key == VK_DELETE || key == VK_BACK) {
         if (sim_running) return; /* hapus dikunci saat RUN */
         if (selected_id >= 0) {

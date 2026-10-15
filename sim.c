@@ -11,6 +11,7 @@ int sim_has_battery = 0;
 static int parent_[MAX_COMP * 3];
 static int lit_[MAX_COMP];
 static int cond_[MAX_COMP];
+static int dfwd_[MAX_COMP];   /* 1 = dioda menghantar forward (A->K) */
 static int hot_[MAX_WIRES];
 
 static int find_root(int a) {
@@ -33,7 +34,7 @@ static int node_of(int comp_idx, int pin) {
 
 void sim_recompute(void) {
     for (int i = 0; i < MAX_COMP * 3; i++) parent_[i] = i;
-    for (int i = 0; i < MAX_COMP; i++) { lit_[i] = 0; cond_[i] = 0; }
+    for (int i = 0; i < MAX_COMP; i++) { lit_[i] = 0; cond_[i] = 0; dfwd_[i] = 0; }
     for (int i = 0; i < MAX_WIRES; i++) hot_[i] = 0;
     sim_led_count = 0;
     sim_short = 0;
@@ -49,7 +50,8 @@ void sim_recompute(void) {
     }
 
     /* Pass 1: penghantar pasif. Resistor & saklar-ON tembus.
-       Kapasitor = blokir DC (tidak digabung). Transistor ditunda. */
+       Kapasitor (biasa & polar) = blokir DC (tidak digabung).
+       Dioda ditunda (butuh arah tegangan), transistor ditunda. */
     for (int i = 0; i < comp_count; i++) {
         if (comps[i].type == COMP_RESISTOR) {
             unite(node_of(i, 0), node_of(i, 1));
@@ -73,6 +75,33 @@ void sim_recompute(void) {
     for (int a = 0; a < n_plus; a++)
         for (int b = 0; b < n_minus; b++)
             if (plus_root[a] == minus_root[b]) sim_short = 1;
+
+    /* Pass 1b: dioda ideal — menghantar satu arah A->K jika anoda(pin0)
+       terhubung ke net (+). Keputusan diambil dari net pass-1,
+       baru sesudahnya pin A & K digabung (stabil, tanpa urutan sensitif). */
+    {
+        int di_on[MAX_COMP] = { 0 };
+        for (int i = 0; i < comp_count; i++) {
+            if (comps[i].type != COMP_DIODE) continue;
+            int ra = find_root(node_of(i, 0));
+            for (int k = 0; k < n_plus; k++)
+                if (plus_root[k] == ra) { di_on[i] = 1; break; }
+        }
+        for (int i = 0; i < comp_count; i++)
+            if (di_on[i]) { dfwd_[i] = 1; unite(node_of(i, 0), node_of(i, 1)); }
+        /* root bisa bergeser setelah union A-K -> segarkan acuan (+)/(-)
+           SEBELUM pass-2 & evaluasi LED (sama seperti pada transistor).
+           Catatan: sim_short sengaja TIDAK dihitung ulang — dioda ideal
+           yang menghubungkan (+) ke (-) tetap dilaporkan sebagai korslet. */
+        for (int i = 0; i < comp_count; i++) {
+            if (comps[i].type == COMP_BATTERY) {
+                plus_root[i]   = find_root(node_of(i, 0));
+                minus_root[i]  = find_root(node_of(i, 1));
+            } else if (comps[i].type == COMP_GROUND) {
+                minus_root[i]  = find_root(node_of(i, 0));
+            }
+        }
+    }
 
     /* Pass 2: transistor NPN — basis kena (+) dan emitor kena (-)
        => C-E tembus (gabungkan pin0 & pin1). Cek dulu, gabung sesudahnya
@@ -150,6 +179,13 @@ int sim_comp_lit(const Component *c) {
     int i = (int)(c - comps);
     if (i < 0 || i >= comp_count) return 0;
     return lit_[i];
+}
+
+int sim_diode_fwd(const Component *c) {
+    if (!c || c->type != COMP_DIODE) return 0;
+    int i = (int)(c - comps);
+    if (i < 0 || i >= comp_count) return 0;
+    return dfwd_[i];
 }
 
 int sim_comp_conducting(const Component *c) {

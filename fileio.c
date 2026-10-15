@@ -21,6 +21,8 @@ static const wchar_t *comp_type_name(CompType t) {
         case COMP_GROUND:   return L"ground";
         case COMP_CAPACITOR:  return L"capacitor";
         case COMP_TRANSISTOR: return L"transistor";
+        case COMP_DIODE:      return L"diode";
+        case COMP_CAPOLAR:    return L"capolar";
         default: return L"none";
     }
 }
@@ -41,6 +43,10 @@ static int comp_type_from_name(const char *s) {
     if (strcmp(s, "Capacitor") == 0 || strcmp(s, "C") == 0 || strcmp(s, "CAP") == 0) return COMP_CAPACITOR;
     if (strcmp(s, "transistor") == 0) return COMP_TRANSISTOR;
     if (strcmp(s, "Transistor") == 0 || strcmp(s, "Q") == 0 || strcmp(s, "NPN") == 0) return COMP_TRANSISTOR;
+    if (strcmp(s, "diode") == 0 || strcmp(s, "Diode") == 0 || strcmp(s, "D") == 0) return COMP_DIODE;
+    if (strcmp(s, "capolar") == 0 || strcmp(s, "Capolar") == 0 ||
+        strcmp(s, "capacitor_polar") == 0 || strcmp(s, "electrolytic") == 0 ||
+        strcmp(s, "CP") == 0) return COMP_CAPOLAR;
     return COMP_NONE;
 }
 
