@@ -187,6 +187,33 @@ void show_context_menu(HWND hwnd, int sx, int sy, Component *c) {
 }
 
 /* ===================== Event Handler ===================== */
+
+/* Helper: mulai drag GRUP (semua anggota seleksi bergerak rigid).
+   Menyimpan posisi awal tiap anggota + offset grab agar on_mouse_move
+   bisa menempatkan ulang seluruh blok tanpa akumulasi error pembulatan. */
+static void begin_group_drag(HWND hwnd, Component *hit, int x, int y) {
+    group_drag_n = 0;
+    /* item[0] HARUS komponen yang di-grab (anchor delta drag) */
+    group_drag_items[group_drag_n].idx = (int)(hit - comps);
+    group_drag_items[group_drag_n].x0 = hit->x;
+    group_drag_items[group_drag_n].y0 = hit->y;
+    group_drag_n++;
+    for (int i = 0; i < sel_count && group_drag_n < MAX_GROUP_DRAG; i++) {
+        if (selection[i] == hit->id) continue;   /* sudah tercatat sebagai anchor */
+        Component *c = find_comp_by_id(selection[i]);
+        if (!c) continue;
+        group_drag_items[group_drag_n].idx = (int)(c - comps);
+        group_drag_items[group_drag_n].x0 = c->x;
+        group_drag_items[group_drag_n].y0 = c->y;
+        group_drag_n++;
+    }
+    group_drag_ox = hit->x - x;   /* offset grab dalam pixel mentah */
+    group_drag_oy = hit->y - y;
+    group_dragging = 1;
+    dragging_id = -1;
+    SetCapture(hwnd);
+}
+
 void on_lbutton_down(HWND hwnd, int x, int y) {
     /* MODE RUN: klik saklar = toggle ON/OFF, klik LDR = toggle Terang/Gelap */
     if (sim_running) {
@@ -208,7 +235,7 @@ void on_lbutton_down(HWND hwnd, int x, int y) {
         } else if (hit) {
             selected_id = hit->id;
         } else {
-            selected_id = -1;
+            clear_selection();
         }
         InvalidateRect(hwnd, NULL, FALSE);
         return;
@@ -223,6 +250,18 @@ void on_lbutton_down(HWND hwnd, int x, int y) {
     }
 
     if (current_tool == TOOL_DELETE) {
+        /* Delete di atas anggota seleksi = hapus SELURUH blok (multi-delete) */
+        Component *hit = find_comp_at(x, y);
+        if (hit && sel_count > 1) {
+            int i;
+            for (i = 0; i < sel_count; i++) if (selection[i] == hit->id) break;
+            if (i < sel_count) {
+                int n = model_delete_selection();
+                set_status(L"%d komponen (blok terpilih) dihapus.", n);
+                InvalidateRect(hwnd, NULL, FALSE);
+                return;
+            }
+        }
         model_remove_at(x, y);
         InvalidateRect(hwnd, NULL, FALSE);
         return;
@@ -240,9 +279,19 @@ void on_lbutton_down(HWND hwnd, int x, int y) {
         return;
     }
 
+    /* TOOL_BOX: mulai drag kotak seleksi (blok rangkaian) */
+    if (current_tool == TOOL_BOX) {
+        box_selecting = 1;
+        box_x1 = box_y1 = box_x2 = box_y2 = 0; /* aman sampai move pertama */
+        box_x1 = x; box_y1 = y; box_x2 = x; box_y2 = y;
+        SetCapture(hwnd);
+        InvalidateRect(hwnd, NULL, FALSE);
+        return;
+    }
+
     /* TOOL_SELECT: prioritas pin -> mulai wiring cepat,
-       kalau tidak kena pin -> drag body komponen */
-    {
+       kalau tidak kena pin -> pilih/drag (tunggal atau grup) */
+    if (current_tool == TOOL_SELECT) {
         PinRef p; int px, py;
         if (find_pin_at(x, y, &p, &px, &py)) {
             wiring_active = 1;
@@ -253,22 +302,54 @@ void on_lbutton_down(HWND hwnd, int x, int y) {
             InvalidateRect(hwnd, NULL, FALSE);
             return;
         }
-    }
 
-    Component *hit = find_comp_at(x, y);
-    if (hit) {
-        selected_id = hit->id;
-        dragging_id = hit->id;
-        drag_dx = hit->x - x;
-        drag_dy = hit->y - y;
-        SetCapture(hwnd);
-    } else {
-        selected_id = -1;
+        BOOL ctrl = (GetKeyState(VK_CONTROL) & 0x8000) != 0;
+        Component *hit = find_comp_at(x, y);
+        if (hit) {
+            if (ctrl) {
+                toggle_selection(hit->id);          /* Ctrl+klik: tambah/keluar */
+                InvalidateRect(hwnd, NULL, FALSE);
+                return;
+            }
+            int already = 0;
+            for (int i = 0; i < sel_count; i++)
+                if (selection[i] == hit->id) { already = 1; break; }
+            if (already && sel_count > 1) {
+                begin_group_drag(hwnd, hit, x, y);  /* drag seluruh blok */
+            } else {
+                clear_selection();                  /* seleksi tunggal baru */
+                add_to_selection(hit->id);
+                dragging_id = hit->id;              /* drag satu komponen */
+                drag_dx = hit->x - x;
+                drag_dy = hit->y - y;
+                SetCapture(hwnd);
+            }
+        } else {
+            clear_selection();                      /* klik kosong: batal pilih */
+        }
+        InvalidateRect(hwnd, NULL, FALSE);
+        return;
     }
-    InvalidateRect(hwnd, NULL, FALSE);
 }
 
 void on_lbutton_up(HWND hwnd, int x, int y) {
+    if (box_selecting) {
+        box_selecting = 0;
+        BOOL shift = (GetKeyState(VK_SHIFT) & 0x8000) != 0;
+        box_x2 = x; box_y2 = y;
+        int n = model_select_rect(box_x1, box_y1, box_x2, box_y2, shift ? 1 : 0);
+        if (n == 1 && !shift) {
+            /* satu komponen saja -> jadikan seleksi tunggal biasa */
+        } else if (n > 0) {
+            set_status(L"Blok: %d komponen terpilih — drag untuk memindah grup, "
+                       L"Del menghapus, Ctrl+D menduplikat.", n);
+        } else {
+            set_status(L"Blok: tidak ada komponen yang terkena kotak.");
+        }
+        ReleaseCapture();
+        InvalidateRect(hwnd, NULL, FALSE);
+        return;
+    }
     if (wiring_active) {
         PinRef dst;
         if (find_pin_at(x, y, &dst, NULL, NULL)) {
@@ -282,6 +363,14 @@ void on_lbutton_up(HWND hwnd, int x, int y) {
         InvalidateRect(hwnd, NULL, FALSE);
         return;
     }
+    if (group_dragging) {
+        group_dragging = 0;
+        group_drag_n = 0;
+        ReleaseCapture();
+        sim_recompute();
+        InvalidateRect(hwnd, NULL, FALSE);
+        return;
+    }
     if (dragging_id >= 0) {
         dragging_id = -1;
         ReleaseCapture();
@@ -292,7 +381,9 @@ void on_lbutton_up(HWND hwnd, int x, int y) {
 void on_rbutton_down(HWND hwnd, int x, int y) {
     if (sim_running) return; /* edit dikunci saat RUN */
     dragging_id = -1;
+    group_dragging = 0;
     wiring_active = 0;
+    box_selecting = 0;
     Component *hit = find_comp_at(x, y);
     POINT pt; GetCursorPos(&pt);
     if (hit) {
@@ -350,8 +441,29 @@ void on_lbutton_dblclk(HWND hwnd, int x, int y) {
 }
 
 void on_mouse_move(HWND hwnd, int x, int y) {
+    if (box_selecting) {
+        box_x2 = x; box_y2 = y;
+        InvalidateRect(hwnd, NULL, FALSE);
+        return;
+    }
     if (wiring_active) {
         wiring_mx = x; wiring_my = y;
+        InvalidateRect(hwnd, NULL, FALSE);
+        return;
+    }
+    if (group_dragging && group_drag_n > 0) {
+        /* posisi "ideal" komponen yang di-grab, lalu dibulatkan ke grid;
+           seluruh grup digeser dengan delta yang sama (rigid, tetap se-grid).
+           items[0] selalu anggota yang sedang di-grab (lihat begin_group_drag). */
+        int nx = snap(x + group_drag_ox);
+        int ny = snap(y + group_drag_oy);
+        int dx = nx - group_drag_items[0].x0;
+        int dy = ny - group_drag_items[0].y0;
+        for (int i = 0; i < group_drag_n; i++) {
+            Component *c = &comps[group_drag_items[i].idx];
+            c->x = group_drag_items[i].x0 + dx;
+            c->y = group_drag_items[i].y0 + dy;
+        }
         InvalidateRect(hwnd, NULL, FALSE);
         return;
     }
@@ -378,15 +490,56 @@ void on_key_down(HWND hwnd, WPARAM key) {
             InvalidateRect(hwnd, NULL, FALSE);
             return;
         }
+        if (key == 'A' || key == 'a') {          /* Ctrl+A: pilih semua */
+            current_tool = TOOL_SELECT;
+            sel_count = 0; selected_id = -1;
+            for (int i = 0; i < comp_count; i++) add_to_selection(comps[i].id);
+            set_status(L"%d komponen terpilih (semua).", sel_count);
+            InvalidateRect(hwnd, NULL, FALSE);
+            return;
+        }
+        if (key == 'D' || key == 'd') {          /* Ctrl+D: duplikat blok */
+            if (sim_running) return;
+            if (sel_count > 1) {
+                int n = model_duplicate_selection(3 * GRID, 3 * GRID);
+                if (n > 0) set_status(L"Blok %d komponen diduplikat.", n);
+                else set_status(L"Duplikat gagal: tidak ada ruang/komponen.");
+            } else if (selected_id >= 0) {
+                Component *c = find_comp_by_id(selected_id);
+                if (c) {
+                    CompType t = c->type; double v = c->v;
+                    int rot = c->rot, on = c->on;
+                    model_add_component(t, c->x + 3 * GRID, c->y + 3 * GRID);
+                    Component *n = find_comp_by_id(selected_id);
+                    if (n) { n->v = v; n->rot = rot; n->on = on; sim_recompute(); }
+                    set_status(L"Komponen diduplikat.");
+                }
+            }
+            InvalidateRect(hwnd, NULL, FALSE);
+            return;
+        }
+        /* Ctrl + tool shortcut (mis. Ctrl+B untuk Blok) jangan dianggap B/LDR */
+        if (key == 'B' || key == 'b' || key == 'L' || key == 'l' ||
+            key == 'U' || key == 'u' || key == 'V' || key == 'v' ||
+            key == 'W' || key == 'w') return;
     }
     if (key == 'R' || key == 'r') {
         if (sim_running) return; /* rotasi dikunci saat RUN */
-        /* Utamakan yang sedang di-drag, kalau tidak ada pakai selected */
+        /* Utamakan yang sedang di-drag, kalau tidak ada pakai seleksi
+           (grup terputar semua — rotasi tiap anggota di sekitar pusatnya) */
         int id = (dragging_id >= 0) ? dragging_id : selected_id;
         Component *c = find_comp_by_id(id);
         if (!c) return;
-        selected_id = c->id;
-        c->rot = (c->rot + 1) % 4;
+        if (sel_count > 1) {
+            for (int i = 0; i < sel_count; i++) {
+                Component *g = find_comp_by_id(selection[i]);
+                if (g) g->rot = (g->rot + 1) % 4;
+            }
+            set_status(L"Blok %d komponen diputar 90\xB0.", sel_count);
+        } else {
+            selected_id = c->id;
+            c->rot = (c->rot + 1) % 4;
+        }
         InvalidateRect(hwnd, NULL, FALSE);
         return;
     }
@@ -398,6 +551,7 @@ void on_key_down(HWND hwnd, WPARAM key) {
     }
     /* Shortcut tool toolbar */
     if (key == 'V' || key == 'v') { current_tool = TOOL_SELECT; }
+    else if (key == 'B' || key == 'b') { current_tool = TOOL_BOX; }
     else if (key == 'W' || key == 'w') { current_tool = TOOL_WIRE; }
     else if (key == '1') { current_tool = TOOL_RESISTOR; }
     else if (key == '2') { current_tool = TOOL_SWITCH; }
@@ -413,6 +567,13 @@ void on_key_down(HWND hwnd, WPARAM key) {
     else if (key == 'U' || key == 'u') { current_tool = TOOL_BUZZER; }
     else if (key == VK_DELETE || key == VK_BACK) {
         if (sim_running) return; /* hapus dikunci saat RUN */
+        if (sel_count > 1) {
+            /* multi-select: hapus SELURUH blok sekaligus */
+            int n = model_delete_selection();
+            set_status(L"%d komponen (blok terpilih) dihapus.", n);
+            InvalidateRect(hwnd, NULL, FALSE);
+            return;
+        }
         if (selected_id >= 0) {
             Component *c = find_comp_by_id(selected_id);
             if (c) { model_remove_at(c->x, c->y); sim_recompute(); }
@@ -420,8 +581,10 @@ void on_key_down(HWND hwnd, WPARAM key) {
         }
         return;
     } else if (key == VK_ESCAPE) {
-        selected_id = -1;
+        clear_selection();
         dragging_id = -1;
+        group_dragging = 0;
+        box_selecting = 0;
         wiring_active = 0;
         InvalidateRect(hwnd, NULL, FALSE);
         return;
@@ -429,6 +592,7 @@ void on_key_down(HWND hwnd, WPARAM key) {
         return;
     }
     dragging_id = -1;
+    group_dragging = 0;
     wiring_active = 0;
     InvalidateRect(hwnd, NULL, FALSE);
 }

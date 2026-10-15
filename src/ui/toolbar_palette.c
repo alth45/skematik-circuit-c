@@ -80,7 +80,8 @@ void draw_toolbar(HDC hdc, int W) {
             toolbar_draw_symbol(hdc, tool, bx + TOOLBAR_BTN_W / 2, by + 15, active);
             const wchar_t *nm = toolbar_tool_shortname(tool);
             int offx = (tool == TOOL_SELECT) ? 13 :
-                       (tool == TOOL_WIRE) ? 17 : 14;
+                       (tool == TOOL_WIRE) ? 17 :
+                       (tool == TOOL_BOX) ? 16 : 14;
             SetTextColor(hdc, active ? RGB(30,90,200) : RGB(90,90,90));
             SetBkMode(hdc, TRANSPARENT);
             TextOutW(hdc, bx + offx, by + 30, nm, (int)wcslen(nm));

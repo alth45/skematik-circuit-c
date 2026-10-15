@@ -21,6 +21,7 @@ static int parent_[MAX_COMP * 3];
 static int lit_[MAX_COMP];
 static int cond_[MAX_COMP];
 static int dfwd_[MAX_COMP];   /* 1 = dioda menghantar forward (A->K) */
+static int buzz_[MAX_COMP];   /* 1 = buzzer ini aktif (berbunyi) saat RUN */
 static int hot_[MAX_WIRES];
 static int blown_[MAX_COMP];  /* 1 = LED meledak (kelebihan arus/tegangan) */
 static double ilead_[MAX_COMP]; /* arus hasil hitung per komponen (A); -1 = tak terdefinisi */
@@ -100,7 +101,8 @@ static void net_heads_from(int start, int *head, int nhcap, int *nn_out) {
 void sim_recompute(void) {
     for (int i = 0; i < MAX_COMP * 3; i++) parent_[i] = i;
     for (int i = 0; i < MAX_COMP; i++) {
-        lit_[i] = 0; cond_[i] = 0; dfwd_[i] = 0; blown_[i] = 0; ilead_[i] = -1.0;
+        lit_[i] = 0; cond_[i] = 0; dfwd_[i] = 0; buzz_[i] = 0;
+        blown_[i] = 0; ilead_[i] = -1.0;
     }
     for (int i = 0; i < MAX_WIRES; i++) hot_[i] = 0;
     sim_led_count = 0;
@@ -139,6 +141,12 @@ void sim_recompute(void) {
     }
     for (int i = 0; i < comp_count; i++) {
         if (comps[i].type == COMP_RESISTOR) {
+            unite(node_of(i, 0), node_of(i, 1));
+        } else if (comps[i].type == COMP_LDR) {
+            /* LDR = resistor variabel: selalu menghantar (nilai ikut cahaya) */
+            unite(node_of(i, 0), node_of(i, 1));
+        } else if (comps[i].type == COMP_BUZZER) {
+            /* Buzzer ideal: impedansi rendah -> tembus untuk analisis net */
             unite(node_of(i, 0), node_of(i, 1));
         } else if (comps[i].type == COMP_SWITCH && comps[i].on) {
             unite(node_of(i, 0), node_of(i, 1));
@@ -281,6 +289,25 @@ void sim_recompute(void) {
             lit_[i] = 1;
             sim_led_count++;
 
+            /* Buzzer yang segaris ikut aktif (berbunyi) bila loop LED ini hidup.
+               (Pendekatan visual: buzzer seri/paralel pada loop bertegangan.) */
+            for (int b = 0; b < comp_count; b++) {
+                if (comps[b].type != COMP_BUZZER) continue;
+                int rb0 = find_root(node_of(b, 0));
+                int rb1 = find_root(node_of(b, 1));
+                int bp = 0, bm = 0;
+                for (int k = 0; k < n_plus; k++) {
+                    if (plus_root[k] == rb0) bp = 1;
+                    if (plus_root[k] == rb1) bp = 1;
+                }
+                for (int k = 0; k < n_minus; k++) {
+                    if (minus_root[k] == rb0) bm = 1;
+                    if (minus_root[k] == rb1) bm = 1;
+                }
+                if ((bp && bm) || (rb0 == r0 || rb1 == r0 || rb0 == r1 || rb1 == r1))
+                    buzz_[b] = 1;
+            }
+
             /* bangun untaian net dari anoda mengikuti kabel saja */
             int nn = 0;
             net_heads_from(node_of(i, 0), head_, NETQ_MAX, &nn);
@@ -303,6 +330,12 @@ void sim_recompute(void) {
                 int other_pin;
                 if (hc->type == COMP_RESISTOR) {
                     rsum += hc->v;
+                } else if (hc->type == COMP_LDR) {
+                    /* R efektif ikut cahaya: TERANG ~1% R gelap */
+                    double reff = sim_ldr_effective_r(hc);
+                    rsum += (reff >= 0.0) ? reff : 0.0;
+                } else if (hc->type == COMP_BUZZER) {
+                    /* impedansi buzzer diabaikan (ideal) */
                 } else if (hc->type == COMP_DIODE && dfwd_[h]) {
                     vdrop += (hc->v > 0.0 ? hc->v : VF_DIODE);
                 } else if (hc->type == COMP_SWITCH && hc->on) {
@@ -358,6 +391,18 @@ void sim_recompute(void) {
         for (int k = 0; k < n_plus; k++)
             if (plus_root[k] == r) { hot_[i] = 1; break; }
     }
+
+    /* Buzzer mandiri: berbunyi bila pin0 di net (+) dan pin1 di net (-),
+       walau tidak ada LED pada loop (mis. AC -> buzzer langsung). */
+    for (int i = 0; i < comp_count; i++) {
+        if (comps[i].type != COMP_BUZZER || buzz_[i]) continue;
+        int r0 = find_root(node_of(i, 0));
+        int r1 = find_root(node_of(i, 1));
+        int on_plus = 0, on_minus = 0;
+        for (int k = 0; k < n_plus; k++) if (plus_root[k] == r0) on_plus = 1;
+        for (int k = 0; k < n_minus; k++) if (minus_root[k] == r1) on_minus = 1;
+        if (on_plus && on_minus) buzz_[i] = 1;
+    }
 }
 
 void sim_set_running(int on) {
@@ -399,6 +444,21 @@ int sim_comp_conducting(const Component *c) {
     int i = (int)(c - comps);
     if (i < 0 || i >= comp_count) return 0;
     return cond_[i];
+}
+
+int sim_buzzer_on(const Component *c) {
+    if (!c || c->type != COMP_BUZZER) return 0;
+    int i = (int)(c - comps);
+    if (i < 0 || i >= comp_count) return 0;
+    if (!sim_running) return 0;
+    return buzz_[i];
+}
+
+double sim_ldr_effective_r(const Component *c) {
+    if (!c || c->type != COMP_LDR) return -1.0;
+    double rdark = (c->v > 0.0) ? c->v : LDR_DARK_DEFAULT;
+    /* on = 1 => TERANG: R ~ 1% nilai gelap; on = 0 => GELAP: R penuh */
+    return c->on ? rdark * LDR_LIGHT_RATIO : rdark;
 }
 
 /* Format angka SI untuk pesan: "31.8 mA", "220 Ohm", "9 V" */
