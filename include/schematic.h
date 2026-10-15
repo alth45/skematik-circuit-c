@@ -1,6 +1,22 @@
 #ifndef SCHEMATIC_H
 #define SCHEMATIC_H
 
+/* ===================== Pemisah mode PRODUKSI vs mode TES ==================
+   Aturan keras (dijaga oleh #error di bawah dan oleh build.bat / build.sh /
+   run_tests.sh):
+     - Build PRODUKSI TIDAK PERNAH mendefinisikan SCHEMATIC_TEST_STUBS dan
+       tidak pernah menautkan berkas apa pun dari tests/ — pengecualian
+       historis (tests/stubs_production.c) sudah DIHAPUS karena implementasi
+       aslinya kini ada di src/sim.c.
+     - Build TES WAJIB menyetel -DSCHEMATIC_TEST_STUBS=1. Simbol khusus uji
+       (helper reset state) hanya diekspos di mode tes sehingga tidak ikut
+       ter-compile/ter-link ke executable produksi.
+   Guard ini HARUS berada sebelum include windows.h agar mode ganda langsung
+   berhenti dengan pesan yang jelas, bukan error kompilasi acak. */
+#if defined(SCHEMATIC_PRODUCTION) && defined(SCHEMATIC_TEST_STUBS)
+#error "Konflik mode build: SCHEMATIC_PRODUCTION dan SCHEMATIC_TEST_STUBS tidak boleh didefinisikan bersamaan."
+#endif
+
 #define _USE_MATH_DEFINES
 #include <windows.h>
 #include <math.h>
@@ -331,10 +347,10 @@ int sim_wire_hot(int idx);   /* 1 = kabel idx bertegangan (+) */
 int sim_comp_lit(const Component *c); /* 1 = LED ini menyala */
 int sim_comp_conducting(const Component *c); /* 1 = transistor ini ON (C-E tembus) */
 int sim_diode_fwd(const Component *c);    /* 1 = dioda ini menghantar (forward A->K) */
-/* NOTE: sim_buzzer_on() & sim_ldr_effective_r() dideklarasikan di blok
-   "Test seam" bagian paling bawah header ini (implementasi produksi masih
-   ditunda — lihat tests/stubs_production.c). */
 const wchar_t *sim_message(void);     /* pesan status hasil simulasi */
+/* NOTE: sim_buzzer_on() & sim_ldr_effective_r() dideklarasikan di blok
+   "Kontrak simulasi LDR / Buzzer" bagian bawah header ini — implementasi
+   produksinya ada di src/sim.c dan diuji langsung oleh tests/test_sim.c. */
 
 /* ---- Hasil perhitungan kuantitatif (Ohm + hukum tegangan) ---- */
 extern double sim_vsrc;       /* total tegangan seri baterai (V) */
@@ -348,19 +364,6 @@ void   sim_format_si(double v, const wchar_t *unit, wchar_t *out, int cap);
 
 /* ===================== Window Procedure (main.c) ===================== */
 LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp);
-
-/* ===================== Pemisah mode PRODUKSI vs mode TES ==================
-   Aturan keras (dijaga oleh #error di bawah dan oleh build.bat / run_tests.sh):
-     - Build PRODUKSI TIDAK PERNAH mendefinisikan SCHEMATIC_TEST_STUBS dan
-       tidak pernah menautkan berkas apa pun dari tests/ — pengecualian
-       historis (tests/stubs_production.c) sudah DIHAPUS karena implementasi
-       aslinya kini ada di src/sim.c.
-     - Build TES WAJIB menyetel -DSCHEMATIC_TEST_STUBS=1. Simbol khusus uji
-       (helper reset state) hanya diekspos di mode tes sehingga tidak ikut
-       ter-compile/ter-link ke executable produksi. */
-#if defined(SCHEMATIC_PRODUCTION) && defined(SCHEMATIC_TEST_STUBS)
-#error "Konflik mode build: SCHEMATIC_PRODUCTION dan SCHEMATIC_TEST_STUBS tidak boleh didefinisikan bersamaan."
-#endif
 
 /* ===================== Kontrak simulasi LDR / Buzzer =====================
    Implementasi produksi: src/sim.c (sim_buzzer_on, sim_ldr_effective_r).

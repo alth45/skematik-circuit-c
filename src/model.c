@@ -554,7 +554,14 @@ int model_remove_wire_at(int x, int y) {
    Dipanggil dari menu konteks (klik-kanan) maupun double-klik kiri.
    Implementasi: window kelas hasil RegisterClassExW; pointer ValEditCtx
    dibawa lewat CREATESTRUCT.lpCreateParams lalu disimpan di GWLP_USERDATA
-   sejak WM_NCCREATE. Loop pesan lokal membuat dialog bersifat modal. */
+   sejak WM_NCCREATE. Loop pesan lokal membuat dialog bersifat modal.
+
+   PEMISAH KETAT TES vs PRODUKSI: dialog ini satu-satunya bagian src/model.c
+   yang memakai user32/gdi32, sehingga diblok #ifdef SCHEMATIC_PRODUCTION:
+     * build produksi (build.bat/build.sh): dialog ikut ter-compile;
+     * binary tes (run_tests.sh): blok TIDAK ter-compile -> src/model.c murni
+       logika, bisa diuji tanpa stub Win32 dan tanpa bentrok simbol. */
+#ifdef SCHEMATIC_PRODUCTION
 
 typedef struct {
     Component *c;                     /* komponen target (slot array comps) */
@@ -753,3 +760,5 @@ void edit_value_dialog(HWND hwnd, Component *c) {
         sim_recompute();
     }
 }
+
+#endif /* SCHEMATIC_PRODUCTION */

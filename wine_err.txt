@@ -1,0 +1,8 @@
+it looks like wine32 is missing, you should install it.
+multiarch needs to be enabled first.  as root, please
+execute "dpkg --add-architecture i386 && apt-get update &&
+apt-get install wine32:i386"
+0048:err:winediag:nodrv_CreateWindow Application tried to create a window, but no driver could be loaded.
+0048:err:winediag:nodrv_CreateWindow L"The explorer process failed to start."
+0048:err:systray:initialize_systray Could not create tray window
+wine: failed to open "./run_tests64.exe": c0000135
