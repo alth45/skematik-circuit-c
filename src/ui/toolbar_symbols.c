@@ -16,6 +16,8 @@ static CompType toolbar_tool_comp(ToolKind t) {
         case TOOL_TRANSISTOR: return COMP_TRANSISTOR;
         case TOOL_DIODE:      return COMP_DIODE;
         case TOOL_CAPOLAR:    return COMP_CAPOLAR;
+        case TOOL_LDR:        return COMP_LDR;
+        case TOOL_BUZZER:     return COMP_BUZZER;
         default: return COMP_NONE;
     }
 }
@@ -109,6 +111,26 @@ static void sym_transistor(HDC hdc) {
     MoveToEx(hdc, -4, 30, NULL); LineTo(hdc, -4, 12);
 }
 
+static void sym_ldr(HDC hdc) {
+    MoveToEx(hdc, -40, 0, NULL); LineTo(hdc, -22, 0);
+    MoveToEx(hdc, 22, 0, NULL); LineTo(hdc, 40, 0);
+    Rectangle(hdc, -22, -12, 22, 12);          /* badan fotoresistor */
+    MoveToEx(hdc, -22, -6, NULL); LineTo(hdc, 22, -6);
+    MoveToEx(hdc, -22, 6, NULL);  LineTo(hdc, 22, 6);
+    /* dua panah cahaya masuk */
+    MoveToEx(hdc, -30, -30, NULL); LineTo(hdc, -14, -16);
+    MoveToEx(hdc, -18, -34, NULL); LineTo(hdc, -2, -20);
+}
+
+static void sym_buzzer(HDC hdc) {
+    MoveToEx(hdc, -40, 0, NULL); LineTo(hdc, -14, 0);
+    MoveToEx(hdc, 14, 0, NULL); LineTo(hdc, 40, 0);
+    Arc(hdc, -14, -20, 26, 20, -14, -20, -14, 20);   /* dome */
+    MoveToEx(hdc, -14, -20, NULL); LineTo(hdc, -14, 20);
+    MoveToEx(hdc, 20, -8, NULL); LineTo(hdc, 26, 0); LineTo(hdc, 20, 8); /* bunyi > */
+    MoveToEx(hdc, 28, -12, NULL); LineTo(hdc, 36, 0); LineTo(hdc, 28, 12);
+}
+
 void toolbar_draw_symbol(HDC hdc, ToolKind tool, int cx, int cy, BOOL active) {
     int saved = SaveDC(hdc);
     SetGraphicsMode(hdc, GM_ADVANCED);
@@ -132,6 +154,8 @@ void toolbar_draw_symbol(HDC hdc, ToolKind tool, int cx, int cy, BOOL active) {
     else if (ct == COMP_TRANSISTOR) sym_transistor(hdc);
     else if (ct == COMP_DIODE) sym_diode(hdc);
     else if (ct == COMP_CAPOLAR) sym_capolar(hdc);
+    else if (ct == COMP_LDR) sym_ldr(hdc);
+    else if (ct == COMP_BUZZER) sym_buzzer(hdc);
     else if (tool == TOOL_SELECT) {
         POINT cur[7] = { {0,-14},{10,4},{4,4},{4,14},{-2,14},{-2,4},{-8,4} };
         HBRUSH br = CreateSolidBrush(active ? RGB(50,128,255) : RGB(40,40,40));
@@ -185,6 +209,8 @@ const wchar_t *toolbar_tool_shortname(ToolKind tool) {
     if (tool == TOOL_TRANSISTOR) return L"Q";
     if (tool == TOOL_DIODE) return L"D";
     if (tool == TOOL_CAPOLAR) return L"CP";
+    if (tool == TOOL_LDR) return L"LDR";
+    if (tool == TOOL_BUZZER) return L"BZR";
     if (tool == TOOL_GROUND) return L"GND";
     if (tool == TOOL_SELECT) return L"Select";
     if (tool == TOOL_WIRE) return L"Wire";
@@ -203,6 +229,8 @@ int toolbar_tool_is_component(ToolKind tool) {
         case TOOL_TRANSISTOR:
         case TOOL_DIODE:
         case TOOL_CAPOLAR:
+        case TOOL_LDR:
+        case TOOL_BUZZER:
             return 1;
         default:
             return 0;

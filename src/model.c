@@ -22,11 +22,12 @@ int g_show_status = 1;
 
 /* Tombol toolbar (digambar manual di atas, bukan HWND).
    Urutan: Select, Wire, Resistor, Switch, Battery, Sumber AC, LED, Ground,
-   Capacitor, Transistor, Diode, Kapasitor Polar, Delete. + 4 tombol aksi. */
+   Capacitor, Transistor, Diode, Kapasitor Polar, LDR, Buzzer, Delete. + 4 tombol aksi. */
 const ToolKind btnTools[BTN_COUNT] = {
     TOOL_SELECT, TOOL_WIRE,
     TOOL_RESISTOR, TOOL_SWITCH, TOOL_BATTERY, TOOL_ACSOURCE, TOOL_LED, TOOL_GROUND,
     TOOL_CAPACITOR, TOOL_TRANSISTOR, TOOL_DIODE, TOOL_CAPOLAR,
+    TOOL_LDR, TOOL_BUZZER,
     TOOL_DELETE
 };
 const wchar_t *btnLabels[BTN_COUNT] = {
@@ -34,6 +35,7 @@ const wchar_t *btnLabels[BTN_COUNT] = {
     L"Resistor (1)", L"Saklar / Switch (2)", L"Baterai (3)", L"Sumber AC (0)",
     L"LED (4)", L"Ground (5)",
     L"Kapasitor (6)", L"Transistor NPN (7)", L"Dioda (8)", L"Kapasitor Polar (9)",
+    L"LDR / Sensor Cahaya (L)", L"Buzzer (U)",
     L"Hapus / Delete (Del)"
 };
 
@@ -151,6 +153,8 @@ double comp_default_value(CompType t) {
         case COMP_DIODE:      return VF_DIODE;       /* Vf = 0.7 V */
         case COMP_CAPACITOR:  return 100e-9;         /* 100 nF */
         case COMP_CAPOLAR:    return 100e-6;         /* 100 uF */
+        case COMP_LDR:        return LDR_DARK_DEFAULT; /* 1 MOhm saat gelap */
+        case COMP_BUZZER:     return BUZZER_FREQ_DEFAULT; /* 1 kHz */
         default:              return 0.0;            /* switch/transistor/ground */
     }
 }
@@ -158,7 +162,8 @@ double comp_default_value(CompType t) {
 int comp_has_value(CompType t) {
     return t == COMP_RESISTOR || t == COMP_BATTERY || t == COMP_ACSOURCE ||
            t == COMP_LED ||
-           t == COMP_DIODE || t == COMP_CAPACITOR || t == COMP_CAPOLAR;
+           t == COMP_DIODE || t == COMP_CAPACITOR || t == COMP_CAPOLAR ||
+           t == COMP_LDR || t == COMP_BUZZER;
 }
 
 const wchar_t *comp_value_unit(CompType t) {
@@ -170,6 +175,8 @@ const wchar_t *comp_value_unit(CompType t) {
         case COMP_DIODE:     return L"Vf";
         case COMP_CAPACITOR: return L"F";
         case COMP_CAPOLAR:   return L"F";
+        case COMP_LDR:       return L"Rgelap"; /* R saat gelap, dalam Ohm */
+        case COMP_BUZZER:    return L"Hz";
         default:             return NULL;
     }
 }
