@@ -13,7 +13,7 @@
 #define MAX_WIRES 512
 #define GRID     20
 #define TOOLBAR_H 64
-#define TOOLBAR_BTN_W 52
+#define TOOLBAR_BTN_W 46
 #define TOOLBAR_BTN_H 46
 #define PIN_R    7
 #define STATUS_H 26
@@ -27,7 +27,9 @@ typedef enum {
     COMP_LED,
     COMP_GROUND,
     COMP_CAPACITOR,
-    COMP_TRANSISTOR /* NPN: pin0=C(kiri) pin1=E(kanan) pin2=B(bawah) */
+    COMP_TRANSISTOR, /* NPN: pin0=C(kiri-atas) pin1=E(kanan-bawah) pin2=B(kiri-tengah) */
+    COMP_DIODE,      /* pin0=A(anoda kiri) pin1=K(katoda kanan); arah sama dgn LED */
+    COMP_CAPOLAR     /* kapasitor polar/elektrolit: pin0=(+) anoda kiri, pin1=(-) katoda kanan */
 } CompType;
 
 /* Tool yang dipilih user di palette */
@@ -41,6 +43,8 @@ typedef enum {
     TOOL_GROUND,
     TOOL_CAPACITOR,
     TOOL_TRANSISTOR,
+    TOOL_DIODE,
+    TOOL_CAPOLAR,
     TOOL_DELETE
 } ToolKind;
 
@@ -63,7 +67,7 @@ typedef struct {
 } Wire;
 
 /* Jumlah tombol palette */
-#define BTN_COUNT 10
+#define BTN_COUNT 12
 
 /* ===================== State Global (model.c) ===================== */
 extern Component comps[MAX_COMP];
@@ -136,7 +140,9 @@ extern wchar_t g_status[256];
 
 /* ===================== Simulasi Run (sim.c) ===================== */
 /* Aturan Ideal: baterai pin0=(+), pin1=(-); ground = (-);
-   resistor & saklar-ON menghantar; kapasitor = blokir DC (terbuka);
+   resistor & saklar-ON menghantar; dioda menghantar jika anoda(pin0)
+   berada di net (+) (ideal: satu arah A->K);
+   kapasitor & kapasitor polar = blokir DC (terbuka);
    transistor NPN menghantar C-E jika basis kena (+) dan emitor kena (-);
    LED nyala jika anoda(pin0) kena (+) dan katoda(pin1) kena (-)
    lewat jalur menghantar. */
@@ -149,6 +155,7 @@ void sim_set_running(int on);/* masuk/keluar mode Run */
 int sim_wire_hot(int idx);   /* 1 = kabel idx bertegangan (+) */
 int sim_comp_lit(const Component *c); /* 1 = LED ini menyala */
 int sim_comp_conducting(const Component *c); /* 1 = transistor ini ON (C-E tembus) */
+int sim_diode_fwd(const Component *c);    /* 1 = dioda ini menghantar (forward A->K) */
 const wchar_t *sim_message(void);     /* pesan status hasil simulasi */
 
 /* ===================== Window Procedure (main.c) ===================== */

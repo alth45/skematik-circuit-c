@@ -46,6 +46,8 @@ static CompType toolbar_tool_comp(ToolKind t) {
         case TOOL_GROUND:     return COMP_GROUND;
         case TOOL_CAPACITOR:  return COMP_CAPACITOR;
         case TOOL_TRANSISTOR: return COMP_TRANSISTOR;
+        case TOOL_DIODE:      return COMP_DIODE;
+        case TOOL_CAPOLAR:    return COMP_CAPOLAR;
         default: return COMP_NONE;
     }
 }
@@ -95,6 +97,22 @@ static void sym_capacitor(HDC hdc) {
     MoveToEx(hdc, 6, -15, NULL); LineTo(hdc, 6, 15);
 }
 
+static void sym_diode(HDC hdc) {
+    MoveToEx(hdc, -40, 0, NULL); LineTo(hdc, -12, 0);
+    MoveToEx(hdc, 12, 0, NULL); LineTo(hdc, 40, 0);
+    POINT tri[3] = { {-12,-15}, {-12,15}, {12,0} };
+    Polygon(hdc, tri, 3);
+    MoveToEx(hdc, 12, -15, NULL); LineTo(hdc, 12, 15);
+}
+
+static void sym_capolar(HDC hdc) {
+    MoveToEx(hdc, -40, 0, NULL); LineTo(hdc, -6, 0);
+    MoveToEx(hdc, 6, 0, NULL); LineTo(hdc, 40, 0);
+    MoveToEx(hdc, -6, -15, NULL); LineTo(hdc, -6, 15);   /* plat (+) lurus */
+    MoveToEx(hdc, 6, -15, NULL);                          /* plat (-) lengkung */
+    Arc(hdc, -24, -30, 42, 30, 6, 15, 6, -15);
+}
+
 static void sym_transistor(HDC hdc) {
     Ellipse(hdc, -20, -20, 20, 20);
     MoveToEx(hdc, -4, -12, NULL); LineTo(hdc, -4, 12);
@@ -127,6 +145,8 @@ static void draw_tool_symbol(HDC hdc, ToolKind tool, int cx, int cy, BOOL active
     else if (ct == COMP_GROUND) sym_ground(hdc);
     else if (ct == COMP_CAPACITOR) sym_capacitor(hdc);
     else if (ct == COMP_TRANSISTOR) sym_transistor(hdc);
+    else if (ct == COMP_DIODE) sym_diode(hdc);
+    else if (ct == COMP_CAPOLAR) sym_capolar(hdc);
     else if (tool == TOOL_SELECT) {
         POINT cur[7] = { {0,-14},{10,4},{4,4},{4,14},{-2,14},{-2,4},{-8,4} };
         HBRUSH br = CreateSolidBrush(active ? RGB(50,128,255) : RGB(40,40,40));
@@ -280,7 +300,8 @@ void draw_toolbar(HDC hdc, int W) {
         } else if (tool == TOOL_RESISTOR || tool == TOOL_SWITCH ||
                    tool == TOOL_BATTERY || tool == TOOL_LED ||
                    tool == TOOL_GROUND || tool == TOOL_CAPACITOR ||
-                   tool == TOOL_TRANSISTOR) {
+                   tool == TOOL_TRANSISTOR || tool == TOOL_DIODE ||
+                   tool == TOOL_CAPOLAR) {
             draw_tool_symbol(hdc, tool, bx + TOOLBAR_BTN_W / 2, by + 17, active);
             SetTextColor(hdc, active ? RGB(30,90,200) : RGB(90,90,90));
             SetBkMode(hdc, TRANSPARENT);
@@ -291,6 +312,8 @@ void draw_toolbar(HDC hdc, int W) {
             else if (tool == TOOL_LED) nm = L"LED";
             else if (tool == TOOL_CAPACITOR) nm = L"C";
             else if (tool == TOOL_TRANSISTOR) nm = L"Q";
+            else if (tool == TOOL_DIODE) nm = L"D";
+            else if (tool == TOOL_CAPOLAR) nm = L"CP";
             else nm = L"GND";
             TextOutW(hdc, bx + 19, by + 30, nm, (int)wcslen(nm));
         } else {

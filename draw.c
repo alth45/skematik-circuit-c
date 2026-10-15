@@ -190,9 +190,94 @@ static void draw_capacitor(HDC hdc, int x, int y, BOOL sel) {
     TextOutW(hdc, x-4, y-28, L"C", 1);
 }
 
+/* Dioda standar: segitiga anoda -> garis katoda.
+   Arah sama dgn LED: pin0 = Anoda (kiri), pin1 = Katoda (kanan). */
+static void draw_diode(HDC hdc, int x, int y, BOOL sel, int fwd) {
+    COLORREF col = sel ? RGB(50,128,255) : RGB(20,20,20);
+    if (sim_running && fwd) col = RGB(20,150,60);   /* menghantar = hijau */
+    HPEN pen = CreatePen(PS_SOLID, 2, col);
+    HPEN old = (HPEN)SelectObject(hdc, pen);
+    HBRUSH ob = (HBRUSH)SelectObject(hdc, GetStockObject(NULL_BRUSH));
+
+    /* kawat lead ke titik pin (-40 / +40) */
+    MoveToEx(hdc, x-40, y, NULL); LineTo(hdc, x-12, y);
+    MoveToEx(hdc, x+12, y, NULL); LineTo(hdc, x+40, y);
+
+    /* segitiga anoda */
+    POINT tri[3] = { {x-12, y-15}, {x-12, y+15}, {x+12, y} };
+    Polygon(hdc, tri, 3);
+
+    /* garis katoda (menempel persis di ujung kanan segitiga) */
+    MoveToEx(hdc, x+12, y-15, NULL); LineTo(hdc, x+12, y+15);
+
+    SelectObject(hdc, ob);
+    SelectObject(hdc, old);
+    DeleteObject(pen);
+
+    SetTextColor(hdc, RGB(80,80,80));
+    SetBkMode(hdc, TRANSPARENT);
+    TextOutW(hdc, x-4, y-30, L"D", 1);
+
+    /* saat RUN & forward: panah arah alir A->K di bawah simbol */
+    if (sim_running && fwd) {
+        HPEN ap = CreatePen(PS_SOLID, 2, RGB(20,150,60));
+        HPEN oap = (HPEN)SelectObject(hdc, ap);
+        MoveToEx(hdc, x-14, y+22, NULL); LineTo(hdc, x+10, y+22);
+        MoveToEx(hdc, x+10, y+22, NULL); LineTo(hdc, x+4,  y+18);
+        MoveToEx(hdc, x+10, y+22, NULL); LineTo(hdc, x+4,  y+26);
+        SelectObject(hdc, oap);
+        DeleteObject(ap);
+    }
+}
+
+/* Wrapper status-run untuk dioda (param tambahan: fwd) */
+static int diode_at_fwd = 0;
+static void diode_at(HDC hdc, int x, int y, BOOL sel) {
+    draw_diode(hdc, x, y, sel, diode_at_fwd);
+}
+static void with_rotation_diode(HDC hdc, Component *c) {
+    diode_at_fwd = sim_running ? sim_diode_fwd(c) : 0;
+    with_rotation(hdc, c, diode_at);
+}
+
+/* Kapasitor polar (elektrolit): plat lengkung kutub (-) + tanda (+) kutub.
+   pin0 = (+) kiri, pin1 = (-) kanan; blokir DC seperti kapasitor biasa. */
+static void draw_capolar(HDC hdc, int x, int y, BOOL sel) {
+    COLORREF col = sel ? RGB(50,128,255) : RGB(20,20,20);
+    HPEN pen = CreatePen(PS_SOLID, 2, col);
+    HPEN old = (HPEN)SelectObject(hdc, pen);
+    HBRUSH ob = (HBRUSH)SelectObject(hdc, GetStockObject(NULL_BRUSH));
+
+    /* kawat lead ke titik pin (-40 / +40) */
+    MoveToEx(hdc, x-40, y, NULL); LineTo(hdc, x-6, y);
+    MoveToEx(hdc, x+6, y, NULL); LineTo(hdc, x+40, y);
+
+    /* plat kutub (+) = garis lurus */
+    MoveToEx(hdc, x-6, y-15, NULL); LineTo(hdc, x-6, y+15);
+
+    /* plat kutub (-) = lengkung cembung ke kanan (simbol elektrolit) */
+    MoveToEx(hdc, x+6, y-15, NULL);
+    Arc(hdc, x-24, y-30, x+42, y+30, x+6, y+15, x+6, y-15);
+
+    SelectObject(hdc, ob);
+    SelectObject(hdc, old);
+    DeleteObject(pen);
+
+    /* tanda polaritas: '+' dekat anoda, '-' dekat katoda */
+    SetTextColor(hdc, sel ? RGB(50,128,255) : RGB(20,20,20));
+    SetBkMode(hdc, TRANSPARENT);
+    TextOutW(hdc, x-24, y-14, L"+", 1);
+    TextOutW(hdc, x+16, y-14, L"-", 1);
+
+    SetTextColor(hdc, RGB(80,80,80));
+    TextOutW(hdc, x-8, y-30, L"CP", 2);
+}
+
 /* Transistor NPN: lingkaran + bar basis vertikal.
-   pin0 = Kolektor (kiri), pin1 = Emitor (kanan + panah keluar),
-   pin2 = Basis (bawah, segaris bar). Kaki lurus tanpa siku. */
+   Titik pin (lihat comp_pin_pos di model.c) tepat di ujung kaki:
+   pin0 = Kolektor -> ujung kaki kiri-atas  (-40,-30)
+   pin1 = Emitor   -> ujung kaki kanan-bawah (+40,+30), panah keluar
+   pin2 = Basis    -> ujung kawat basis kiri (-40,  0) */
 
 
 static void draw_transistor(HDC hdc, int x, int y, BOOL sel, int tr_closed)
@@ -222,37 +307,48 @@ static void draw_transistor(HDC hdc, int x, int y, BOOL sel, int tr_closed)
     Ellipse(hdc, x - 21, y - 21, x + 21, y + 21);
 
     // =====================================================
-    // 2. Basis: terminal kiri dan garis basis vertikal
+    // 2. Basis: kawat horizontal dari pin (-40,0) sampai bar
     // =====================================================
     MoveToEx(hdc, x - 40, y, NULL);
     LineTo(hdc, x - 6, y);
 
+    // Bar basis vertikal (batang tengah simbol)
     MoveToEx(hdc, x - 6, y - 12, NULL);
     LineTo(hdc, x - 6, y + 12);
 
     // =====================================================
-    // 3. Kolektor: cabang kanan atas
+    // 3. Kolektor: kaki diagonal dari bar basis ke pin kiri
+    //    (baris x=-14 s.d. -40), tembus tepi lingkaran.
     // =====================================================
-    MoveToEx(hdc, x + 1, y - 7, NULL);
-    LineTo(hdc, x + 12, y - 15);
-    LineTo(hdc, x + 38, y - 30);
+    MoveToEx(hdc, x - 2, y - 7, NULL);
+    LineTo(hdc, x - 14, y - 15);
+    LineTo(hdc, x - 40, y - 30);
 
     // =====================================================
-    // 4. Emitor: cabang kanan bawah
+    // 4. Emitor: kaki diagonal dari bar basis ke pin kanan
+    //    (baris x=+14 s.d. +40), tembus tepi lingkaran.
     // =====================================================
-    MoveToEx(hdc, x + 1, y + 7, NULL);
-    LineTo(hdc, x + 12, y + 15);
-    LineTo(hdc, x + 38, y + 30);
+    MoveToEx(hdc, x - 2, y + 7, NULL);
+    LineTo(hdc, x + 14, y + 15);
+    LineTo(hdc, x + 40, y + 30);
 
     // =====================================================
-    // 5. Panah NPN: mengarah keluar pada jalur emitor
+    // 5. Panah NPN: mengarah keluar pada jalur emitor.
+    //    Kepala panah dihitung SEJAJAR garis kaki emitor
+    //    (arah vektor (26,15)) sehingga menempel presisi
+    //    di tengah-tengah kaki, tidak lagi miring/terlepas.
     // =====================================================
-    // Pangkal panah berada di sepanjang garis emitor.
-    // Ujung panah mengarah ke kanan-bawah.
+    const double dxk = 26.0, dyk = 15.0;          /* arah kaki emitor (14->40, 15->30) */
+    double len = sqrt(dxk * dxk + dyk * dyk);     /* panjang vektor arah               */
+    double ux = dxk / len, uy = dyk / len;        /* vektor satuan ke ujung (keluar)   */
+    double nx = -uy, ny = ux;                     /* normal tegak lurus (lebar panah)  */
+    double hx = x + 30, hy = y + 24.15;           /* titik ujung kepala PERSIS di garis kaki (t=0.6154) */
+    const double HAL = 9.0, HAW = 3.6;            /* panjang & setengah lebar kepala   */
+
     POINT arrow[3] = {
-        { x + 22, y + 21 },
-        { x + 11, y + 17 },
-        { x + 17, y + 10 }
+        { (LONG)lround(hx - ux * HAL + nx * HAW), (LONG)lround(hy - uy * HAL + ny * HAW) },
+        { (LONG)lround(hx - ux * HAL - nx * HAW), (LONG)lround(hy - uy * HAL - ny * HAW) },
+        { (LONG)lround(hx),                       (LONG)lround(hy) }
     };
 
     // Isi kepala panah agar tampak tegas
@@ -268,10 +364,10 @@ static void draw_transistor(HDC hdc, int x, int y, BOOL sel, int tr_closed)
     }
 
     // =====================================================
-    // 6. Label transistor
+    // 6. Label transistor (di kanan-atas, jauh dari kaki emitor)
     // =====================================================
     SetTextColor(hdc, RGB(80, 80, 80));
-    TextOutW(hdc, x + 25, y - 10, L"Q", 1);
+    TextOutW(hdc, x + 27, y - 34, L"Q", 1);
 
     // Status simulasi
     if (sim_running) {
@@ -351,6 +447,8 @@ void draw_component(HDC hdc, Component *c) {
         case COMP_GROUND:   with_rotation(hdc, c, draw_ground); break;
         case COMP_CAPACITOR: with_rotation(hdc, c, draw_capacitor); break;
         case COMP_TRANSISTOR: with_rotation_tr(hdc, c); break;
+        case COMP_DIODE:    with_rotation_diode(hdc, c); break;
+        case COMP_CAPOLAR:  with_rotation(hdc, c, draw_capolar); break;
         default: break;
     }
     if (sel) {
@@ -359,6 +457,9 @@ void draw_component(HDC hdc, Component *c) {
         HBRUSH oldb = (HBRUSH)SelectObject(hdc, GetStockObject(NULL_BRUSH));
         int hw = (c->rot % 2 == 0) ? 48 : 38;
         int hh = (c->rot % 2 == 0) ? 38 : 48;
+        /* transistor: kaki C/E menjulur sampai y=+-30 & x=+-40,
+           jadi kotak seleksinya dibuat lebih besar */
+        if (c->type == COMP_TRANSISTOR) { hw = 52; hh = 42; }
         Rectangle(hdc, c->x - hw, c->y - hh, c->x + hw, c->y + hh);
         SelectObject(hdc, oldb);
         SelectObject(hdc, old);

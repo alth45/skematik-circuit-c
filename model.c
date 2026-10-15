@@ -18,17 +18,17 @@ int wiring_mx = 0, wiring_my = 0;
 
 /* Tombol toolbar (digambar manual di atas, bukan HWND).
    Urutan: Select, Wire, Resistor, Switch, Battery, LED, Ground,
-   Capacitor, Transistor, Delete. + 4 tombol aksi. */
+   Capacitor, Transistor, Diode, Kapasitor Polar, Delete. + 4 tombol aksi. */
 const ToolKind btnTools[BTN_COUNT] = {
     TOOL_SELECT, TOOL_WIRE,
     TOOL_RESISTOR, TOOL_SWITCH, TOOL_BATTERY, TOOL_LED, TOOL_GROUND,
-    TOOL_CAPACITOR, TOOL_TRANSISTOR,
+    TOOL_CAPACITOR, TOOL_TRANSISTOR, TOOL_DIODE, TOOL_CAPOLAR,
     TOOL_DELETE
 };
 const wchar_t *btnLabels[BTN_COUNT] = {
     L"Select / Geser (V)", L"Kabel / Wire (W)",
     L"Resistor (1)", L"Saklar / Switch (2)", L"Baterai (3)", L"LED (4)", L"Ground (5)",
-    L"Kapasitor (6)", L"Transistor NPN (7)",
+    L"Kapasitor (6)", L"Transistor NPN (7)", L"Dioda (8)", L"Kapasitor Polar (9)",
     L"Hapus / Delete (Del)"
 };
 
@@ -88,11 +88,14 @@ void comp_pin_pos(const Component *c, int pin_idx, int *px, int *py) {
     if (c->type == COMP_GROUND) {
         comp_local_to_world(c, 0, -30, px, py);
     } else if (c->type == COMP_TRANSISTOR) {
-        /* NPN: pin0 = Kolektor (kiri), pin1 = Emitor (kanan),
-           pin2 = Basis (bawah, segaris bar basis x=-4). */
-        if (pin_idx == 2)      comp_local_to_world(c, -4, 30, px, py);
-        else if (pin_idx == 1) comp_local_to_world(c, 40, 13, px, py);
-        else                   comp_local_to_world(c, -40, 0, px, py);
+        /* NPN: titik pin HARUS tepat di ujung kaki simbol
+           (lihat draw_transistor):
+           pin0 = Kolektor -> ujung kaki kiri-atas  (-40,-30)
+           pin1 = Emitor   -> ujung kaki kanan-bawah (+40,+30)
+           pin2 = Basis    -> ujung kawat basis kiri (-40,  0) */
+        if (pin_idx == 2)      comp_local_to_world(c, -40,  0, px, py);
+        else if (pin_idx == 1) comp_local_to_world(c,  40, 30, px, py);
+        else                   comp_local_to_world(c, -40, -30, px, py);
     } else {
         comp_local_to_world(c, (pin_idx == 0) ? -40 : 40, 0, px, py);
     }

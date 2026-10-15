@@ -17,10 +17,11 @@ lalu **Run** untuk simulasi: klik saklar ON/OFF dan lihat LED menyala.
 | Drag & Drop | Klik badan simbol, tahan, geser. Snap ke grid 20px. Kabel ikut tertarik. |
 | Wiring antar pin | Tarik titik merah pin ke pin lain. Kabel siku + preview + highlight target. |
 | Rotate (R) | Pilih simbol lalu tekan `R`. 0 -> 90 -> 180 -> 270. Pin & kabel ikut sudut. |
-| Toolbar ikon | 12 tombol atas: Select, Wire, R, SW, BAT, LED, GND, Hapus, Clear, Save, Open, Run/Stop. |
+| Toolbar ikon | 16 tombol atas: Select, Wire, R, SW, BAT, LED, GND, CAP, TR, D, CP, Hapus, Clear, Save, Open, Run/Stop. |
+| Komponen | Resistor, Saklar, Baterai, LED, Ground, Kapasitor, Transistor NPN, **Dioda**, **Kapasitor Polar** (baru). |
 | Save / Open JSON | Dialog Windows, format UTF-8, status saklar ikut tersimpan. |
-| Mode Run | Klik Run -> klik saklar ON/OFF -> LED menyala + kabel (+) merah + deteksi korslet. |
-| Shortcut | V/W/1-5, R, F5, Ctrl+S/O, Del, Esc. |
+| Mode Run | Klik Run -> klik saklar ON/OFF -> LED menyala + kabel (+) merah + dioda forward (panah hijau) + deteksi korslet. |
+| Shortcut | V/W/1-9, R, F5, Ctrl+S/O, Del, Esc. |
 | Status bar | Pesan terakhir + counter komponen & kabel. |
 
 ---
@@ -28,17 +29,18 @@ lalu **Run** untuk simulasi: klik saklar ON/OFF dan lihat LED menyala.
 ## Tampilan
 
 ```
-[Select][Wire][ R ][ SW ][BAT ][LED ][GND][Hapus][Clear][Save][Open][Run]
+[Select][Wire][ R ][ SW ][BAT ][LED ][GND][CAP ][TR  ][ D ][ CP ][Hapus][Clear][Save][Open][Run]
 tool aktif | F5: run/stop   R: rotate
 +--------------------------------------------------+
-|  (+)--[SW ON]--[ R ]--[LED nyala]--(-)           |
+|  (+)--[SW ON]--[ D ]--[LED nyala]--(-)           |
 |        [ Rangkaian BENAR -- LED MENYALA ]        |
 +--------------------------------------------------+
 | RUN: saklar ON ...                4 komp, 5 kabel|
 ```
 
 Warna saat Run: saklar ON = hijau (tuas datar), OFF = merah (tuas miring),
-LED menyala = oranye + glow, kabel (+) = merah tebal.
+LED menyala = oranye + glow, dioda menghantar = panah arah arus hijau,
+kabel (+) = merah tebal.
 Banner: hijau benar, kuning belum lengkap, merah korsleting.
 
 ---
@@ -86,6 +88,18 @@ BAT pin1 (-) -- kabel ---------------------------- LED pin1 (katoda)
 
 Aturan pin: baterai kiri = (+) plat panjang, kanan = (-) plat pendek.
 LED kiri = anoda, kanan = katoda. Ground = 1 pin, dihitung (-).
+Dioda kiri = anoda (A), kanan = katoda (K) — menghantar searah A->K.
+Kapasitor polar kiri = kutub (+), kanan = kutub (-); memblokir DC seperti kapasitor biasa.
+
+### 2b. Contoh proteksi polaritas dengan dioda
+
+```
+BAT (+) -- kabel -- D (A->K) -- kabel -- LED pin0 (anoda)
+BAT (-) -- kabel -------------------------- LED pin1 (katoda)
+```
+
+Saat RUN, dioda yang menghantar ditandai panah arah arus hijau.
+Jika dioda terbalik (reverse-bias), rangkaian terbuka -> LED tetap mati.
 
 ### 3. Run simulasi
 
@@ -104,6 +118,7 @@ Saat RUN dikunci: tambah/geser/putar/hapus, tarik kabel baru, ganti tool.
 | `V` | Tool Select / Geser |
 | `W` | Tool Kabel / Wire |
 | `1` `2` `3` `4` `5` | Resistor, Switch, Battery, LED, Ground |
+| `6` `7` `8` `9` | Kapasitor, Transistor NPN, Dioda, Kapasitor Polar |
 | `R` | Rotate 90 CW (dipilih / sedang di-drag) |
 | `F5` / `F9` | Run / Stop simulasi |
 | `Ctrl+S` | Save JSON |
@@ -133,10 +148,12 @@ UTF-8, contoh:
 }
 ```
 
-- `type`: `resistor | switch | battery | led | ground`
-  (alias `R/SW/BAT/LED/GND` juga terbaca).
+- `type`: `resistor | switch | battery | led | ground | capacitor | transistor | diode | capolar`
+  (alias juga terbaca: `R/SW/BAT/LED/GND/CAP/TR`, `Diode/D`,
+  `Capolar/capacitor_polar/electrolytic/CP`).
 - `rot`: 0..3 (= 0/90/180/270). `on`: 0/1 khusus switch.
-- `pin`: komponen 2-pin -> 0 kiri, 1 kanan (mengikuti rotasi); ground -> 0.
+- `pin`: komponen 2-pin -> 0 kiri, 1 kanan (mengikuti rotasi); ground -> 0;
+  transistor NPN (3-pin) -> 0 kolektor, 1 emitor, 2 basis.
 - Batas: 256 komponen, 512 kabel, file maks 4 MB.
   Kabel yang id-nya tidak ada dibuang saat load.
 
@@ -148,11 +165,14 @@ Mesin `sim.c` memakai union-find, tiap pin = 1 node:
 
 1. Gabungkan pin lewat kabel.
 2. Resistor selalu tembus, saklar hanya jika ON.
-   Baterai / LED / ground tidak tembus (arus lewat luar).
+   Baterai / LED / ground / kapasitor / kapasitor polar / transistor tidak tembus
+   (arus lewat luar; kapasitor & kapasitor polar memblokir DC).
 3. Net (+): semua pin0 baterai. Net (-): pin1 baterai + pin ground.
-4. Korsleting jika (+) dan (-) satu net.
-5. LED nyala jika pin0 di (+) dan pin1 di (-) lewat jalur menghantar.
-6. Kabel hot jika net-nya kena (+).
+4. Dioda ideal: menghantar satu arah A->K hanya jika anoda (pin0) sudah di net (+);
+   reverse-bias = open circuit. Status forward dipakai untuk panah hijau di simbol.
+5. Korsleting jika (+) dan (-) satu net (termasuk lewat dioda forward).
+6. LED nyala jika pin0 di (+) dan pin1 di (-) lewat jalur menghantar.
+7. Kabel hot jika net-nya kena (+).
 
 Pesan hasil:
 
@@ -167,14 +187,14 @@ Pesan hasil:
 
 ```
 schematic-c/
-  schematic.h  konstanta, struct, API semua modul
+  schematic.h  konstanta, struct, API semua modul (enum tipe komponen & tool)
   main.c       WndProc, toolbar_click, WM_PAINT, wWinMain
-  model.c      state, pin/rotasi/hit-test, add/remove/wire
-  draw.c       simbol GDI + rotasi, pin, kabel hot, LED glow
-  events.c     mouse (drag/wiring/toggle) + keyboard
-  toolbar.c    toolbar 12 ikon + hit-test + status
+  model.c      state, pin/rotasi/hit-test, add/remove/wire, palet tombol toolbar
+  draw.c       simbol GDI + rotasi (R/SW/BAT/LED/GND/CAP/TR/D/CP), pin, kabel hot, LED glow
+  events.c     mouse (drag/wiring/toggle) + keyboard (1-9, R, F5, Ctrl+S/O, Del, Esc)
+  toolbar.c    toolbar 16 ikon + hit-test + status
   fileio.c     save/load JSON + dialog + status
-  sim.c        simulasi union-find + pesan hasil
+  sim.c        simulasi union-find + aturan dioda forward + pesan hasil
   build.bat    script build MinGW
   readme.md    file ini
 ```
@@ -194,6 +214,7 @@ draw/main baca sim_wire_hot / sim_comp_lit / sim_message.
 | `continue/break not within loop` | Sisa parser di luar `while(1)`. Rapikan blok load JSON. |
 | Tombol `R` tidak jalan | Klik canvas dulu agar fokus keyboard ke window. |
 | LED tidak menyala | Cek baterai, loop tertutup, saklar ON (hijau), polaritas benar. |
+| Dioda tidak menyalakan beban | Cek arah panah segitiga: anoda (A) harus di sisi (+). Balik posisi/rotasi (`R`) jika terpasang reverse-bias. |
 
 ---
 
@@ -205,13 +226,10 @@ draw/main baca sim_wire_hot / sim_comp_lit / sim_message.
 - Nilai komponen (Ohm/Volt) + hitung arus
 - Export PNG / netlist SPICE
 - Autosave + contoh `examples/*.json`
+- Komponen baru: push button, buzzer, LDR, saklar SPDT, PNP
 
 ---
 
 ## Lisensi
 
 Bebas dipakai untuk belajar / tugas. Sebut sumber jika disebar ulang.
-
-4. Klik **Stop** (atau `F5`) untuk kembali edit.
-
-Saat RUN dikunci: tambah/geser/putar/hapus, tarik kabel baru, ganti tool.
