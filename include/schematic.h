@@ -28,6 +28,9 @@
 #define I_LEAK           1e-9  /* arus bocor pA lewat kapasitor (DC steady) */
 #define V_EXPLODE        50.0  /* LED "meledak" bila tegangan bolak-balik > 50 V */
 #define VALUE_STR_CAP    48
+#define LDR_DARK_DEFAULT 1e6   /* LDR default: 1 MOhm saat gelap */
+#define LDR_LIGHT_RATIO  0.01  /* saat TERANG: R ~ 1% dari nilai gelap (~10 kOhm) */
+#define BUZZER_FREQ_DEFAULT 1000.0 /* buzzer default: 1 kHz; v = frekuensi Hz */
 
 typedef enum {
     COMP_NONE = 0,
@@ -40,8 +43,14 @@ typedef enum {
     COMP_TRANSISTOR, /* NPN: pin0=C(kiri-atas) pin1=E(kanan-bawah) pin2=B(kiri-tengah) */
     COMP_DIODE,      /* pin0=A(anoda kiri) pin1=K(katoda kanan); arah sama dgn LED */
     COMP_CAPOLAR,    /* kapasitor polar/elektrolit: pin0=(+) anoda kiri, pin1=(-) katoda kanan */
-    COMP_ACSOURCE    /* sumber AC (tegangan bolak-balik): pin0=Hidup/Live, pin1=Netral.
+    COMP_ACSOURCE,   /* sumber AC (tegangan bolak-balik): pin0=Hidup/Live, pin1=Netral.
                         v = tegangan RMS dalam Volt (default 220 V, 50 Hz). */
+    COMP_LDR,        /* LDR / fotoresistor: resistansi bergantung cahaya.
+                        pin0=kiri pin1=kanan; v = resistansi saat GELAP (Ohm, default 1M).
+                        Saat terang resistansi ~1% dari nilai gelap. Menghantar seperti resistor. */
+    COMP_BUZZER      /* buzzer (piezo/elektromagnetik): pin0=input(+) pin1=gnd(-).
+                        v = frekuensi bunyi Hz (default 1000). Berbunyi bila kedua pin
+                        terhubung ke kutub berlawanan lewat jalur menghantar. */
 } CompType;
 
 /* Tool yang dipilih user di palette */
@@ -58,6 +67,8 @@ typedef enum {
     TOOL_TRANSISTOR,
     TOOL_DIODE,
     TOOL_CAPOLAR,
+    TOOL_LDR,            /* LDR / fotoresistor (sensor cahaya) */
+    TOOL_BUZZER,         /* buzzer (output suara) */
     TOOL_DELETE
 } ToolKind;
 
@@ -74,6 +85,8 @@ typedef struct {
                        //   LED        = Vf volt  (default 2.0)
                        //   dioda      = Vf volt  (default 0.7)
                        //   kapasitor & polar = farad (default 100e-9)
+                       //   LDR        = R gelap dalam Ohm (default 1e6 / 1 MOhm)
+                       //   buzzer     = frekuensi Hz (default 1000)
                        //   switch/transistor/ground tidak dipakai (0)
 } Component;
 
@@ -88,7 +101,7 @@ typedef struct {
 } Wire;
 
 /* Jumlah tombol palette */
-#define BTN_COUNT 13
+#define BTN_COUNT 15
 
 /* ===================== State Global (model.c) ===================== */
 extern Component comps[MAX_COMP];
@@ -210,6 +223,8 @@ void draw_k_transistor(HDC hdc, Component *c);
 void draw_k_diode(HDC hdc, Component *c);
 void draw_k_capolar(HDC hdc, Component *c);
 void draw_k_acsource(HDC hdc, Component *c);
+void draw_k_ldr(HDC hdc, Component *c);
+void draw_k_buzzer(HDC hdc, Component *c);
 
 void draw_component(HDC hdc, Component *c);
 void draw_canvas(HWND hwnd);
@@ -257,6 +272,8 @@ int sim_wire_hot(int idx);   /* 1 = kabel idx bertegangan (+) */
 int sim_comp_lit(const Component *c); /* 1 = LED ini menyala */
 int sim_comp_conducting(const Component *c); /* 1 = transistor ini ON (C-E tembus) */
 int sim_diode_fwd(const Component *c);    /* 1 = dioda ini menghantar (forward A->K) */
+int sim_buzzer_on(const Component *c);    /* 1 = buzzer ini aktif (berbunyi) saat RUN */
+double sim_ldr_effective_r(const Component *c); /* R efektif LDR: gelap=v, terang~1% v; -1 bukan LDR */
 const wchar_t *sim_message(void);     /* pesan status hasil simulasi */
 
 /* ---- Hasil perhitungan kuantitatif (Ohm + hukum tegangan) ---- */

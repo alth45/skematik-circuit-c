@@ -116,6 +116,8 @@ void draw_component(HDC hdc, Component *c) {
         case COMP_TRANSISTOR:  draw_k_transistor(hdc, c);  break;
         case COMP_DIODE:       draw_k_diode(hdc, c);       break;
         case COMP_CAPOLAR:     draw_k_capolar(hdc, c);     break;
+        case COMP_LDR:         draw_k_ldr(hdc, c);         break;
+        case COMP_BUZZER:      draw_k_buzzer(hdc, c);      break;
         default: break;
     }
     draw_value_label(hdc, c);   /* teks nilai selalu tegak (tanpa rotasi) */

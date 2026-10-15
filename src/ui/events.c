@@ -12,6 +12,8 @@ static CompType tool_to_comp(ToolKind t) {
         case TOOL_TRANSISTOR: return COMP_TRANSISTOR;
         case TOOL_DIODE:      return COMP_DIODE;
         case TOOL_CAPOLAR:    return COMP_CAPOLAR;
+        case TOOL_LDR:        return COMP_LDR;
+        case TOOL_BUZZER:     return COMP_BUZZER;
         default: return COMP_NONE;
     }
 }
@@ -25,6 +27,7 @@ static CompType tool_to_comp(ToolKind t) {
 #define IDM_V_DUPLICATE   0x0404
 #define IDM_V_TOGGLE_SW   0x0405
 #define IDM_V_INFO        0x0406
+#define IDM_V_LDR_LIGHT   0x0407  /* LDR: ubah kondisi cahaya Terang/Gelap */
 
 static const wchar_t *comp_kind_name(CompType t) {
     switch (t) {
@@ -38,6 +41,8 @@ static const wchar_t *comp_kind_name(CompType t) {
         case COMP_TRANSISTOR: return L"Transistor NPN";
         case COMP_DIODE:      return L"Dioda";
         case COMP_CAPOLAR:    return L"Kapasitor Polar";
+        case COMP_LDR:        return L"LDR (Fotoresistor)";
+        case COMP_BUZZER:     return L"Buzzer";
         default:              return L"Komponen";
     }
 }
@@ -49,12 +54,17 @@ void show_context_menu(HWND hwnd, int sx, int sy, Component *c) {
 
     BOOL has_val = c ? comp_has_value(c->type) : FALSE;
     BOOL is_sw   = c && c->type == COMP_SWITCH;
+    BOOL is_ldr  = c && c->type == COMP_LDR;
 
     AppendMenuW(m, MF_STRING | (has_val ? 0 : MF_GRAYED),
         IDM_V_EDIT_VALUE, L"Edit Nilai (Value)...");
     if (is_sw)
         AppendMenuW(m, MF_STRING, IDM_V_TOGGLE_SW,
             c->on ? L"Saklar: Matikan (OFF)" : L"Saklar: Nyalakan (ON)");
+    if (is_ldr)
+        AppendMenuW(m, MF_STRING, IDM_V_LDR_LIGHT,
+            c->on ? L"Cahaya: Terang (R rendah) -> ubah ke Gelap"
+                  : L"Cahaya: Gelap (R tinggi) -> ubah ke Terang");
     AppendMenuW(m, MF_STRING, IDM_V_ROTATE, L"Putar 90\xB0");
     AppendMenuW(m, MF_STRING, IDM_V_DUPLICATE, L"Duplikat");
     AppendMenuW(m, MF_SEPARATOR, 0, NULL);
@@ -78,6 +88,17 @@ void show_context_menu(HWND hwnd, int sx, int sy, Component *c) {
                 c->on = !c->on;
                 sim_recompute();
                 set_status(L"Saklar %ls.", c->on ? L"ON (tertutup)" : L"OFF (terbuka)");
+            }
+            break;
+        case IDM_V_LDR_LIGHT:
+            if (c && c->type == COMP_LDR) {
+                c->on = !c->on;   /* on = 1 => TERANG (R rendah), 0 => GELAP */
+                sim_recompute();
+                double reff = sim_ldr_effective_r(c);
+                wchar_t rs[32];
+                format_value(reff, L"\x03A9", rs, 32);
+                set_status(L"LDR #%d: %ls — R efektif \xB7 %ls",
+                    c->id, c->on ? L"TERANG" : L"GELAP", rs);
             }
             break;
         case IDM_V_ROTATE:
@@ -107,6 +128,15 @@ void show_context_menu(HWND hwnd, int sx, int sy, Component *c) {
                     format_value(c->v, unit, vs, VALUE_STR_CAP);
                     swprintf(buf, 512, L"%s #%d — Nilai: %ls",
                         comp_kind_name(c->type), c->id, vs);
+                    if (c->type == COMP_LDR) {
+                        /* tampilkan juga resistansi efektif sesuai cahaya */
+                        wchar_t rs[32];
+                        format_value(sim_ldr_effective_r(c), L"\x03A9", rs, 32);
+                        wchar_t extra[96];
+                        swprintf(extra, 96, L"\nCahaya: %ls — R efektif: %ls",
+                            c->on ? L"TERANG" : L"GELAP", rs);
+                        wcscat_s(buf, 512, extra);
+                    }
                 } else if (c->type == COMP_SWITCH) {
                     swprintf(buf, 512, L"Saklar #%d — Status: %ls",
                         c->id, c->on ? L"ON (tertutup)" : L"OFF (terbuka)");
@@ -129,6 +159,18 @@ void show_context_menu(HWND hwnd, int sx, int sy, Component *c) {
                         wcscat_s(buf, 512, extra);
                     }
                 }
+                if (c->type == COMP_BUZZER) {
+                    wchar_t extra[96];
+                    if (sim_running) {
+                        swprintf(extra, 96, L"\nStatus RUN: %ls (%.4g Hz)",
+                            sim_buzzer_on(c) ? L"BERBUNYI" : L"diam",
+                            c->v > 0.0 ? c->v : BUZZER_FREQ_DEFAULT);
+                    } else {
+                        swprintf(extra, 96, L"\nFrekuensi: %.4g Hz (tekan RUN untuk menguji)",
+                            c->v > 0.0 ? c->v : BUZZER_FREQ_DEFAULT);
+                    }
+                    wcscat_s(buf, 512, extra);
+                }
                 MessageBoxW(hwnd, buf, L"Informasi Komponen", MB_OK | MB_ICONINFORMATION);
             }
             break;
@@ -146,7 +188,7 @@ void show_context_menu(HWND hwnd, int sx, int sy, Component *c) {
 
 /* ===================== Event Handler ===================== */
 void on_lbutton_down(HWND hwnd, int x, int y) {
-    /* MODE RUN: klik saklar = toggle ON/OFF, klik lain = select saja */
+    /* MODE RUN: klik saklar = toggle ON/OFF, klik LDR = toggle Terang/Gelap */
     if (sim_running) {
         Component *hit = find_comp_at(x, y);
         if (hit && hit->type == COMP_SWITCH) {
@@ -155,6 +197,14 @@ void on_lbutton_down(HWND hwnd, int x, int y) {
             sim_recompute();
             set_status(L"RUN: saklar %ls. %ls",
                 hit->on ? L"ON (tertutup)" : L"OFF (terbuka)", sim_message());
+        } else if (hit && hit->type == COMP_LDR) {
+            hit->on = !hit->on;   /* on = 1 => TERANG */
+            selected_id = hit->id;
+            sim_recompute();
+            wchar_t rs[32];
+            format_value(sim_ldr_effective_r(hit), L"\x03A9", rs, 32);
+            set_status(L"RUN: LDR #%d %ls (R \xC5\x92 %ls). %ls",
+                hit->id, hit->on ? L"TERANG" : L"GELAP", rs, sim_message());
         } else if (hit) {
             selected_id = hit->id;
         } else {
@@ -359,6 +409,8 @@ void on_key_down(HWND hwnd, WPARAM key) {
     else if (key == '7') { current_tool = TOOL_TRANSISTOR; }
     else if (key == '8') { current_tool = TOOL_DIODE; }
     else if (key == '9') { current_tool = TOOL_CAPOLAR; }
+    else if (key == 'L' || key == 'l') { current_tool = TOOL_LDR; }
+    else if (key == 'U' || key == 'u') { current_tool = TOOL_BUZZER; }
     else if (key == VK_DELETE || key == VK_BACK) {
         if (sim_running) return; /* hapus dikunci saat RUN */
         if (selected_id >= 0) {
