@@ -295,6 +295,8 @@ static CompType toolbar_tool_comp(ToolKind t) {
         case TOOL_TRANSISTOR: return COMP_TRANSISTOR;
         case TOOL_DIODE:      return COMP_DIODE;
         case TOOL_CAPOLAR:    return COMP_CAPOLAR;
+        case TOOL_LDR:        return COMP_LDR;
+        case TOOL_BUZZER:     return COMP_BUZZER;
         default: return COMP_NONE;
     }
 }
@@ -388,6 +390,32 @@ static void sym_transistor(HDC hdc) {
     MoveToEx(hdc, -4, 30, NULL); LineTo(hdc, -4, 12);
 }
 
+static void sym_ldr(HDC hdc) {
+    MoveToEx(hdc, -40, 0, NULL); LineTo(hdc, -22, 0);
+    MoveToEx(hdc, 22, 0, NULL); LineTo(hdc, 40, 0);
+    Ellipse(hdc, -22, -16, 22, 16);
+    MoveToEx(hdc, -22, 0, NULL);
+    LineTo(hdc, -15, -8); LineTo(hdc, -7, 8); LineTo(hdc, 1, -8);
+    LineTo(hdc, 9, 8); LineTo(hdc, 16, -6); LineTo(hdc, 22, 0);
+    /* panah cahaya MASUK (menunjuk ke badan) */
+    MoveToEx(hdc, -30, -30, NULL); LineTo(hdc, -14, -16);
+    MoveToEx(hdc, -14, -16, NULL); LineTo(hdc, -19, -16);
+    MoveToEx(hdc, -14, -16, NULL); LineTo(hdc, -14, -11);
+    MoveToEx(hdc, -30, 30, NULL); LineTo(hdc, -14, 16);
+    MoveToEx(hdc, -14, 16, NULL); LineTo(hdc, -19, 16);
+    MoveToEx(hdc, -14, 16, NULL); LineTo(hdc, -14, 11);
+}
+
+static void sym_buzzer(HDC hdc) {
+    MoveToEx(hdc, -40, 0, NULL); LineTo(hdc, -14, 0);
+    MoveToEx(hdc, 14, 0, NULL); LineTo(hdc, 40, 0);
+    Arc(hdc, -14, -20, 14, 20, 14, -20, 14, 20);   /* mangkuk */
+    MoveToEx(hdc, 14, -20, NULL); LineTo(hdc, 14, 20);
+    /* gelombang suara */
+    Arc(hdc, 18, -10, 28, 10, 23, -10, 23, 10);
+    Arc(hdc, 24, -14, 38, 14, 31, -14, 31, 14);
+}
+
 static void draw_tool_symbol(HDC hdc, ToolKind tool, int cx, int cy, BOOL active) {
     int saved = SaveDC(hdc);
     SetGraphicsMode(hdc, GM_ADVANCED);
@@ -411,6 +439,8 @@ static void draw_tool_symbol(HDC hdc, ToolKind tool, int cx, int cy, BOOL active
     else if (ct == COMP_TRANSISTOR) sym_transistor(hdc);
     else if (ct == COMP_DIODE) sym_diode(hdc);
     else if (ct == COMP_CAPOLAR) sym_capolar(hdc);
+    else if (ct == COMP_LDR) sym_ldr(hdc);
+    else if (ct == COMP_BUZZER) sym_buzzer(hdc);
     else if (tool == TOOL_SELECT) {
         POINT cur[7] = { {0,-14},{10,4},{4,4},{4,14},{-2,14},{-2,4},{-8,4} };
         HBRUSH br = CreateSolidBrush(active ? RGB(50,128,255) : RGB(40,40,40));
@@ -571,7 +601,7 @@ void draw_toolbar(HDC hdc, int W) {
                    tool == TOOL_BATTERY || tool == TOOL_ACSOURCE || tool == TOOL_LED ||
                    tool == TOOL_GROUND || tool == TOOL_CAPACITOR ||
                    tool == TOOL_TRANSISTOR || tool == TOOL_DIODE ||
-                   tool == TOOL_CAPOLAR) {
+                   tool == TOOL_CAPOLAR || tool == TOOL_LDR || tool == TOOL_BUZZER) {
             draw_tool_symbol(hdc, tool, bx + TOOLBAR_BTN_W / 2, by + 17, active);
             SetTextColor(hdc, active ? RGB(30,90,200) : RGB(90,90,90));
             SetBkMode(hdc, TRANSPARENT);
@@ -585,8 +615,10 @@ void draw_toolbar(HDC hdc, int W) {
             else if (tool == TOOL_TRANSISTOR) nm = L"Q";
             else if (tool == TOOL_DIODE) nm = L"D";
             else if (tool == TOOL_CAPOLAR) nm = L"CP";
+            else if (tool == TOOL_LDR) nm = L"LDR";
+            else if (tool == TOOL_BUZZER) nm = L"BUZ";
             else nm = L"GND";
-            TextOutW(hdc, bx + 19, by + 30, nm, (int)wcslen(nm));
+            TextOutW(hdc, bx + (tool == TOOL_LDR ? 15 : 19), by + 30, nm, (int)wcslen(nm));
         } else {
             draw_tool_symbol(hdc, tool, bx + TOOLBAR_BTN_W / 2, by + 15, active);
             const wchar_t *nm = (tool == TOOL_SELECT) ? L"Select" :

@@ -12,6 +12,8 @@ static CompType tool_to_comp(ToolKind t) {
         case TOOL_TRANSISTOR: return COMP_TRANSISTOR;
         case TOOL_DIODE:      return COMP_DIODE;
         case TOOL_CAPOLAR:    return COMP_CAPOLAR;
+        case TOOL_LDR:        return COMP_LDR;
+        case TOOL_BUZZER:     return COMP_BUZZER;
         default: return COMP_NONE;
     }
 }
@@ -38,6 +40,8 @@ static const wchar_t *comp_kind_name(CompType t) {
         case COMP_TRANSISTOR: return L"Transistor NPN";
         case COMP_DIODE:      return L"Dioda";
         case COMP_CAPOLAR:    return L"Kapasitor Polar";
+        case COMP_LDR:        return L"LDR / Fotoresistor";
+        case COMP_BUZZER:     return L"Buzzer";
         default:              return L"Komponen";
     }
 }
@@ -127,6 +131,20 @@ void show_context_menu(HWND hwnd, int sx, int sy, Component *c) {
                         swprintf(extra, 64, L"\nArus LED: %ls%s", si,
                             sim_comp_blown(c) ? L"  << BAHAYA/MELEDAK" : L"");
                         wcscat_s(buf, 512, extra);
+                    }
+                }
+                if (sim_running && c->type == COMP_LDR) {
+                    wchar_t si[32], extra[96];
+                    sim_format_si(sim_ldr_effective(c), L"\x03A9", si, 32);
+                    swprintf(extra, 96, L"\nSaat RUN dianggap TERANG: R efektif = %ls.", si);
+                    wcscat_s(buf, 512, extra);
+                }
+                if (c->type == COMP_BUZZER) {
+                    wcscat_s(buf, 512, L"\npin 0=(+) kiri, pin 1=(-) kanan.");
+                    if (sim_running) {
+                        wcscat_s(buf, 512, sim_comp_sound(c)
+                            ? L"\nStatus RUN: BERBUNYI \a(nyaring!)"
+                            : L"\nStatus RUN: diam (polaritas/tegangan belum cukup).");
                     }
                 }
                 MessageBoxW(hwnd, buf, L"Informasi Komponen", MB_OK | MB_ICONINFORMATION);
@@ -359,6 +377,8 @@ void on_key_down(HWND hwnd, WPARAM key) {
     else if (key == '7') { current_tool = TOOL_TRANSISTOR; }
     else if (key == '8') { current_tool = TOOL_DIODE; }
     else if (key == '9') { current_tool = TOOL_CAPOLAR; }
+    else if (key == 'L' || key == 'l') { current_tool = TOOL_LDR; }
+    else if (key == 'B' || key == 'b') { current_tool = TOOL_BUZZER; }
     else if (key == VK_DELETE || key == VK_BACK) {
         if (sim_running) return; /* hapus dikunci saat RUN */
         if (selected_id >= 0) {

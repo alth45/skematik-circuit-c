@@ -14,6 +14,26 @@ double sim_iled_max = 0.0;
 int    sim_exploded = 0;
 int    sim_overcur = 0;
 
+/* ---- Ekstensi LDR & Buzzer ---- */
+int    sim_buzzer_count = 0;   /* jumlah buzzer berbunyi (hasil terakhir) */
+double sim_ldr_value    = 0.0; /* resistansi efektif LDR terbesar saat RUN */
+static int sound_[MAX_COMP];   /* 1 = buzzer ke-i berbunyi */
+
+/* R efektif LDR: mode edit memakai nilai "gelap" apa adanya; saat RUN
+   sensor dianggap tersinari => R turun menjadi gelap x LDR_LIGHT_RATIO. */
+double sim_ldr_effective(const Component *c) {
+    if (!c || c->type != COMP_LDR) return -1.0;
+    double dark = (c->v > 0.0) ? c->v : LDR_DARK_DEFAULT;
+    return sim_running ? dark * LDR_LIGHT_RATIO : dark;
+}
+
+int sim_comp_sound(const Component *c) {
+    if (!c || c->type != COMP_BUZZER) return 0;
+    int i = (int)(c - comps);
+    if (i < 0 || i >= comp_count) return 0;
+    return sound_[i];
+}
+
 /* Net listrik: tiap pin komponen = 1 node.
    node = comp_index * 3 + pin (ground pin1/2, basis = pin2 tak dipakai
    komponen 1-2 pin; transistor pakai pin0=C, pin1=E, pin2=B). */
@@ -101,9 +121,12 @@ void sim_recompute(void) {
     for (int i = 0; i < MAX_COMP * 3; i++) parent_[i] = i;
     for (int i = 0; i < MAX_COMP; i++) {
         lit_[i] = 0; cond_[i] = 0; dfwd_[i] = 0; blown_[i] = 0; ilead_[i] = -1.0;
+        sound_[i] = 0;
     }
     for (int i = 0; i < MAX_WIRES; i++) hot_[i] = 0;
     sim_led_count = 0;
+    sim_buzzer_count = 0;
+    sim_ldr_value = 0.0;
     sim_short = 0;
     sim_has_battery = 0;
     sim_has_ac = 0;
@@ -123,7 +146,7 @@ void sim_recompute(void) {
         unite(node_of(ia, wires[i].a.pin_idx), node_of(ib, wires[i].b.pin_idx));
     }
 
-    /* Pass 1: penghantar pasif. Resistor & saklar-ON tembus.
+    /* Pass 1: penghantar pasif. Resistor, LDR & saklar-ON tembus.
        Kapasitor (biasa & polar) = blokir DC (tidak digabung), kecuali
        mode murni-AC (ada sumber AC, tanpa baterai): kapasitor dianggap
        menghantar (impedansi AC) agar loop AC bisa dianalisis.
@@ -138,7 +161,7 @@ void sim_recompute(void) {
         ac_only = (has_ac && !has_dc);
     }
     for (int i = 0; i < comp_count; i++) {
-        if (comps[i].type == COMP_RESISTOR) {
+        if (comps[i].type == COMP_RESISTOR || comps[i].type == COMP_LDR) {
             unite(node_of(i, 0), node_of(i, 1));
         } else if (comps[i].type == COMP_SWITCH && comps[i].on) {
             unite(node_of(i, 0), node_of(i, 1));
@@ -305,6 +328,10 @@ void sim_recompute(void) {
                 int other_pin;
                 if (hc->type == COMP_RESISTOR) {
                     rsum += hc->v;
+                } else if (hc->type == COMP_LDR) {
+                    /* LDR: ikut menghitung resistansi jalur, pakai nilai
+                       efektif (terang = gelap x 0.1 saat RUN) */
+                    rsum += sim_ldr_effective(hc);
                 } else if (hc->type == COMP_DIODE && dfwd_[h]) {
                     vdrop += (hc->v > 0.0 ? hc->v : VF_DIODE);
                 } else if (hc->type == COMP_SWITCH && hc->on) {

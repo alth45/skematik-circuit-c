@@ -24,6 +24,8 @@ static const wchar_t *comp_type_name(CompType t) {
         case COMP_TRANSISTOR: return L"transistor";
         case COMP_DIODE:      return L"diode";
         case COMP_CAPOLAR:    return L"capolar";
+        case COMP_LDR:        return L"ldr";
+        case COMP_BUZZER:     return L"buzzer";
         default: return L"none";
     }
 }
@@ -51,6 +53,11 @@ static int comp_type_from_name(const char *s) {
     if (strcmp(s, "capolar") == 0 || strcmp(s, "Capolar") == 0 ||
         strcmp(s, "capacitor_polar") == 0 || strcmp(s, "electrolytic") == 0 ||
         strcmp(s, "CP") == 0) return COMP_CAPOLAR;
+    if (strcmp(s, "ldr") == 0 || strcmp(s, "LDR") == 0 ||
+        strcmp(s, "photoresistor") == 0 || strcmp(s, "PhotoResistor") == 0 ||
+        strcmp(s, "fotoresistor") == 0 || strcmp(s, "PR") == 0) return COMP_LDR;
+    if (strcmp(s, "buzzer") == 0 || strcmp(s, "Buzzer") == 0 ||
+        strcmp(s, "BUZ") == 0 || strcmp(s, "speaker") == 0) return COMP_BUZZER;
     return COMP_NONE;
 }
 
