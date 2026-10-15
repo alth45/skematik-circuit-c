@@ -24,7 +24,29 @@ static const wchar_t *comp_type_name(CompType t) {
         case COMP_TRANSISTOR: return L"transistor";
         case COMP_DIODE:      return L"diode";
         case COMP_CAPOLAR:    return L"capolar";
+        /* NOTE(komponen-ldr-buzzer): fileio.c belum mengenali tipe baru ini —
+           save JSON akan menulis "none" dan load akan membuang komponennya.
+           TODO: tambahkan mapping "ldr"/"buzzer" + update tes round-trip di
+           tests/test_fileio.c ketika dukungan JSON untuk LDR/Buzzer masuk. */
         default: return L"none";
+    }
+}
+
+/* Varian ASCII dari comp_type_name — diekspor agar round-trip JSON bisa
+   diuji langsung dari unit test (lihat tests/test_fileio.c). */
+const char *comp_type_json_name(CompType t) {
+    switch (t) {
+        case COMP_RESISTOR:   return "resistor";
+        case COMP_SWITCH:     return "switch";
+        case COMP_BATTERY:    return "battery";
+        case COMP_ACSOURCE:   return "acsource";
+        case COMP_LED:        return "led";
+        case COMP_GROUND:     return "ground";
+        case COMP_CAPACITOR:  return "capacitor";
+        case COMP_TRANSISTOR: return "transistor";
+        case COMP_DIODE:      return "diode";
+        case COMP_CAPOLAR:    return "capolar";
+        default:              return "none";
     }
 }
 
@@ -51,7 +73,17 @@ static int comp_type_from_name(const char *s) {
     if (strcmp(s, "capolar") == 0 || strcmp(s, "Capolar") == 0 ||
         strcmp(s, "capacitor_polar") == 0 || strcmp(s, "electrolytic") == 0 ||
         strcmp(s, "CP") == 0) return COMP_CAPOLAR;
+    /* NOTE(komponen-ldr-buzzer): "ldr" & "buzzer" sengaja BELUM diterima di
+       sini karena comp_type_name() (sisi save) belum menulis nama kanoniknya;
+       menerima load tanpa dukungan save akan membuat round-trip diam-diam
+       merusak file. TODO: tambahkan kedua sisi sekaligus + test round-trip. */
     return COMP_NONE;
+}
+
+/* Alias publik dari comp_type_from_name — diekspor untuk unit test
+   (lihat tests/test_fileio.c). Mengembalikan CompType sebagai int. */
+int comp_type_from_json_name(const char *s) {
+    return comp_type_from_name(s);
 }
 
 int model_save_json(const wchar_t *path, wchar_t *err, int err_cap) {
