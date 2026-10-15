@@ -144,6 +144,9 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
                 draw_component(memDC, &comps[i]);
             }
 
+            /* highlight blok multi-select + kotak marquee (drag klik kiri) */
+            draw_selection_overlay(memDC, memDC);
+
             /* Banner hasil simulasi saat RUN */
             if (sim_running) {
                 const wchar_t *msg = sim_message();

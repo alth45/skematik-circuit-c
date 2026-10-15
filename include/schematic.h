@@ -153,10 +153,16 @@ int  model_delete_selection(void);
 int  model_duplicate_selection(int dx, int dy);
 
 /* ---- State drag kotak seleksi (events.c, digambar di draw.c) ----
-   box_selecting = 1 saat user menyeret kotak blok; sudut-sudut dalam
-   koordinat canvas. model_select_rect() dipanggil saat mouse-up. */
+   box_selecting = 1 saat user MENAHAN klik kiri lalu menyeret kotak blok
+   (marquee) di area kosong canvas — tidak perlu memilih tool "Blok" dulu;
+   pada TOOL_SELECT hal ini terjadi otomatis. Sudut-sudut disimpan dalam
+   koordinat canvas. model_select_rect() dipanggil saat mouse release.
+   Ambang geser minimum BOX_DRAG_MIN px membedakan "klik biasa" dari
+   "drag blok". Setelah mouse release, seluruh anggota seleksi dapat
+   langsung di-drag and drop sebagai satu grup (lihat group_dragging). */
 extern int box_selecting;
 extern int box_x1, box_y1, box_x2, box_y2;
+#define BOX_DRAG_MIN 4   /* px: gerakan minimum agar dianggap drag blok */
 
 /* ---- Drag multi (grup terseleksi ikut bergerak) ----
    group_dragging = 1 saat grup hasil seleksi sedang diseret.
@@ -288,6 +294,10 @@ void draw_k_buzzer(HDC hdc, Component *c);
 void draw_component(HDC hdc, Component *c);
 void draw_canvas(HWND hwnd);
 void draw_wires(HDC hdc);
+/* Overlay seleksi: kotak hijau di sekeliling semua anggota blok + kotak
+   marquee (klik kiri ditekan & diseret) pada koordinat canvas. Dipanggil
+   dari WM_PAINT setelah komponen digambar. */
+void draw_selection_overlay(HDC hdc, HDC hdc_screen);
 
 /* ===================== Event Handler (events.c) ===================== */
 void on_lbutton_down(HWND hwnd, int x, int y);

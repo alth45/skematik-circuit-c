@@ -214,6 +214,36 @@ static void begin_group_drag(HWND hwnd, Component *hit, int x, int y) {
     SetCapture(hwnd);
 }
 
+/* Mulai "marquee" (kotak blok) saat klik kiri ditekan dan user menyeret.
+   box_x1..box_y2 = titik asal penekanan tombol (koordinat canvas). */
+static void begin_box_select(int x, int y) {
+    box_selecting = 1;
+    box_x1 = box_x2 = x;
+    box_y1 = box_y2 = y;
+}
+
+/* Diselesaikan saat mouse-move: terapkan seleksi kotak + status pesan.
+   add=1 (Shift) -> gabungkan dengan seleksi yang sudah ada. */
+static void apply_box_select(HWND hwnd, BOOL add) {
+    int n = model_select_rect(box_x1, box_y1, box_x2, box_y2, add ? 1 : 0);
+    if (n > 0) {
+        set_status(L"Blok: %d komponen terpilih — tahan klik kiri dan drag "
+                   L"blok ini untuk memindah (drag & drop), Del menghapus, "
+                   L"Ctrl+D menduplikat.", n);
+    } else {
+        if (!add) clear_selection();
+        set_status(L"Blok: tidak ada komponen yang terkena kotak.");
+    }
+    InvalidateRect(hwnd, NULL, FALSE);
+}
+
+/* State "marquee tertunda": klik kiri sudah DITEKAN di area kosong canvas,
+   tetapi kotak blok baru dianggap dimulai setelah kursor bergeser lebih dari
+   BOX_DRAG_MIN piksel. Dengan begitu klik biasa (tanpa geser) tetap berfungsi
+   membatalkan seleksi, sementara tekan + seret langsung memblok rangkaian. */
+static int box_pending = 0;
+static int box_pending_x = 0, box_pending_y = 0;
+
 void on_lbutton_down(HWND hwnd, int x, int y) {
     /* MODE RUN: klik saklar = toggle ON/OFF, klik LDR = toggle Terang/Gelap */
     if (sim_running) {
@@ -279,18 +309,24 @@ void on_lbutton_down(HWND hwnd, int x, int y) {
         return;
     }
 
-    /* TOOL_BOX: mulai drag kotak seleksi (blok rangkaian) */
+    /* TOOL_BOX: mulai drag kotak seleksi (blok rangkaian). Klik kiri DITEKAN
+       lalu diseret -> marquee; saat dilepas semua komponen di dalamnya terseleksi
+       dan bisa langsung di-drag and drop sebagai satu grup. */
     if (current_tool == TOOL_BOX) {
-        box_selecting = 1;
-        box_x1 = box_y1 = box_x2 = box_y2 = 0; /* aman sampai move pertama */
-        box_x1 = x; box_y1 = y; box_x2 = x; box_y2 = y;
+        box_pending = 0;
+        group_dragging = 0;
+        dragging_id = -1;
+        wiring_active = 0;
+        begin_box_select(x, y);
         SetCapture(hwnd);
         InvalidateRect(hwnd, NULL, FALSE);
         return;
     }
 
     /* TOOL_SELECT: prioritas pin -> mulai wiring cepat,
-       kalau tidak kena pin -> pilih/drag (tunggal atau grup) */
+       kalau tidak kena pin -> pilih/drag (tunggal atau grup).
+       Di area kosong: klik kiri ditekan + seret = blok marquee (multi-select),
+       sama seperti canvas umumnya — tanpa perlu berpindah tool. */
     if (current_tool == TOOL_SELECT) {
         PinRef p; int px, py;
         if (find_pin_at(x, y, &p, &px, &py)) {
@@ -325,7 +361,16 @@ void on_lbutton_down(HWND hwnd, int x, int y) {
                 SetCapture(hwnd);
             }
         } else {
-            clear_selection();                      /* klik kosong: batal pilih */
+            /* area kosong: siapkan marquee. box_selecting baru benar-benar
+               aktif setelah kursor bergeser > BOX_DRAG_MIN (lihat mouse-move),
+               sehingga klik biasa tetap membatalkan seleksi. */
+            begin_box_select(x, y);
+            box_selecting = 0;      /* tunggu ambang geser dulu */
+            group_dragging = 0;
+            dragging_id = -1;
+            SetCapture(hwnd);
+            box_pending_x = x; box_pending_y = y;
+            box_pending = 1;
         }
         InvalidateRect(hwnd, NULL, FALSE);
         return;
@@ -333,21 +378,22 @@ void on_lbutton_down(HWND hwnd, int x, int y) {
 }
 
 void on_lbutton_up(HWND hwnd, int x, int y) {
+    /* Marquee tertunda dilepas tanpa pernah melewati ambang geser:
+       berarti ini klik biasa di area kosong -> batalkan seleksi. */
+    if (box_pending) {
+        box_pending = 0;
+        box_selecting = 0;
+        clear_selection();
+        ReleaseCapture();
+        InvalidateRect(hwnd, NULL, FALSE);
+        return;
+    }
     if (box_selecting) {
         box_selecting = 0;
         BOOL shift = (GetKeyState(VK_SHIFT) & 0x8000) != 0;
         box_x2 = x; box_y2 = y;
-        int n = model_select_rect(box_x1, box_y1, box_x2, box_y2, shift ? 1 : 0);
-        if (n == 1 && !shift) {
-            /* satu komponen saja -> jadikan seleksi tunggal biasa */
-        } else if (n > 0) {
-            set_status(L"Blok: %d komponen terpilih — drag untuk memindah grup, "
-                       L"Del menghapus, Ctrl+D menduplikat.", n);
-        } else {
-            set_status(L"Blok: tidak ada komponen yang terkena kotak.");
-        }
+        apply_box_select(hwnd, shift);
         ReleaseCapture();
-        InvalidateRect(hwnd, NULL, FALSE);
         return;
     }
     if (wiring_active) {
@@ -384,6 +430,7 @@ void on_rbutton_down(HWND hwnd, int x, int y) {
     group_dragging = 0;
     wiring_active = 0;
     box_selecting = 0;
+    box_pending = 0;
     Component *hit = find_comp_at(x, y);
     POINT pt; GetCursorPos(&pt);
     if (hit) {
@@ -441,8 +488,25 @@ void on_lbutton_dblclk(HWND hwnd, int x, int y) {
 }
 
 void on_mouse_move(HWND hwnd, int x, int y) {
+    /* Klik kiri sedang ditekan di area kosong: aktifkan marquee begitu
+       kursor bergeser melewati ambang -> semua rangkaian dalam kotak ikut
+       terseleksi secara LIVE saat menyeret (feedback visual langsung). */
+    if (box_pending && !box_selecting) {
+        if (abs(x - box_pending_x) > BOX_DRAG_MIN ||
+            abs(y - box_pending_y) > BOX_DRAG_MIN) {
+            box_pending = 0;
+            box_selecting = 1;
+            box_x1 = box_pending_x; box_y1 = box_pending_y;
+            box_x2 = x; box_y2 = y;
+            InvalidateRect(hwnd, NULL, FALSE);
+        }
+        return;
+    }
     if (box_selecting) {
         box_x2 = x; box_y2 = y;
+        /* pratinjau seleksi real-time (marquee umum di canvas lain) */
+        BOOL shift = (GetKeyState(VK_SHIFT) & 0x8000) != 0;
+        model_select_rect(box_x1, box_y1, box_x2, box_y2, shift ? 1 : 0);
         InvalidateRect(hwnd, NULL, FALSE);
         return;
     }
@@ -585,6 +649,7 @@ void on_key_down(HWND hwnd, WPARAM key) {
         dragging_id = -1;
         group_dragging = 0;
         box_selecting = 0;
+        box_pending = 0;
         wiring_active = 0;
         InvalidateRect(hwnd, NULL, FALSE);
         return;
