@@ -22,6 +22,11 @@ static int lit_[MAX_COMP];
 static int cond_[MAX_COMP];
 static int dfwd_[MAX_COMP];   /* 1 = dioda menghantar forward (A->K) */
 static int buzz_[MAX_COMP];   /* 1 = buzzer ini aktif (berbunyi) saat RUN */
+static double vmread_[MAX_COMP]; /* bacaan voltmeter per komponen (V); VM_DISCONNECTED = tak terhubung */
+static int    vmconn_[MAX_COMP]; /* 1 = kedua pin voltmeter menyentuh net yang berbeda */
+
+/* Kode "tak terhubung" untuk vmread_[]: salah satu/dua pin mengambang. */
+#define VM_DISCONNECTED (-1e30)
 static int hot_[MAX_WIRES];
 static int blown_[MAX_COMP];  /* 1 = LED meledak (kelebihan arus/tegangan) */
 static double ilead_[MAX_COMP]; /* arus hasil hitung per komponen (A); -1 = tak terdefinisi */
@@ -103,6 +108,7 @@ void sim_recompute(void) {
     for (int i = 0; i < MAX_COMP; i++) {
         lit_[i] = 0; cond_[i] = 0; dfwd_[i] = 0; buzz_[i] = 0;
         blown_[i] = 0; ilead_[i] = -1.0;
+        vmread_[i] = VM_DISCONNECTED; vmconn_[i] = 0;
     }
     for (int i = 0; i < MAX_WIRES; i++) hot_[i] = 0;
     sim_led_count = 0;
@@ -382,6 +388,164 @@ void sim_recompute(void) {
         }
     }
 
+    /* ---- Pass 4: VOLTMETER — ukur BEDA POTENSIAL (tegangan) antara dua titik.
+       Voltmeter ideal = impedansi tak hingga: pin0 & pin1 TIDAK PERNAH
+       digabung menjadi satu net, jadi memasangnya tidak mengubah rangkaian.
+       Peta potensial per net (volt terhadap kutub (-) sumber):
+         - mulai dari tiap net 0 V (kutub "-" baterai / netral AC / ground),
+           telusuri rantai dua-pin sepanjang kabel: penghantar pasif
+           (R/LDR/saklar-ON/buzzer/dioda fwd/transistor on/kapasitor mode AC)
+           -> potensial tetap; beban aktif (LED/dioda) -> turun sebesar Vf.
+         - net yang memuat (+) baterai atau Live AC -> +V untaian sumber
+           (baterai seri dijumlahkan).
+       Bacaan tiap voltmeter = potensial(pin0) - potensial(pin1);
+       terbalik kutub -> negatif; salah satu pin mengambang -> VM_DISCONNECTED. */
+    {
+        static double vm_net[MAX_COMP * 3];   /* potensial per root net (V) */
+        static int    vm_has[MAX_COMP * 3];   /* 1 = net punya info potensial */
+        for (int k = 0; k < MAX_COMP * 3; k++) { vm_net[k] = 0.0; vm_has[k] = 0; }
+
+        /* (a) tandai net referensi: minus_ref (kandidat 0 V), plus_ref
+             (kandidat +V untaian sumber). */
+        int minus_ref[MAX_COMP * 3], plus_ref[MAX_COMP * 3];
+        int n_mref = 0, n_pref = 0;
+        for (int i = 0; i < comp_count; i++) {
+            if (comps[i].type == COMP_BATTERY || comps[i].type == COMP_ACSOURCE) {
+                int rm = find_root(node_of(i, 1));
+                int rp = find_root(node_of(i, 0));
+                int dupm = 0, dupp = 0;
+                for (int k = 0; k < n_mref; k++) if (minus_ref[k] == rm) dupm = 1;
+                for (int k = 0; k < n_pref; k++) if (plus_ref[k] == rp) dupp = 1;
+                if (!dupm && n_mref < MAX_COMP * 3) minus_ref[n_mref++] = rm;
+                if (!dupp && n_pref < MAX_COMP * 3) plus_ref[n_pref++] = rp;
+            } else if (comps[i].type == COMP_GROUND) {
+                int rg = find_root(node_of(i, 0));
+                int dup = 0;
+                for (int k = 0; k < n_mref; k++) if (minus_ref[k] == rg) dup = 1;
+                if (!dup && n_mref < MAX_COMP * 3) minus_ref[n_mref++] = rg;
+            }
+        }
+
+        /* (b) potensial tiap net "+": jumlah tegangan sumber yang tergabung
+             seri (kutub "-" suatu sumber duduk di net "+" sumber lain).
+             Hanya net "+" yang TIDAK terpetakan oleh BFS 0-V yang memakai
+             nilai ini — sehingga pembagi tegang tetap muncul alami. */
+        double vstrand[MAX_COMP * 3];   /* paralel dgn plus_ref[] */
+        for (int k = 0; k < n_pref; k++) {
+            double mag = 0.0;
+            int rp = plus_ref[k];
+            int used[MAX_COMP];
+            for (int i = 0; i < comp_count; i++) used[i] = 0;
+            for (int i = 0; i < comp_count; i++) {
+                if (comps[i].type != COMP_BATTERY && comps[i].type != COMP_ACSOURCE)
+                    continue;
+                if (find_root(node_of(i, 0)) != rp) continue;
+                double acc = 0.0;
+                int cur = i, guard = 0;
+                while (cur >= 0 && guard++ <= comp_count) {
+                    if (used[cur]) break;
+                    used[cur] = 1;
+                    double vv = comps[cur].v;
+                    if (comps[cur].type == COMP_ACSOURCE) { if (vv <= 0.0) vv = 220.0; }
+                    else                                  { if (vv <= 0.0) vv = 9.0;  }
+                    acc += vv;
+                    int rm = find_root(node_of(cur, 1));
+                    int nxt = -1;
+                    for (int j = 0; j < comp_count; j++) {
+                        if (j == cur || used[j]) continue;
+                        if (comps[j].type != COMP_BATTERY && comps[j].type != COMP_ACSOURCE)
+                            continue;
+                        if (find_root(node_of(j, 0)) == rm) { nxt = j; break; }
+                    }
+                    cur = nxt;
+                }
+                if (acc > mag) mag = acc;   /* beberapa jalur -> pakai terbesar */
+            }
+            vstrand[k] = mag;
+        }
+
+        /* (c) BFS "rantai head" dari tiap net 0 V: head[] = komponen dua-pin
+             yang menyentuh net (jembatan antar net dalam satu untaian kabel).
+             Penghantar pasif dilewati tanpa drop; LED/dioda menurunkan
+             potensial sebesar Vf; kapasitor blokir DC (hanya dilalui saat
+             mode AC murni); sumber memutus rantai. Net yang sudah punya
+             potensial tidak ditimpa (first-wins). */
+        static int hv_head[NETQ_MAX];
+        static int hv_q[NETQ_MAX];
+        static double hv_pot[NETQ_MAX];
+        for (int m = 0; m < n_mref; m++) {
+            int start = minus_ref[m];
+            int qh = 0, qt = 0;
+            int tmp_nn = 0;
+            net_heads_from(start * 3, hv_head, NETQ_MAX, &tmp_nn);
+            int si = net_index_of(find_root(start), tmp_nn);
+            if (si < 0) continue;
+            hv_q[qt++] = si;
+            hv_pot[si] = 0.0;
+            while (qh < qt) {
+                int ci = hv_q[qh++];
+                int h = hv_head[ci];
+                if (h < 0) continue;                 /* buntu */
+                Component *hc = &comps[h];
+                int other_pin = (find_root(node_of(h, 0)) == nrk_[ci]) ? 1 : 0;
+                int oroot = find_root(node_of(h, other_pin));
+                int oi = net_index_of(oroot, tmp_nn);
+                if (oi < 0 || oi < qh - 1) continue; /* sudah/anomali */
+                double npot = hv_pot[ci];
+                int passable = 0;
+                switch (hc->type) {
+                    case COMP_RESISTOR: case COMP_LDR: case COMP_BUZZER:
+                        passable = 1; break;
+                    case COMP_SWITCH:   passable = hc->on; break;
+                    case COMP_DIODE:    passable = dfwd_[h]; break;
+                    case COMP_TRANSISTOR: passable = cond_[h]; break;
+                    case COMP_CAPACITOR: case COMP_CAPOLAR:
+                        passable = sim_ac_mode; break;
+                    default: break;
+                }
+                if (passable) {
+                    hv_pot[oi] = npot;
+                } else if (hc->type == COMP_LED) {
+                    double vf = (hc->v > 0.0) ? hc->v : VF_LED_DEFAULT;
+                    hv_pot[oi] = npot - vf;          /* drop maju LED */
+                } else if (hc->type == COMP_DIODE) {
+                    double vf = (hc->v > 0.0) ? hc->v : VF_DIODE;
+                    hv_pot[oi] = npot - vf;          /* drop mundur (pendekatan) */
+                } else {
+                    continue;                        /* baterai/ground -> stop */
+                }
+                hv_q[qt++] = oi;
+            }
+            for (int j = 0; j < tmp_nn; j++) {
+                int r = nrk_[j];
+                if (r >= 0 && r < MAX_COMP * 3 && !vm_has[r]) {
+                    vm_net[r] = hv_pot[j]; vm_has[r] = 1;
+                }
+            }
+        }
+
+        /* (d) sisa net "+" yang belum terpetakan (mis. langsung tersambung
+             ke kutub + lewat kabel) -> potensial = +V untaian sumbernya. */
+        for (int k = 0; k < n_pref; k++) {
+            int r = plus_ref[k];
+            if (r >= 0 && r < MAX_COMP * 3 && !vm_has[r]) {
+                vm_net[r] = vstrand[k]; vm_has[r] = 1;
+            }
+        }
+
+        /* (e) bacaan tiap voltmeter = potensial(pin0) - potensial(pin1). */
+        for (int i = 0; i < comp_count; i++) {
+            if (comps[i].type != COMP_VOLTMETER) continue;
+            int r0 = find_root(node_of(i, 0));
+            int r1 = find_root(node_of(i, 1));
+            if (!vm_has[r0] || !vm_has[r1]) continue;   /* salah satu mengambang */
+            vmconn_[i] = 1;
+            vmread_[i] = vm_net[r0] - vm_net[r1];
+        }
+    }
+
+    /* Hot-wire: kabel yang ujung-a-nya duduk di net kutub (+) dianggap
+       bertegangan (digambar merah/panas saat RUN). */
     for (int i = 0; i < wire_count; i++) {
         Component *ca = find_comp_by_id(wires[i].a.comp_id);
         if (!ca) continue;
@@ -459,6 +623,24 @@ double sim_ldr_effective_r(const Component *c) {
     double rdark = (c->v > 0.0) ? c->v : LDR_DARK_DEFAULT;
     /* on = 1 => TERANG: R ~ 1% nilai gelap; on = 0 => GELAP: R penuh */
     return c->on ? rdark * LDR_LIGHT_RATIO : rdark;
+}
+
+/* Bacaan voltmeter (volt). Kontrak (lihat schematic.h):
+   -1 = bukan voltmeter, mode EDIT, atau salah satu pin mengambang;
+   kedua pin pada net yang sama -> 0 V; kutub terbalik -> negatif. */
+double sim_voltmeter_reading(const Component *c) {
+    if (!c || c->type != COMP_VOLTMETER) return -1.0;
+    int i = (int)(c - comps);
+    if (i < 0 || i >= comp_count) return -1.0;
+    if (!vmconn_[i]) return -1.0;            /* tak terhubung penuh */
+    return vmread_[i];
+}
+
+int sim_voltmeter_connected(const Component *c) {
+    if (!c || c->type != COMP_VOLTMETER) return 0;
+    int i = (int)(c - comps);
+    if (i < 0 || i >= comp_count) return 0;
+    return vmconn_[i];
 }
 
 /* Format angka SI untuk pesan: "31.8 mA", "220 Ohm", "9 V" */
