@@ -357,6 +357,72 @@ TEST(sim, ac_220v_tanpa_resistor_meledak_dengan_peringatan) {
     ASSERT_WSTR_HAS(sim_message(), L"MELEDAK");
 }
 
+/* REGRESI: sumber AC 220 V pada rangkaian TERPISAH tidak boleh membuat
+   loop baterai+R+LED yang sudah aman dituduh "MELEDAK". Perhitungan harus
+   memakai tegangan sumber pada LOOP LED itu sendiri (KVL), bukan maksimum
+   global seluruh rangkaian. */
+TEST(sim, sumber_ac_terpisah_tidak_membuat_loop_dc_yang_aman_meledak) {
+    test_reset_model();
+    /* Loop DC ideal: (9 - 2) / 350 = 20 mA -> AMAN */
+    Component *bat = add_at(COMP_BATTERY, 100, 100);
+    Component *r   = add_at(COMP_RESISTOR, 300, 100);
+    Component *led = add_at(COMP_LED, 500, 100);
+    Component *gnd = add_at(COMP_GROUND, 700, 100);
+    r->v = 350.0;
+    wire_pins(bat, 0, r, 0);
+    wire_pins(r, 1, led, 0);
+    wire_pins(led, 1, gnd, 0);
+    wire_pins(bat, 1, gnd, 0);
+    sim_recompute();
+    ASSERT_INT_EQ(0, sim_exploded);
+    ASSERT_INT_EQ(0, sim_overcur);
+
+    /* Tambahkan AC 220 V + buzzer pada rangkaian lain (tak terhubung) */
+    Component *ac  = add_at(COMP_ACSOURCE, 100, 400);
+    Component *buz = add_at(COMP_BUZZER, 300, 400);
+    ac->v = 220.0;
+    wire_pins(ac, 0, buz, 0);
+    wire_pins(buz, 1, ac, 1);
+    sim_recompute();
+    ASSERT_INT_EQ(1, sim_led_count);            /* LED DC tetap menyala */
+    ASSERT_INT_EQ(1, sim_comp_lit(led));
+    ASSERT_INT_EQ(0, sim_exploded);             /* BUKAN meledak */
+    ASSERT_INT_EQ(0, sim_overcur);
+    ASSERT_DBL_NEAR(9.0, sim_vsrc, 1e-9);       /* sumber loop = baterai 9 V */
+    ASSERT_DBL_NEAR(0.02, sim_comp_current(led), 1e-9);
+    ASSERT_WSTR_HAS(sim_message(), L"BENAR");
+}
+
+/* REGRESI: dua baterai berbeda nilai pada loop berbeda — tiap LED dihitung
+   dengan sumber pada loop-nya sendiri. */
+TEST(sim, dua_loop_sumber_berbeda_nilai_terpisah) {
+    test_reset_model();
+    /* Loop 1: 9V, R=350 -> 20 mA (aman) */
+    Component *bat1 = add_at(COMP_BATTERY, 100, 100);
+    Component *r1   = add_at(COMP_RESISTOR, 300, 100);
+    Component *led1 = add_at(COMP_LED, 500, 100);
+    bat1->v = 9.0; r1->v = 350.0;
+    wire_pins(bat1, 0, r1, 0);
+    wire_pins(r1, 1, led1, 0);
+    wire_pins(led1, 1, bat1, 1);
+    /* Loop 2: 4.5V, R=25 -> (4.5-2)/25 = 100 mA -> overcurrent (bukan ledak) */
+    Component *bat2 = add_at(COMP_BATTERY, 100, 400);
+    Component *r2   = add_at(COMP_RESISTOR, 300, 400);
+    Component *led2 = add_at(COMP_LED, 500, 400);
+    bat2->v = 4.5; r2->v = 25.0;
+    wire_pins(bat2, 0, r2, 0);
+    wire_pins(r2, 1, led2, 0);
+    wire_pins(led2, 1, bat2, 1);
+    sim_recompute();
+    ASSERT_INT_EQ(2, sim_led_count);
+    ASSERT_INT_EQ(0, sim_exploded);             /* tak ada sumber >50V di loop */
+    ASSERT_INT_EQ(1, sim_overcur);              /* hanya LED loop-4.5V */
+    ASSERT_INT_EQ(0, sim_comp_blown(led1));     /* LED 9V/350ohm tetap aman */
+    ASSERT_INT_EQ(1, sim_comp_blown(led2));
+    ASSERT_DBL_NEAR(0.02, sim_comp_current(led1), 1e-9);
+    ASSERT_DBL_NEAR(0.1, sim_comp_current(led2), 1e-9);
+}
+
 TEST(sim, kapasitor_tembus_dalam_mode_ac) {
     test_reset_model();
     Component *ac  = add_at(COMP_ACSOURCE, 200, 200);
