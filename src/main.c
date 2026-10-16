@@ -1,5 +1,11 @@
 #include "schematic.h"
 
+/* ---- Splash screen (src/ui/splash.c) ----
+   Ditampilkan lebih dulu saat .exe dijalankan; window utama baru muncul
+   setelah splash selesai (atau dilewati dengan klik). */
+void splash_show(HINSTANCE hInst);  /* buat + tampilkan splash (animasi) */
+int  splash_active(void);           /* 1 selama splash masih tampil */
+
 /* ===================== Window Procedure ===================== */
 static void setup_keyboard(HWND hwnd) {
     SetFocus(hwnd);
@@ -230,9 +236,13 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
 }
 
 /* ===================== Entry Point ===================== */
-int WINAPI wWinMain(HINSTANCE hInst, HINSTANCE hPrev, PWSTR cmd, int show) {
-    (void)hPrev; (void)cmd;
 
+/* Window utama dibuat SETELAH splash selesai, supaya urutan visualnya:
+   splash dulu -> baru main window muncul. */
+static HWND g_main_hwnd = NULL;
+static int  g_show_flag = SW_SHOWNORMAL;
+
+static void main_window_create(HINSTANCE hInst) {
     WNDCLASSW wc = {0};
     wc.lpfnWndProc   = WndProc;
     wc.hInstance     = hInst;
@@ -242,15 +252,33 @@ int WINAPI wWinMain(HINSTANCE hInst, HINSTANCE hPrev, PWSTR cmd, int show) {
 
     RegisterClassW(&wc);
 
-    HWND hwnd = CreateWindowExW(
+    g_main_hwnd = CreateWindowExW(
         0, L"SchematicEditorWnd",
         L"Schematic Editor - Win32 GDI",
         WS_OVERLAPPEDWINDOW,
         CW_USEDEFAULT, CW_USEDEFAULT, 1100, 650,
         NULL, NULL, hInst, NULL);
 
-    ShowWindow(hwnd, show);
-    UpdateWindow(hwnd);
+    ShowWindow(g_main_hwnd, g_show_flag);
+    UpdateWindow(g_main_hwnd);
+}
+
+int WINAPI wWinMain(HINSTANCE hInst, HINSTANCE hPrev, PWSTR cmd, int show) {
+    (void)hPrev; (void)cmd;
+    g_show_flag = show;
+
+    /* 1) Splash screen tampil duluan; blok sampai animasi selesai
+          (bisa dipercepat dengan klik pada splash). */
+    splash_show(hInst);
+    while (splash_active()) {
+        MSG m;
+        if (GetMessageW(&m, NULL, 0, 0) <= 0) return 0; /* quit saat splash */
+        TranslateMessage(&m);
+        DispatchMessageW(&m);
+    }
+
+    /* 2) Baru kemudian window utama muncul */
+    main_window_create(hInst);
 
     /* Accelerator klasik untuk menu bar: Ctrl+N/O/S, F5 (Run/Stop), F9 */
     ACCEL accels[] = {
@@ -264,7 +292,7 @@ int WINAPI wWinMain(HINSTANCE hInst, HINSTANCE hPrev, PWSTR cmd, int show) {
 
     MSG msg;
     while (GetMessageW(&msg, NULL, 0, 0) > 0) {
-        if (hAccel && TranslateAcceleratorW(hwnd, hAccel, &msg)) continue;
+        if (hAccel && TranslateAcceleratorW(g_main_hwnd, hAccel, &msg)) continue;
         TranslateMessage(&msg);
         DispatchMessageW(&msg);
     }
