@@ -1,3 +1,4 @@
+
 # Schematic-C — Editor Skematik Rangkaian (Win32 GDI)
 
 Editor skematik sederhana berbasis **C + Win32 GDI**, tanpa framework tambahan.
@@ -18,8 +19,9 @@ lalu **Run** untuk simulasi: klik saklar ON/OFF dan lihat LED menyala.
 | Wiring antar pin | Tarik titik merah pin ke pin lain. Kabel siku + preview + highlight target. |
 | Rotate (R) | Pilih simbol lalu tekan `R`. 0 -> 90 -> 180 -> 270. Pin & kabel ikut sudut. |
 | Toolbar ikon | 18 tombol palet + 4 tombol aksi: Select, Blok, Wire, R, SW, BAT, AC, LED, GND, C, Q, D, CP, LDR, BZR, VM, Hapus — lalu Clear, Save, Open, Run/Stop. |
-| Komponen | Resistor, Saklar, Baterai, LED, Ground, Kapasitor, Transistor NPN, Dioda, Kapasitor Polar, LDR, Buzzer, Sumber AC, **Voltmeter** (baru). |
-| Voltmeter (baru) | Mengukur **beda potensial (tegangan) antara dua titik** dalam rangkaian. Simbol lingkaran "V" dengan kutub (+)/(−); dipasang paralel; ideal (impedansi tak hingga) sehingga tidak mengubah rangkaian. Angka bacaan (mis. `9 V`) tampil di bawah simbol saat RUN dan di menu *Informasi & Hasil Hitung*. |
+| Komponen | Resistor, Saklar, Baterai, LED, Ground, Kapasitor, Transistor NPN, Dioda, Kapasitor Polar, LDR, Buzzer, Sumber AC, **Voltmeter**. |
+| **Analisis nodal (MNA-lite)** | Mesin simulasi menyelesaikan **KCL** (`G·V = I`) dengan Gauss elimination + partial pivoting untuk tiap LED: hitung `V_thevenin` & `R_thevenin`, lalu `I = (Vth − Vf) / Rth`. Akurat untuk topologi **seri / paralel / pembagi tegangan** (presisi ~1% pada kasus tipikal). |
+| Voltmeter | Mengukur **beda potensial (tegangan) antara dua titik** dalam rangkaian. Simbol lingkaran "V" dengan kutub (+)/(−); dipasang paralel; ideal (impedansi tak hingga) sehingga tidak mengubah rangkaian. Angka bacaan (mis. `9 V`) tampil di bawah simbol saat RUN dan di menu *Informasi & Hasil Hitung*. |
 | Nilai komponen | Tiap komponen punya value (Ohm/V/VAC/Vf/F). Edit via dialog: double-klik atau klik-kanan -> *Edit Nilai*. Parser mendukung `2.2k`, `100u`, `47uF`, `2.2e3`. |
 | Menu klik-kanan | Edit Nilai, Toggle saklar, Putar 90°, Duplikat, Informasi & Hasil Hitung (arus LED saat RUN), Hapus. Klik-kanan ganda = hapus. |
 | Save / Open JSON | Dialog Windows, format UTF-8, status saklar & nilai komponen (`"value"`) ikut tersimpan. |
@@ -136,10 +138,24 @@ AC Netral -- kabel ----------------------------- LED katoda
 ```
 
 Jika rangkaian hanya disuplai sumber AC (tanpa baterai DC), simulator masuk
-*mode AC*: kapasitor & kapasitor polar dianggap menghantar (impedansi AC),
-dan hasil dihitung dengan pendekatan nilai RMS.
+*mode AC*: kapasitor & kapasitor polar dianggap menghantar dengan **reaktansi
+`Xc = 1/(2πfC)`** (bukan short ideal), sehingga arus AC terhitung realistis
+(mis. C = 100 nF @ 50 Hz → Xc ≈ 31.8 kΩ).
 
-### 2d. Mengukur tegangan dengan Voltmeter
+### 2d. Contoh resistor paralel
+
+Analisis nodal menangani **paralel** dengan benar:
+
+```
+BAT (+) --+-- R1=220Ω --+-- LED anoda
+          |              |
+          +-- R2=220Ω --+         LED katoda -- BAT (-)
+```
+
+R_eq = 110 Ω → I ≈ 63.6 mA (MELEDAK). Bukan 31.8 mA seperti bila hanya R1
+yang dihitung — inilah peningkatan presisi dibanding versi path-based lama.
+
+### 2e. Mengukur tegangan dengan Voltmeter
 
 Voltmeter dipasang **paralel** — tidak memotong kabel, cukup tempelkan kedua
 ujungnya ke dua titik yang ingin diukur beda potensialnya:
@@ -161,6 +177,9 @@ BAT (-) --+----------------+-- kabel -- LED katoda
 Catatan perilaku:
 - Voltmeter ideal: impedansi tak hingga -> **tidak menghantar arus**, jadi
   memasangnya tidak mengubah jalannya rangkaian.
+- Bacaan diambil langsung dari **vektor potensial hasil analisis nodal** —
+  akurat untuk pembagi tegangan, drop pada resistor, dan beda potensial antar
+  node apa pun.
 - Bacaan = potensial pin(+) − potensial pin(−). Kutub terbalik -> nilai negatif
   + keterangan `(kutub terbalik)` di menu info.
 - Salah satu ujung mengambang (tidak terhubung) -> tampilan `-`.
@@ -242,31 +261,62 @@ UTF-8, contoh:
 
 ---
 
-## Aturan Simulasi (ideal)
+## Aturan Simulasi (analisis nodal)
 
-Mesin `sim.c` memakai union-find, tiap pin = 1 node:
+Mesin `sim.c` memakai **union-find** untuk kabel + penghantar ideal 0 Ω,
+lalu **analisis nodal (MNA-lite)** untuk menyelesaikan tegangan/arus.
 
-1. Gabungkan pin lewat kabel.
-2. Resistor selalu tembus, saklar hanya jika ON.
-   Baterai / LED / ground / kapasitor / kapasitor polar / transistor tidak tembus
-   (arus lewat luar; kapasitor & kapasitor polar memblokir DC, TAPI menghantar
-   pada mode AC murni).
+### Tahap 1 — Topologi (union-find)
+1. Kabel menyatukan pin-pin menjadi satu net (root).
+2. **Penghantar IDEAL 0 Ω** yang di-union hanya: saklar-ON, dioda forward,
+   transistor-ON, kapasitor-mode-AC-murni. **Resistor, LDR, buzzer TIDAK
+   di-union** — mereka tetap jadi *edge* berbobot R (kunci presisi).
 3. Net (+): semua pin0 baterai + pin0 (Live) sumber AC.
-   Net (-): pin1 baterai + pin1 (Netral) sumber AC + pin ground.
-4. Dioda ideal: menghantar satu arah A->K hanya jika anoda (pin0) sudah di net (+);
-   reverse-bias = open circuit. Status forward dipakai untuk panah hijau di simbol.
-5. Korsleting jika (+) dan (-) satu net (termasuk lewat dioda forward).
-6. LED nyala jika pin0 di (+) dan pin1 di (-) lewat jalur menghantar.
-7. Kabel hot jika net-nya kena (+).
-8. Mode AC: tanpa baterai DC tapi ada sumber AC -> loop dihitung dengan nilai RMS;
-   kapasitor dianggap tembus impedansi AC.
-9. Analisis arus loop (Ohm): I = (V_sumber - drop Vf) / R_serius. Arus > 20 mA
-   memicu peringatan overcurrent; jauh di atas batas -> pesan "LED MELEDAK".
-10. Voltmeter ideal: kedua pin **tidak pernah** disatukan menjadi satu net
-    (impedansi tak hingga, tidak menghantar arus). Setelah simulasi, potensial
-    tiap net diketahui -> bacaan = V(pin0 "+" − titik A) − V(pin1 "−" − titik B),
-    via `sim_voltmeter_reading()`. Ujung mengambang -> `-1` (tampilan "-");
-    kutub terbalik -> nilai negatif.
+   Net (−): pin1 baterai + pin1 (Netral) sumber AC + pin ground.
+
+### Tahap 2 — Analisis nodal
+4. Bangun matriks konduktansi `G` dan vektor arus `I` dari semua edge
+   resistif (R, LDR, buzzer, kapasitor-AC dengan `Xc = 1/(2πfC)`).
+5. **Sumber tegangan** → node dengan V **tetap** (baris constraint identitas),
+   bukan MNA penuh. Propagasi rantai sumber seri otomatis.
+6. Solve `G·V = I` dengan **Gauss elimination + partial pivoting**.
+   Regularisasi `G_REG = 1e-12` mencegah matriks singular untuk node
+   mengambang.
+
+### Tahap 3 — Perhitungan LED (per LED, independen)
+7. Untuk tiap LED:
+   - **Vth** = V(anoda) − V(katoda) dari solve global (LED lain dianggap OPEN).
+   - **Rth** = semua sumber di-short, injeksi +1 A di anoda & −1 A di katoda,
+     solve ulang → `Rth = V(anoda) − V(katoda)`.
+   - **I_LED** = `(Vth − Vf) / Rth` (nol bila Vth ≤ Vf).
+8. Nasib LED:
+   - `Rth ≈ 0` dan `Vth > Vf` → **MELEDAK** (short nyata).
+   - `I > 5 × If_max (100 mA)` → **MELEDAK**.
+   - `If_max < I ≤ 5 × If_max` → **overcurrent** (peringatan).
+   - `I ≤ If_max` → **AMAN**.
+   Toleransi relatif 1e-6 menjaga nilai ideal (mis. `(9−2)/350 = 20.000 mA`)
+   selalu dinyatakan AMAN.
+
+### Tahap 4 — Periferal
+9. Korsleting: (+) dan (−) satu root (termasuk lewat dioda forward).
+10. **Buzzer** ON bila `|V(pin0) − V(pin1)| > 1 V` (langsung dari solve nodal),
+    atau bila seri/paralel dengan LED yang menyala.
+11. **Voltmeter** ideal: kedua pin tidak pernah disatukan. Bacaan diambil
+    langsung dari `V(pin0) − V(pin1)` hasil solve nodal — akurat untuk
+    pembagi tegangan, drop antar node, dsb. Ujung mengambang → `-1` (UI `-`);
+    kutub terbalik → nilai negatif.
+12. Kabel hot: net yang memuat (+) sumber → merah tebal.
+
+### Akurasi
+- **Seri, paralel, campuran seri-paralel, pembagi tegangan**: presisi ~1%
+  (batas praktis dari `%.4g` di pesan).
+- **Model LED**: Vf konstan (bukan `Vf0 + Rs·I`); untuk arus 5–30 mA error
+  Vf ±5% masih bisa terjadi di dunia nyata, namun klasifikasi aman/meledak
+  berbasis datasheet (20 mA) tetap konservatif.
+- **Transistor**: masih biner (ON/OFF berdasarkan bias basis-emitor), belum
+  model β/Ib/Ic.
+- **Dioda**: ideal satu arah, Vf = `c->v` (default 0.7 V) — belum
+  Shockley-lite.
 
 Pesan hasil:
 
@@ -291,7 +341,9 @@ schematic-c/
     model.c            state, pin/rotasi/hit-test, add/remove/wire, nilai komponen
                        (parser/formatter/dialog edit value), palet tombol toolbar
     fileio.c           save/load JSON + dialog + status
-    sim.c              simulasi union-find + dioda forward + mode AC + analisis arus
+    sim.c              analisis nodal (MNA-lite, Gauss solver) + union-find untuk
+                       penghantar ideal + perhitungan LED (Vth/Rth) + model Xc
+                       kapasitor AC + voltmeter + buzzer + hot-wire
     ui/
       draw.c           dispatcher simbol + utilitas rotasi (with_rotation), label nilai,
                        pin, kabel hot/preview, canvas double-buffer
@@ -321,8 +373,8 @@ schematic-c/
   readme.md            file ini
 ```
 
-Alur: events/toolbar -> model -> sim_recompute ->
-draw/main baca sim_wire_hot / sim_comp_lit / sim_message.
+Alur: events/toolbar -> model -> sim_recompute (union-find → analisis nodal → per-LED)
+-> draw/main baca sim_wire_hot / sim_comp_lit / sim_message.
 
 ---
 
@@ -330,6 +382,8 @@ draw/main baca sim_wire_hot / sim_comp_lit / sim_message.
 
 | Error | Solusi |
 |---|---|
+| `warning: 'V_UNKNOWN' redefined` | Bentrok dengan `oleauto.h`. Ganti nama jadi `SIM_V_UNKNOWN` di sim.c. |
+| `cannot open output file schematic_win.exe: Permission denied` | Aplikasi masih jalan. `taskkill /f /im schematic_win.exe` lalu rebuild. |
 | `too few arguments to SetViewportOrgEx` | Pakai 4 argumen: `SetViewportOrgEx(hdc, x, y, NULL)`. |
 | `undefined reference to draw_toolbar` | File `toolbar_*.c` belum ikut compile. Pastikan build.bat memuat semua file. |
 | `invalid storage class for function` | Fungsi tertulis di dalam fungsi lain. Pisahkan ke level file. |
@@ -338,21 +392,24 @@ draw/main baca sim_wire_hot / sim_comp_lit / sim_message.
 | LED tidak menyala | Cek sumber (baterai/AC), loop tertutup, saklar ON (hijau), polaritas benar. |
 | Dioda tidak menyalakan beban | Cek arah panah segitiga: anoda (A) harus di sisi (+). Balik posisi/rotasi (`R`) jika terpasang reverse-bias. |
 | Pesan "LED MELEDAK" / overcurrent | Arus loop > 20 mA. Perbesar nilai resistor seri (double-klik resistor -> isi mis. `470`). |
-| Sumber AC seperti open circuit | Normal untuk kapasitor pada DC; pastikan tidak ada baterai DC di canvas agar simulator masuk mode AC (kapasitor tembus). |
+| Sumber AC seperti open circuit | Normal untuk kapasitor pada DC; pastikan tidak ada baterai DC di canvas agar simulator masuk mode AC (kapasitor tembus dengan Xc). |
 | Voltmeter selalu tampil "-" | Saat RUN, kedua pin harus terhubung ke net yang berbeda. Cek kabel: (+) ke titik A dan (-) ke titik B; satu ujung mengambang => bacaan "-". |
 | Bacaan voltmeter 0 V padahal ada sumber | Kedua ujung tersambung ke net yang sama (mis. keduanya di sisi (+)). Pindahkan salah satu ujung melewati komponen (resistor/LED/dioda). |
+| Hasil arus untuk paralel/seri janggal | Cek bahwa resistor tidak di-union sebagai short; hanya saklar-ON/dioda-fwd/transistor-ON/kapasitor-AC yang di-union. |
 | Save lalu Open menghilangkan LDR/Buzzer | Memang belum didukung JSON (lihat Format JSON); simpan rangkaian tanpa LDR/Buzzer dulu. Voltmeter sudah tersimpan dengan benar. |
 
 ---
 
 ## Ide Pengembangan
 
+- **LED Vf = Vf0 + Rs·I** (piecewise-linear) untuk presisi > 1% pada arus besar
+- **Transistor model β/Ib/Ic** dengan Vbe ≈ 0.7 V, arus basis nyata
+- **Dioda Shockley-lite**: `I = Is·(exp(V/nVt) − 1)` untuk Vf yang menyesuaikan arus
 - Multi-select + copy/paste
 - Undo/redo (Ctrl+Z/Y)
 - Zoom & pan canvas
 - Export PNG / netlist SPICE
 - Autosave + contoh `examples/*.json`
-- Analisis AC penuh (reaktansi Xc, frekuensi) — saat ini masih pendekatan RMS
 - Komponen baru: push button, saklar SPDT, PNP, amperemeter (ukur arus seri),
   ohmmeter
 - Dukungan JSON untuk LDR & Buzzer (saat ini masih dibuang saat save/load)
@@ -362,3 +419,20 @@ draw/main baca sim_wire_hot / sim_comp_lit / sim_message.
 ## Lisensi
 
 Bebas dipakai untuk belajar / tugas. Sebut sumber jika disebar ulang.
+```
+
+---
+
+## 📌 Ringkasan perubahan dari readme.md lama
+
+| Bagian | Yang berubah |
+|--------|--------------|
+| **Fitur table** | Tambah baris **Analisis nodal (MNA-lite)** dengan penjelasan presisi 1%. |
+| **Analisis arus row** | Masih sama, tapi sekarang didukung solver yang akurat. |
+| **Bagian 2c (AC)** | Menyebut **Xc = 1/(2πfC)** eksplisit, bukan "dianggap tembus". |
+| **Bagian 2d (baru)** | Contoh resistor paralel sebagai showcase presisi. |
+| **Bagian 2e** | Voltmeter sekarang dijelaskan ambil bacaan dari **vektor potensial nodal**, bukan BFS head. |
+| **Aturan Simulasi** | Ditulis ulang total: 4 tahap (union-find → nodal → per-LED → periferal) dengan detail solver, Vth/Rth, dan batas akurasi. |
+| **Struktur Proyek** | Deskripsi `sim.c` diupdate (MNA + Gauss + Xc). |
+| **Troubleshooting** | Tambah 3 baris baru: `V_UNKNOWN`, `Permission denied`, dan "hasil paralel janggal". |
+| **Ide Pengembangan** | Hapus "Analisis AC penuh (reaktansi Xc)" (sudah diimplementasi), ganti dengan LED Vf dinamis, transistor β, dioda Shockley. |
