@@ -11,6 +11,7 @@ int sim_ac_mode = 0;
 double sim_vsrc = 0.0;
 double sim_rloop = 0.0;
 double sim_iled_max = 0.0;
+double sim_vdrop_max = 0.0;   /* total drop Vf pada loop arus terbesar */
 int    sim_exploded = 0;
 int    sim_overcur = 0;
 
@@ -30,6 +31,7 @@ static int    vmconn_[MAX_COMP]; /* 1 = kedua pin voltmeter menyentuh net yang b
 static int hot_[MAX_WIRES];
 static int blown_[MAX_COMP];  /* 1 = LED meledak (kelebihan arus/tegangan) */
 static double ilead_[MAX_COMP]; /* arus hasil hitung per komponen (A); -1 = tak terdefinisi */
+static double vdrop_[MAX_COMP]; /* total drop (Vf LED + dioda + Vce) pada loop tiap LED */
 
 /* ---- Utilitas untaian net (BFS pada graf union-find) ---- */
 #define NETQ_MAX (MAX_COMP * 3)
@@ -107,7 +109,7 @@ void sim_recompute(void) {
     for (int i = 0; i < MAX_COMP * 3; i++) parent_[i] = i;
     for (int i = 0; i < MAX_COMP; i++) {
         lit_[i] = 0; cond_[i] = 0; dfwd_[i] = 0; buzz_[i] = 0;
-        blown_[i] = 0; ilead_[i] = -1.0;
+        blown_[i] = 0; ilead_[i] = -1.0; vdrop_[i] = 0.0;
         vmread_[i] = VM_DISCONNECTED; vmconn_[i] = 0;
     }
     for (int i = 0; i < MAX_WIRES; i++) hot_[i] = 0;
@@ -119,6 +121,7 @@ void sim_recompute(void) {
     sim_vsrc = 0.0;
     sim_rloop = 0.0;
     sim_iled_max = 0.0;
+    sim_vdrop_max = 0.0;
     sim_exploded = 0;
     sim_overcur = 0;
 
@@ -260,8 +263,13 @@ void sim_recompute(void) {
          R_total = jumlah resistor sepanjang jalur
          V_drops = Vf LED + Vf dioda forward + 0.2 V transistor saturasi
          I = (V_sumber - V_drops) / R_total
-       V_sumber = baterai DC bila ada; bila hanya sumber AC, dipakai nilai
-       RMS AC (mode AC). Kapasitor dianggap tembus hanya pada mode AC.
+       V_sumber = tegangan sumber pada LOOP LED itu sendiri (KVL): sumber
+       yang kutub (+)-nya berada pada untaian net yang sama dengan anoda
+       LED. Dulu dipakai maksimum GLOBAL seluruh rangkaian — itu salah:
+       misal baterai 9 V + LED+R (aman), lalu ditambahkan sumber AC 220 V
+       terpisah -> loop LED yang sudah benar tetap dituduh "MELEDAK".
+       Bila tidak ada sumber pada untaian LED, fallback: baterai terbesar,
+       lalu AC terbesar (RMS). Kapasitor dianggap tembus hanya pada mode AC.
        Tanpa resistor pengaman -> arus praktis tak hingga -> LED MELEDAK.
        Percabangan paralel -> arus TERBESAR dipakai (konservatif). ---- */
     {
@@ -365,23 +373,54 @@ void sim_recompute(void) {
             }
 
             double iled;
+            /* Tegangan sumber utk LED ini: sumber yang kutub (+)-nya duduk
+               pada untaian net anoda LED (loop KVL yang sama). Kalau tidak
+               ketemu (mis. (+) baterai baru tersambung ke net anoda lewat
+               dioda/transistor), pakai baterai terbesar, lalu AC terbesar. */
+            double vled = 0.0;
+            for (int s = 0; s < comp_count; s++) {
+                if (comps[s].type != COMP_BATTERY && comps[s].type != COMP_ACSOURCE)
+                    continue;
+                int rp = find_root(node_of(s, 0));
+                int inChain = 0;
+                for (int k = 0; k < nn; k++) if (nrk_[k] == rp) { inChain = 1; break; }
+                if (!inChain) continue;
+                double vv = comps[s].v;
+                if (vv <= 0.0) vv = (comps[s].type == COMP_ACSOURCE) ? 220.0 : 9.0;
+                if (vv > vled) vled = vv;
+            }
+            if (vled <= 0.0) vled = vsrc_max;   /* fallback global */
             if (!found_path)      iled = 1e9;        /* jalur tak lengkap -> korslet */
             else if (rsum <= 0.0) iled = 1e9;        /* tanpa R = arus tak hingga */
             else {
-                double dv = vsrc_max - vdrop;
+                double dv = vled - vdrop;
                 iled = (dv > 0.0) ? dv / rsum : 0.0; /* Vf >= Vbat -> tak menyala */
             }
             ilead_[i] = iled;
-            if (iled > sim_iled_max) { sim_iled_max = iled; sim_rloop = rsum; }
+            vdrop_[i] = vdrop;
+            if (iled > sim_iled_max) {
+                sim_iled_max = iled; sim_rloop = rsum;
+                sim_vsrc = vled; sim_vdrop_max = vdrop;
+            } else if (sim_iled_max >= 1e8 && iled < 1e8) {
+                /* ada LED korslet (arus "tak hingga") — tetap tampilkan
+                   angka loop LED yang benar-benar tersambung */
+                sim_iled_max = iled; sim_rloop = rsum;
+                sim_vsrc = vled; sim_vdrop_max = vdrop;
+            }
 
-            /* Nasib LED:
-               - I tak hingga / > 5x If_max (100 mA) / Vbat > 50 V -> MELEDAK
-               - If_max < I <= 5x If_max -> rusak pelan (overcurrent) */
-            if (iled >= 1e8 || iled > 5.0 * VF_LED_MAX ||
-                (iled > VF_LED_MAX && vsrc_max > V_EXPLODE)) {
+            /* Nasib LED (hukum Ohm, dengan toleransi pembulatan):
+               - I praktis tak hingga (tanpa R / jalur cacat) -> MELEDAK
+               - I > 5x If_max (100 mA) atau V_sumber loop > 50 V -> MELEDAK
+               - If_max < I <= 5x If_max -> rusak pelan (overcurrent)
+               Perbandingan memakai epsilon relatif: nilai IDEAL I = 20 mA
+               (mis. (9-2)V / 350Ω) harus selalu dinyatakan AMAN, bukan
+               terkena galat pembulatan floating-point. */
+            const double tol = 1.0 + 1e-6;
+            if (iled >= 1e8 || iled > 5.0 * VF_LED_MAX * tol ||
+                (iled > VF_LED_MAX * tol && vled > V_EXPLODE)) {
                 blown_[i] = 1;
                 sim_exploded = 1;
-            } else if (iled > VF_LED_MAX) {
+            } else if (iled > VF_LED_MAX * tol) {
                 blown_[i] = 1;
                 sim_overcur = 1;
             }
@@ -679,8 +718,8 @@ const wchar_t *sim_message(void) {
     if (sim_exploded) {
         sim_format_si(sim_iled_max, L"A", vi, 32);
         swprintf(g_msg, 256,
-            L"BAHAYA! LED MELEDAK — arus %ls melebihi batas 20 mA. "
-            L"Tambah/perbesar resistor seri!", vi);
+            L"BAHAYA! LED MELEDAK — arus loop %ls jauh melebihi batas "
+            L"20 mA. Tambah/perbesar resistor seri!", vi);
         return g_msg;
     }
     if (sim_overcur) {
@@ -691,16 +730,23 @@ const wchar_t *sim_message(void) {
         return g_msg;
     }
     if (sim_led_count > 0) {
-        sim_format_si(sim_iled_max, L"A", vi, 32);
+        /* Arus pada loop seri: I = (V_sumber - total Vf) / R_loop */
+        double dv = sim_vsrc - sim_vdrop_max;
+        double ileff = (dv < 0.0) ? 0.0 : dv;
+        wchar_t vd[32];
+        sim_format_si(ileff, L"A", vi, 32);
         sim_format_si(sim_rloop, L"\x03A9", vr, 32);
+        sim_format_si(sim_vdrop_max, L"V", vd, 32);
         if (sim_ac_mode) {
             swprintf(g_msg, 256,
-                L"Rangkaian AC BENAR — LED MENYALA (pendekatan RMS). I = %ls, R_loop = %ls, VAC = %.4g V.",
-                vi, vr, sim_vsrc);
+                L"Rangkaian AC BENAR — LED MENYALA (pendekatan RMS). "
+                L"I = (VAC - Vf_total)/R = (%.4g - %ls)/%ls = %ls. AMAN.",
+                sim_vsrc, vd, vr, vi);
         } else {
             swprintf(g_msg, 256,
-                L"Rangkaian BENAR — LED MENYALA. I = %ls, R_loop = %ls, Vbat = %.4g V.",
-                vi, vr, sim_vsrc);
+                L"Rangkaian BENAR — LED MENYALA. "
+                L"I = (Vbat - Vf_total)/R = (%.4g - %ls)/%ls = %ls. AMAN.",
+                sim_vsrc, vd, vr, vi);
         }
         return g_msg;
     }

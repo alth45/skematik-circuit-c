@@ -356,9 +356,10 @@ int sim_diode_fwd(const Component *c);    /* 1 = dioda ini menghantar (forward A
 const wchar_t *sim_message(void);     /* pesan status hasil simulasi */
 
 /* ---- Hasil perhitungan kuantitatif (Ohm + hukum tegangan) ---- */
-extern double sim_vsrc;       /* total tegangan seri baterai (V) */
+extern double sim_vsrc;       /* tegangan sumber pada loop LED paling panas (V) */
 extern double sim_rloop;      /* resistansi loop LED paling panas (Ohm) */
 extern double sim_iled_max;   /* arus LED terbesar (A) */
+extern double sim_vdrop_max;  /* total drop Vf (LED+dioda+Vce) pada loop tsb (V) */
 extern int    sim_exploded;   /* 1 = ada LED MeLEDAK (kelebihan arus/tegangan) */
 extern int    sim_overcur;    /* 1 = ada LED nyala tapi arus > 20 mA (berbahaya) */
 int    sim_comp_blown(const Component *c);   /* 1 = LED ini meledak */
