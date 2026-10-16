@@ -1,5 +1,11 @@
 #include "schematic.h"
 
+/* ---- Splash screen (src/ui/splash.c) ----
+   Ditampilkan lebih dulu saat .exe dijalankan; window utama baru muncul
+   setelah splash selesai (atau dilewati dengan klik). */
+void splash_show(HINSTANCE hInst);  /* buat + tampilkan splash (animasi) */
+int  splash_active(void);           /* 1 selama splash masih tampil */
+
 /* ===================== Window Procedure ===================== */
 static void setup_keyboard(HWND hwnd) {
     SetFocus(hwnd);
@@ -231,8 +237,14 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
 
 /* ===================== Entry Point ===================== */
 int WINAPI wWinMain(HINSTANCE hInst, HINSTANCE hPrev, PWSTR cmd, int show) {
-    (void)hPrev; (void)cmd;
+    (void)hPrev; (void)cmd; (void)show; /* jendela utama ditampilkan oleh splash */
 
+/* Window utama dibuat SETELAH splash selesai, supaya urutan visualnya:
+   splash dulu -> baru main window muncul. */
+static HWND g_main_hwnd = NULL;
+static int  g_show_flag = SW_SHOWNORMAL;
+
+static void main_window_create(HINSTANCE hInst) {
     WNDCLASSW wc = {0};
     wc.lpfnWndProc   = WndProc;
     wc.hInstance     = hInst;
@@ -242,15 +254,19 @@ int WINAPI wWinMain(HINSTANCE hInst, HINSTANCE hPrev, PWSTR cmd, int show) {
 
     RegisterClassW(&wc);
 
-    HWND hwnd = CreateWindowExW(
+    g_main_hwnd = CreateWindowExW(
         0, L"SchematicEditorWnd",
         L"Schematic Editor - Win32 GDI",
         WS_OVERLAPPEDWINDOW,
         CW_USEDEFAULT, CW_USEDEFAULT, 1100, 650,
         NULL, NULL, hInst, NULL);
 
-    ShowWindow(hwnd, show);
+    /* Jendela utama dibuat TERSEMBUNYI dulu; splash yang menampilkannya
+       saat fade-out selesai (urutan: splash -> main). */
+    ShowWindow(hwnd, SW_HIDE);
     UpdateWindow(hwnd);
+
+    splash_run(hInst, hwnd);   /* tampilkan splash screen terlebih dahulu */
 
     /* Accelerator klasik untuk menu bar: Ctrl+N/O/S, F5 (Run/Stop), F9 */
     ACCEL accels[] = {
@@ -264,7 +280,7 @@ int WINAPI wWinMain(HINSTANCE hInst, HINSTANCE hPrev, PWSTR cmd, int show) {
 
     MSG msg;
     while (GetMessageW(&msg, NULL, 0, 0) > 0) {
-        if (hAccel && TranslateAcceleratorW(hwnd, hAccel, &msg)) continue;
+        if (hAccel && TranslateAcceleratorW(g_main_hwnd, hAccel, &msg)) continue;
         TranslateMessage(&msg);
         DispatchMessageW(&msg);
     }
