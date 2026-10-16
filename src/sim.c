@@ -448,8 +448,6 @@ void sim_recompute(void) {
             (9-2)V/350Ω = 20.000 mA selalu dinyatakan AMAN. ---- */
     {
         static int head_[NETQ_MAX];
-        static double jr_[NETQ_MAX], jd_[NETQ_MAX];
-        static int q_[NETQ_MAX], seen_[NETQ_MAX];
 
         for (int i = 0; i < comp_count; i++) {
             if (comps[i].type != COMP_LED) continue;
@@ -534,26 +532,25 @@ void sim_recompute(void) {
                (arus tak terdefinisi, BUKAN korslet/meledak). */
             double vf_led = (comps[i].v > 0.0 ? comps[i].v : VF_LED_DEFAULT);
             static int gmap_[NG_MAX];
+            static int grev_[NG_MAX];  /* rev: indeks simpul -> node pin asal */
             static char gedges_[NG_MAX * NG_MAX];   /* 768^2 byte ~ 0.6 MB */
-            int ns = raw_graph_build(nrk_, nn, gmap_, gedges_);
+            int ns = raw_graph_build(nrk_, nn, gmap_, grev_, gedges_);
             int a_node = node_of(i, 0);             /* anoda LED */
             double best_r = -1.0;      /* jalur terpilih: R terkecil */
             double best_drop = 0.0;
+            double best_drop_extra_ = 0.0; /* akumulasi drop V jembatan (dioda/Vce) */
             if (ns > 0 && gmap_[a_node] >= 0) {
                 static double gr_[NG_MAX];
                 static int gseen_[NG_MAX];
+                static int gnq_[NG_MAX]; /* antrean BFS: ns bisa melebihi NETQ_MAX */
                 int qh = 0, qt = 0, guard = 0;
                 for (int s2 = 0; s2 < ns; s2++) { gseen_[s2] = 0; gr_[s2] = 0.0; }
                 int start = gmap_[a_node];
-                gseen_[start] = 1; gr_[start] = 0.0; q_[qt++] = start;
-                /* antrean pakai q_ (ukuran NETQ_MAX cukup? simpul bisa >NETQ_MAX
-                   bila banyak pin; pakai antrean lokal berukuran NS) */
-                static int gnq_[NG_MAX];
-                qh = 0; qt = 0;
+                gseen_[start] = 1; gr_[start] = 0.0;
                 gnq_[qt++] = start;
                 while (qh < qt && guard++ <= 4 * ns + 8) {
                     int cs = gnq_[qh++];
-                    int croot = find_root(node_pin_of_(cs)); /* root simpul cs */
+                    int croot = find_root(grev_[cs]);  /* root simpul cs */
                     /* jangan menembus sumber: simpul yang root-nya = (+) atau (-)
                        boleh DITETAPKAN sebagai akhir jalur, tapi tidak dilanjutkan */
                     int is_plus = 0;
@@ -562,16 +559,20 @@ void sim_recompute(void) {
                     if (is_plus && cs != start) {
                         /* kembali ke (+): loop tertutup */
                         if (best_r < 0.0 || gr_[cs] < best_r) {
-                            best_r = gr_[cs]; best_drop = vf_led;
+                            best_r = gr_[cs];
+                            best_drop = vf_led + best_drop_extra_;
                         }
                         continue;
                     }
                     for (int nb = 0; nb < ns; nb++) {
                         if (!gedges_[cs * ns + nb]) continue;
-                        int nroot = find_root(node_pin_of_(nb));
+                        int nroot = find_root(grev_[nb]);
                         double addR = 0.0, addV = 0.0;
                         if (nroot == croot) {
-                            addR = intra_net_r(croot);
+                            /* satu root: biaya R antar simpul (kawat = 0 Ω,
+                               resistor/LDR yang pin-pinnya tergabung = R-nya) */
+                            addR = edge_cost_(cs, nb, grev_);
+                            if (addR < 0.0) addR = 0.0;
                         } else {
                             /* cari komponen jembatan penghantar antara dua node */
                             int found = 0;
@@ -588,7 +589,7 @@ void sim_recompute(void) {
                                 }
                             }
                             if (!found) continue;    /* bukan penghantar -> buntu */
-                            if (addV > 0.0) best_drop_extra_ += addV; /* lihat catatan */
+                            if (addV > 0.0) best_drop_extra_ += addV; /* drop dioda/Vce ikut mengurangi tegangan efektif loop */
                         }
                         double nr = gr_[cs] + addR;
                         if (!gseen_[nb]) {
