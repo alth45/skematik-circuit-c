@@ -533,31 +533,28 @@ void sim_recompute(void) {
                (arus tak terdefinisi, BUKAN korslet/meledak). */
             double vf_led = (comps[i].v > 0.0 ? comps[i].v : VF_LED_DEFAULT);
             static int gmap_[NG_MAX];
-            static int grev_arr_[NG_MAX];
             static char gedges_[NG_MAX * NG_MAX];   /* 768^2 byte ~ 0.6 MB */
-            int ns = raw_graph_build(nrk_, nn, gmap_, grev_arr_, gedges_);
-            grev_ = grev_arr_;                      /* utk node_pin_of_() di BFS */
+            int ns = raw_graph_build(nrk_, nn, gmap_, gedges_);
             int a_node = node_of(i, 0);             /* anoda LED */
             double best_r = -1.0;      /* jalur terpilih: R terkecil */
-            double best_drop = vf_led;
+            double best_drop = 0.0;
             if (ns > 0 && gmap_[a_node] >= 0) {
                 static double gr_[NG_MAX];
                 static double gd_[NG_MAX];         /* total drop Vf/Vce jalur */
                 static int gseen_[NG_MAX];
-                int guard = 0;
-                for (int s2 = 0; s2 < ns; s2++) {
-                    gseen_[s2] = 0; gr_[s2] = 0.0; gd_[s2] = 0.0;
-                }
+                int qh = 0, qt = 0, guard = 0;
+                for (int s2 = 0; s2 < ns; s2++) { gseen_[s2] = 0; gr_[s2] = 0.0; }
                 int start = gmap_[a_node];
-                gseen_[start] = 1; gr_[start] = 0.0; gd_[start] = 0.0;
-                /* antrean berukuran NS (simpul graf bisa > NETQ_MAX) */
+                gseen_[start] = 1; gr_[start] = 0.0; q_[qt++] = start;
+                /* antrean pakai q_ (ukuran NETQ_MAX cukup? simpul bisa >NETQ_MAX
+                   bila banyak pin; pakai antrean lokal berukuran NS) */
                 static int gnq_[NG_MAX];
-                int qh = 0, qt = 0;
+                qh = 0; qt = 0;
                 gnq_[qt++] = start;
                 while (qh < qt && guard++ <= 4 * ns + 8) {
                     int cs = gnq_[qh++];
                     int croot = find_root(node_pin_of_(cs)); /* root simpul cs */
-                    /* jangan menembus sumber: simpul yang root-nya = (+)
+                    /* jangan menembus sumber: simpul yang root-nya = (+) atau (-)
                        boleh DITETAPKAN sebagai akhir jalur, tapi tidak dilanjutkan */
                     int is_plus = 0;
                     for (int k = 0; k < n_plus; k++)
@@ -565,18 +562,15 @@ void sim_recompute(void) {
                     if (is_plus && cs != start) {
                         /* kembali ke (+): loop tertutup */
                         if (best_r < 0.0 || gr_[cs] < best_r) {
-                            best_r = gr_[cs]; best_drop = vf_led + gd_[cs];
+                            best_r = gr_[cs]; best_drop = vf_led;
                         }
                         continue;
                     }
                     for (int nb = 0; nb < ns; nb++) {
                         if (!gedges_[cs * ns + nb]) continue;
-                        int nroot = find_root(node_pin_of_(nb));
+                        int nroot = find_root(grev_[nb]);
                         double addR = 0.0, addV = 0.0;
                         if (nroot == croot) {
-                            /* dua simpul satu net hasil union penghantar
-                               pasif — lewat komponen itu: R internal wajib
-                               dihitung (intra_net_r), drop 0 V */
                             addR = intra_net_r(croot);
                         } else {
                             /* cari komponen jembatan penghantar antara dua node */
@@ -594,6 +588,7 @@ void sim_recompute(void) {
                                 }
                             }
                             if (!found) continue;    /* bukan penghantar -> buntu */
+                            if (addV > 0.0) best_drop_extra_ += addV; /* lihat catatan */
                         }
                         double nr = gr_[cs] + addR;
                         double nd = gd_[cs] + addV;
