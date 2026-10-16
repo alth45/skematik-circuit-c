@@ -48,9 +48,15 @@ typedef enum {
     COMP_LDR,        /* LDR / fotoresistor: resistansi bergantung cahaya.
                         pin0=kiri pin1=kanan; v = resistansi saat GELAP (Ohm, default 1M).
                         Saat terang resistansi ~1% dari nilai gelap. Menghantar seperti resistor. */
-    COMP_BUZZER      /* buzzer (piezo/elektromagnetik): pin0=input(+) pin1=gnd(-).
+    COMP_BUZZER,     /* buzzer (piezo/elektromagnetik): pin0=input(+) pin1=gnd(-).
                         v = frekuensi bunyi Hz (default 1000). Berbunyi bila kedua pin
                         terhubung ke kutub berlawanan lewat jalur menghantar. */
+    COMP_VOLTMETER   /* voltmeter: mengukur BEDA POTENSIAL (tegangan) antara dua titik
+                        dalam rangkaian. Dipasang PARALEL — pin0=(+) terpotong kabel/
+                        titik A, pin1=(-) ke titik B. TIDAK menghantar arus (impedansi
+                        tak hingga => kedua pin tidak pernah disatukan menjadi satu net).
+                        Hasil bacaan per komponen via sim_voltmeter_reading() (volt);
+                        saat mode RUN angka tegangan tampil di bawah simbol. */
 } CompType;
 
 /* Tool yang dipilih user di palette */
@@ -70,6 +76,7 @@ typedef enum {
     TOOL_CAPOLAR,
     TOOL_LDR,            /* LDR / fotoresistor (sensor cahaya) */
     TOOL_BUZZER,         /* buzzer (output suara) */
+    TOOL_VOLTMETER,      /* voltmeter (ukur beda potensial dua titik) */
     TOOL_DELETE
 } ToolKind;
 
@@ -88,6 +95,7 @@ typedef struct {
                        //   kapasitor & polar = farad (default 100e-9)
                        //   LDR        = R gelap dalam Ohm (default 1e6 / 1 MOhm)
                        //   buzzer     = frekuensi Hz (default 1000)
+                       //   voltmeter  = tidak dipakai (0); bacaan via sim_voltmeter_reading()
                        //   switch/transistor/ground tidak dipakai (0)
 } Component;
 
@@ -101,8 +109,8 @@ typedef struct {
     PinRef a, b;
 } Wire;
 
-/* Jumlah tombol palette (tambah 1: tool Blok/Multi-Select) */
-#define BTN_COUNT 16
+/* Jumlah tombol palette (Select, Blok, Wire + 13 komponen + Hapus). */
+#define BTN_COUNT 17
 
 /* Batas seleksi multi (model.c) */
 #define MAX_SEL 256
@@ -290,6 +298,7 @@ void draw_k_capolar(HDC hdc, Component *c);
 void draw_k_acsource(HDC hdc, Component *c);
 void draw_k_ldr(HDC hdc, Component *c);
 void draw_k_buzzer(HDC hdc, Component *c);
+void draw_k_voltmeter(HDC hdc, Component *c);
 
 void draw_component(HDC hdc, Component *c);
 void draw_canvas(HWND hwnd);
@@ -379,6 +388,19 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp);
 
 int    sim_buzzer_on(const Component *c);         /* 1 = buzzer aktif (berbunyi) saat RUN */
 double sim_ldr_effective_r(const Component *c);   /* R efektif LDR: gelap=v, terang~1% v; -1 bukan LDR */
+
+/* ---- Voltmeter (ukur beda potensial / tegangan antara dua titik) ----
+   Voltmeter ideal: impedansi tak hingga -> TIDAK menghantar arus sama
+   sekali (kedua pin tidak pernah disatukan menjadi satu net), sehingga
+   memasangnya tidak mengubah rangkaian. Dipasang paralel: pin0=(+) ke
+   titik A, pin1=(-) ke titik B.
+   Bacaan per komponen (volt):
+     - kedua ujung pada NET yang sama            -> 0 V
+     - kutub (+) sumber di pin0, (-) di pin1     -> +V sumber (terbalik -> negatif)
+     - salah satu/dua ujung mengambang           -> -1 (tak terhubung; UI tampil "-")
+   sim_voltmeter_connected() = 1 bila kedua pin tersambung ke net yang berbeda. */
+double sim_voltmeter_reading(const Component *c); /* >=0 volt; -1 = bukan voltmeter/tak terhubung */
+int    sim_voltmeter_connected(const Component *c);
 
 #ifdef SCHEMATIC_TEST_STUBS
 /* ---- Helper khusus suite uji (realisasi: tests/test_support.c) ----
