@@ -17,14 +17,15 @@ lalu **Run** untuk simulasi: klik saklar ON/OFF dan lihat LED menyala.
 | Drag & Drop | Klik badan simbol, tahan, geser. Snap ke grid 20px. Kabel ikut tertarik. |
 | Wiring antar pin | Tarik titik merah pin ke pin lain. Kabel siku + preview + highlight target. |
 | Rotate (R) | Pilih simbol lalu tekan `R`. 0 -> 90 -> 180 -> 270. Pin & kabel ikut sudut. |
-| Toolbar ikon | 17 tombol atas: Select, Wire, R, SW, BAT, AC, LED, GND, C, Q, D, CP, Hapus, Clear, Save, Open, Run/Stop. |
-| Komponen | Resistor, Saklar, Baterai, LED, Ground, Kapasitor, Transistor NPN, Dioda, Kapasitor Polar, **Sumber AC** (baru). |
+| Toolbar ikon | 18 tombol palet + 4 tombol aksi: Select, Blok, Wire, R, SW, BAT, AC, LED, GND, C, Q, D, CP, LDR, BZR, VM, Hapus — lalu Clear, Save, Open, Run/Stop. |
+| Komponen | Resistor, Saklar, Baterai, LED, Ground, Kapasitor, Transistor NPN, Dioda, Kapasitor Polar, LDR, Buzzer, Sumber AC, **Voltmeter** (baru). |
+| Voltmeter (baru) | Mengukur **beda potensial (tegangan) antara dua titik** dalam rangkaian. Simbol lingkaran "V" dengan kutub (+)/(−); dipasang paralel; ideal (impedansi tak hingga) sehingga tidak mengubah rangkaian. Angka bacaan (mis. `9 V`) tampil di bawah simbol saat RUN dan di menu *Informasi & Hasil Hitung*. |
 | Nilai komponen | Tiap komponen punya value (Ohm/V/VAC/Vf/F). Edit via dialog: double-klik atau klik-kanan -> *Edit Nilai*. Parser mendukung `2.2k`, `100u`, `47uF`, `2.2e3`. |
 | Menu klik-kanan | Edit Nilai, Toggle saklar, Putar 90°, Duplikat, Informasi & Hasil Hitung (arus LED saat RUN), Hapus. Klik-kanan ganda = hapus. |
 | Save / Open JSON | Dialog Windows, format UTF-8, status saklar & nilai komponen (`"value"`) ikut tersimpan. |
-| Mode Run | Klik Run -> klik saklar ON/OFF -> LED menyala + kabel (+) merah + dioda forward (panah hijau) + deteksi korslet + hitung arus loop. |
+| Mode Run | Klik Run -> klik saklar ON/OFF -> LED menyala + kabel (+) merah + dioda forward (panah hijau) + deteksi korslet + hitung arus loop + angka bacaan voltmeter. |
 | Analisis arus | Pesan RUN menampilkan I, R_loop, dan V sumber. LED kelebihan arus (>20 mA) memicu peringatan; terlalu besar -> "LED MELEDAK". |
-| Shortcut | V/W/0-9, R, F5, Ctrl+S/O, Del, Esc. |
+| Shortcut | V/W/B, 0-9, L (LDR), U (Buzzer), M (Voltmeter), R, F5, Ctrl+S/O/A/D, Del, Esc. |
 | Status bar | Pesan terakhir + counter komponen & kabel. |
 
 ---
@@ -32,18 +33,20 @@ lalu **Run** untuk simulasi: klik saklar ON/OFF dan lihat LED menyala.
 ## Tampilan
 
 ```
-[Select][Wire][ R ][ SW ][BAT ][AC  ][LED ][GND][ C  ][ Q  ][ D ][ CP ][Hapus][Clear][Save][Open][Run]
+[Sel][Blk][Wir][ R ][ SW ][BAT ][AC  ][LED ][GND][ C  ][ Q  ][ D ][ CP ][LDR][BZR][ VM ][Hapus]
+     [Clear][Save][Open][Run]
 tool aktif | F5: run/stop   R: rotate   double-klik: edit nilai
 +--------------------------------------------------+
 |  (+)--[SW ON]--[ D ]--[LED nyala]--(-)           |
+|          (V)  <- voltmeter paralel, bacaan "9 V" |
 |        [ Rangkaian BENAR -- LED MENYALA ]        |
 +--------------------------------------------------+
-| RUN: saklar ON ...                4 komp, 5 kabel|
+| RUN: saklar ON ...                5 komp, 6 kabel|
 ```
 
 Warna saat Run: saklar ON = hijau (tuas datar), OFF = merah (tuas miring),
 LED menyala = oranye + glow, dioda menghantar = panah arah arus hijau,
-kabel (+) = merah tebal.
+kabel (+) = merah tebal, angka bacaan voltmeter = hijau.
 Banner: hijau benar, kuning belum lengkap, merah korsleting.
 
 ---
@@ -59,10 +62,10 @@ build.bat
 schematic_win.exe
 ```
 
-Isi `build.bat`:
+Isi `build.bat` (ringkas — lihat file untuk komentar lengkap):
 
 ```bat
-gcc -O2 -Wall -mwindows -municode -DUNICODE -D_UNICODE -Iinclude ^
+gcc -O2 -Wall -mwindows -municode -DUNICODE -D_UNICODE -DSCHEMATIC_PRODUCTION=1 -Iinclude ^
     src\main.c src\model.c src\fileio.c src\sim.c ^
     src\ui\draw.c src\ui\events.c ^
     src\ui\toolbar_menubar.c src\ui\toolbar_symbols.c ^
@@ -71,9 +74,14 @@ gcc -O2 -Wall -mwindows -municode -DUNICODE -D_UNICODE -Iinclude ^
     src\komponen\komponen_battery.c src\komponen\komponen_led.c ^
     src\komponen\komponen_ground.c src\komponen\komponen_capacitor.c ^
     src\komponen\transistor.c src\komponen\komponen_diode.c ^
-    src\komponen\komponen_capolar.c src\komponen\komponen_acsource.c ^
+    src\komponen\komponen_capolar.c src\komponen\komponen_ldr.c ^
+    src\komponen\komponen_buzzer.c src\komponen\komponen_acsource.c ^
+    src\komponen\komponen_voltmeter.c ^
     -o schematic_win.exe -lgdi32 -luser32 -lcomdlg32 -lm
 ```
+
+Build suite uji dilakukan terpisah oleh `run_tests.sh` (`-DSCHEMATIC_TEST_STUBS`);
+folder `tests\` tidak pernah ikut ke executable produksi.
 
 ---
 
@@ -131,6 +139,34 @@ Jika rangkaian hanya disuplai sumber AC (tanpa baterai DC), simulator masuk
 *mode AC*: kapasitor & kapasitor polar dianggap menghantar (impedansi AC),
 dan hasil dihitung dengan pendekatan nilai RMS.
 
+### 2d. Mengukur tegangan dengan Voltmeter
+
+Voltmeter dipasang **paralel** — tidak memotong kabel, cukup tempelkan kedua
+ujungnya ke dua titik yang ingin diukur beda potensialnya:
+
+```
+BAT (+) --+-- kabel -- R --+-- kabel -- LED anoda
+          |                |
+         (V) pin0 (+)   (V) pin1 (-)     <- voltmeter mengukur V pada R
+          |                |
+BAT (-) --+----------------+-- kabel -- LED katoda
+```
+
+1. Klik ikon **VM** di palet (atau tekan `M`), lalu klik canvas untuk menaruh.
+2. Tarik kabel: pin **(+)** voltmeter ke titik A, pin **(−)** ke titik B.
+3. Tekan **Run** (`F5`) — angka bacaan (mis. `4.5 V`, warna hijau) tampil di bawah
+   simbol. Klik-kanan voltmeter -> *Informasi & Hasil Hitung*
+   juga menampilkan bacaan tersebut.
+
+Catatan perilaku:
+- Voltmeter ideal: impedansi tak hingga -> **tidak menghantar arus**, jadi
+  memasangnya tidak mengubah jalannya rangkaian.
+- Bacaan = potensial pin(+) − potensial pin(−). Kutub terbalik -> nilai negatif
+  + keterangan `(kutub terbalik)` di menu info.
+- Salah satu ujung mengambang (tidak terhubung) -> tampilan `-`.
+- Nilai `v` voltmeter tidak dipakai (`comp_has_value(COMP_VOLTMETER) = 0`),
+  sehingga dialog *Edit Nilai* tidak tersedia untuk alat ukur ini.
+
 ### 3. Run simulasi
 
 1. Klik tombol hijau **Run** (atau `F5`).
@@ -150,6 +186,12 @@ Saat RUN dikunci: tambah/geser/putar/hapus, tarik kabel baru, ganti tool.
 | `1` `2` `3` `4` `5` | Resistor, Switch, Battery, LED, Ground |
 | `6` `7` `8` `9` | Kapasitor, Transistor NPN, Dioda, Kapasitor Polar |
 | `0` | Sumber AC |
+| `L` | LDR / Fotoresistor |
+| `U` | Buzzer |
+| `M` | Voltmeter |
+| `B` | Blok / Multi-select |
+| `Ctrl+A` | Pilih semua komponen |
+| `Ctrl+D` | Duplikat seleksi/blok |
 | `R` | Rotate 90 CW (dipilih / sedang di-drag) |
 | `F5` / `F9` | Run / Stop simulasi |
 | `Ctrl+S` | Save JSON |
@@ -181,13 +223,16 @@ UTF-8, contoh:
 }
 ```
 
-- `type`: `resistor | switch | battery | led | ground | capacitor | transistor | diode | capolar | acsource`
+- `type`: `resistor | switch | battery | led | ground | capacitor | transistor | diode | capolar | acsource | voltmeter`
   (alias juga terbaca: `R/SW/BAT/LED/GND/CAP/TR`, `Diode/D`,
   `Capolar/capacitor_polar/electrolytic/CP`,
-  `ACSource/ac_source/ac/AC/SumberAC`).
+  `ACSource/ac_source/ac/AC/SumberAC`,
+  `Voltmeter/VM`).
+  Catatan: tipe `ldr` & `buzzer` **belum** didukung JSON — komponen bertipe itu
+  dibuang saat save/load (lihat TODO `NOTE(komponen-ldr-buzzer)` di fileio.c).
 - `value`: nilai komponen dalam satuan SI — resistor = Ohm, battery = V,
   acsource = VAC RMS, LED/dioda = Vf, kapasitor/capolar = Farad.
-  Key lama `"v"` juga terbaca.
+  Key lama `"v"` juga terbaca. Voltmeter tidak memakai `value` (selalu 0).
 - `rot`: 0..3 (= 0/90/180/270). `on`: 0/1 khusus switch.
 - `pin`: komponen 2-pin -> 0 kiri, 1 kanan (mengikuti rotasi); ground -> 0;
   transistor NPN (3-pin) -> 0 kolektor, 1 emitor, 2 basis;
@@ -217,6 +262,11 @@ Mesin `sim.c` memakai union-find, tiap pin = 1 node:
    kapasitor dianggap tembus impedansi AC.
 9. Analisis arus loop (Ohm): I = (V_sumber - drop Vf) / R_serius. Arus > 20 mA
    memicu peringatan overcurrent; jauh di atas batas -> pesan "LED MELEDAK".
+10. Voltmeter ideal: kedua pin **tidak pernah** disatukan menjadi satu net
+    (impedansi tak hingga, tidak menghantar arus). Setelah simulasi, potensial
+    tiap net diketahui -> bacaan = V(pin0 "+" − titik A) − V(pin1 "−" − titik B),
+    via `sim_voltmeter_reading()`. Ujung mengambang -> `-1` (tampilan "-");
+    kutub terbalik -> nilai negatif.
 
 Pesan hasil:
 
@@ -261,7 +311,12 @@ schematic-c/
       transistor.c           simbol transistor NPN + panah emitor presisi (draw_k_transistor)
       komponen_diode.c       simbol dioda + panah arah alir (draw_k_diode)
       komponen_capolar.c     simbol kapasitor polar/elektrolit (draw_k_capolar)
+      komponen_ldr.c         simbol LDR/fotoresistor + panah cahaya (draw_k_ldr)
+      komponen_buzzer.c      simbol buzzer + label frekuensi (draw_k_buzzer)
       komponen_acsource.c    simbol sumber AC ~ (draw_k_acsource)
+      komponen_voltmeter.c   simbol voltmeter (V) + angka bacaan tegangan saat RUN
+                             (draw_k_voltmeter, bacaan via sim_voltmeter_reading)
+  tests/                     suite uji (dibangun terpisah oleh run_tests.sh)
   build.bat            script build MinGW
   readme.md            file ini
 ```
@@ -284,6 +339,9 @@ draw/main baca sim_wire_hot / sim_comp_lit / sim_message.
 | Dioda tidak menyalakan beban | Cek arah panah segitiga: anoda (A) harus di sisi (+). Balik posisi/rotasi (`R`) jika terpasang reverse-bias. |
 | Pesan "LED MELEDAK" / overcurrent | Arus loop > 20 mA. Perbesar nilai resistor seri (double-klik resistor -> isi mis. `470`). |
 | Sumber AC seperti open circuit | Normal untuk kapasitor pada DC; pastikan tidak ada baterai DC di canvas agar simulator masuk mode AC (kapasitor tembus). |
+| Voltmeter selalu tampil "-" | Saat RUN, kedua pin harus terhubung ke net yang berbeda. Cek kabel: (+) ke titik A dan (-) ke titik B; satu ujung mengambang => bacaan "-". |
+| Bacaan voltmeter 0 V padahal ada sumber | Kedua ujung tersambung ke net yang sama (mis. keduanya di sisi (+)). Pindahkan salah satu ujung melewati komponen (resistor/LED/dioda). |
+| Save lalu Open menghilangkan LDR/Buzzer | Memang belum didukung JSON (lihat Format JSON); simpan rangkaian tanpa LDR/Buzzer dulu. Voltmeter sudah tersimpan dengan benar. |
 
 ---
 
@@ -295,7 +353,9 @@ draw/main baca sim_wire_hot / sim_comp_lit / sim_message.
 - Export PNG / netlist SPICE
 - Autosave + contoh `examples/*.json`
 - Analisis AC penuh (reaktansi Xc, frekuensi) — saat ini masih pendekatan RMS
-- Komponen baru: push button, buzzer, LDR, saklar SPDT, PNP
+- Komponen baru: push button, saklar SPDT, PNP, amperemeter (ukur arus seri),
+  ohmmeter
+- Dukungan JSON untuk LDR & Buzzer (saat ini masih dibuang saat save/load)
 
 ---
 
