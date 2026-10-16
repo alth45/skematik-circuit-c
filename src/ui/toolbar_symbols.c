@@ -18,6 +18,7 @@ static CompType toolbar_tool_comp(ToolKind t) {
         case TOOL_CAPOLAR:    return COMP_CAPOLAR;
         case TOOL_LDR:        return COMP_LDR;
         case TOOL_BUZZER:     return COMP_BUZZER;
+        case TOOL_VOLTMETER:  return COMP_VOLTMETER;
         default: return COMP_NONE;
     }
 }
@@ -131,6 +132,14 @@ static void sym_buzzer(HDC hdc) {
     MoveToEx(hdc, 28, -12, NULL); LineTo(hdc, 36, 0); LineTo(hdc, 28, 12);
 }
 
+static void sym_voltmeter(HDC hdc) {
+    MoveToEx(hdc, -40, 0, NULL); LineTo(hdc, -20, 0);
+    MoveToEx(hdc, 20, 0, NULL); LineTo(hdc, 40, 0);
+    Ellipse(hdc, -20, -20, 20, 20);
+    /* huruf V di tengah lingkaran */
+    MoveToEx(hdc, -8, -9, NULL); LineTo(hdc, 0, 9); LineTo(hdc, 8, -9);
+}
+
 void toolbar_draw_symbol(HDC hdc, ToolKind tool, int cx, int cy, BOOL active) {
     int saved = SaveDC(hdc);
     SetGraphicsMode(hdc, GM_ADVANCED);
@@ -156,6 +165,7 @@ void toolbar_draw_symbol(HDC hdc, ToolKind tool, int cx, int cy, BOOL active) {
     else if (ct == COMP_CAPOLAR) sym_capolar(hdc);
     else if (ct == COMP_LDR) sym_ldr(hdc);
     else if (ct == COMP_BUZZER) sym_buzzer(hdc);
+    else if (ct == COMP_VOLTMETER) sym_voltmeter(hdc);
     else if (tool == TOOL_SELECT) {
         POINT cur[7] = { {0,-14},{10,4},{4,4},{4,14},{-2,14},{-2,4},{-8,4} };
         HBRUSH br = CreateSolidBrush(active ? RGB(50,128,255) : RGB(40,40,40));
@@ -233,6 +243,7 @@ const wchar_t *toolbar_tool_shortname(ToolKind tool) {
     if (tool == TOOL_CAPOLAR) return L"CP";
     if (tool == TOOL_LDR) return L"LDR";
     if (tool == TOOL_BUZZER) return L"BZR";
+    if (tool == TOOL_VOLTMETER) return L"VM";
     if (tool == TOOL_GROUND) return L"GND";
     if (tool == TOOL_SELECT) return L"Select";
     if (tool == TOOL_BOX) return L"Blok";
@@ -254,6 +265,7 @@ int toolbar_tool_is_component(ToolKind tool) {
         case TOOL_CAPOLAR:
         case TOOL_LDR:
         case TOOL_BUZZER:
+        case TOOL_VOLTMETER:
             return 1;
         default:
             return 0;

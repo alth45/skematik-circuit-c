@@ -24,6 +24,7 @@ static const wchar_t *comp_type_name(CompType t) {
         case COMP_TRANSISTOR: return L"transistor";
         case COMP_DIODE:      return L"diode";
         case COMP_CAPOLAR:    return L"capolar";
+        case COMP_VOLTMETER:    return L"voltmeter";
         /* NOTE(komponen-ldr-buzzer): fileio.c belum mengenali tipe baru ini —
            save JSON akan menulis "none" dan load akan membuang komponennya.
            TODO: tambahkan mapping "ldr"/"buzzer" + update tes round-trip di
@@ -46,6 +47,7 @@ const char *comp_type_json_name(CompType t) {
         case COMP_TRANSISTOR: return "transistor";
         case COMP_DIODE:      return "diode";
         case COMP_CAPOLAR:    return "capolar";
+        case COMP_VOLTMETER:    return "voltmeter";
         default:              return "none";
     }
 }
@@ -73,6 +75,8 @@ static int comp_type_from_name(const char *s) {
     if (strcmp(s, "capolar") == 0 || strcmp(s, "Capolar") == 0 ||
         strcmp(s, "capacitor_polar") == 0 || strcmp(s, "electrolytic") == 0 ||
         strcmp(s, "CP") == 0) return COMP_CAPOLAR;
+    if (strcmp(s, "voltmeter") == 0 || strcmp(s, "Voltmeter") == 0 ||
+        strcmp(s, "VM") == 0) return COMP_VOLTMETER;
     /* NOTE(komponen-ldr-buzzer): "ldr" & "buzzer" sengaja BELUM diterima di
        sini karena comp_type_name() (sisi save) belum menulis nama kanoniknya;
        menerima load tanpa dukungan save akan membuat round-trip diam-diam

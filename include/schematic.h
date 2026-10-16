@@ -109,8 +109,8 @@ typedef struct {
     PinRef a, b;
 } Wire;
 
-/* Jumlah tombol palette (Select, Blok, Wire + 13 komponen + Hapus). */
-#define BTN_COUNT 17
+/* Jumlah tombol palette (Select, Blok, Wire + 14 komponen + Hapus). */
+#define BTN_COUNT 18
 
 /* Batas seleksi multi (model.c) */
 #define MAX_SEL 256
