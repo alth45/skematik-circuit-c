@@ -21,7 +21,7 @@ if [[ "${CPPFLAGS:-} ${CFLAGS:-}" == *SCHEMATIC_TEST_STUBS* ]]; then
 fi
 
 SRC_PROD=(
-    src/main.c src/model.c src/fileio.c src/sim.c
+    src/main.c src/splash.c src/model.c src/fileio.c src/sim.c
     src/ui/draw.c src/ui/events.c
     src/ui/splash.c
     src/ui/toolbar_menubar.c src/ui/toolbar_symbols.c

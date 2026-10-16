@@ -369,6 +369,11 @@ void   sim_format_si(double v, const wchar_t *unit, wchar_t *out, int cap);
 /* ===================== Window Procedure (main.c) ===================== */
 LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp);
 
+/* ===================== Splash Screen (splash.c) =====================
+   Tampil dulu saat .exe dijalankan; fungsi ini mem-blok sampai splash
+   selesai, lalu menampilkan jendela utama (hwnd_main) di akhir fade-out. */
+void splash_run(HINSTANCE hInst, HWND hwnd_main);
+
 /* ===================== Pemisah mode PRODUKSI vs mode TES ==================
    Aturan keras (dijaga oleh #error di bawah dan oleh build.bat / run_tests.sh):
      - Build PRODUKSI TIDAK PERNAH mendefinisikan SCHEMATIC_TEST_STUBS dan

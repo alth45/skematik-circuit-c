@@ -236,6 +236,8 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
 }
 
 /* ===================== Entry Point ===================== */
+int WINAPI wWinMain(HINSTANCE hInst, HINSTANCE hPrev, PWSTR cmd, int show) {
+    (void)hPrev; (void)cmd; (void)show; /* jendela utama ditampilkan oleh splash */
 
 /* Window utama dibuat SETELAH splash selesai, supaya urutan visualnya:
    splash dulu -> baru main window muncul. */
@@ -259,26 +261,12 @@ static void main_window_create(HINSTANCE hInst) {
         CW_USEDEFAULT, CW_USEDEFAULT, 1100, 650,
         NULL, NULL, hInst, NULL);
 
-    ShowWindow(g_main_hwnd, g_show_flag);
-    UpdateWindow(g_main_hwnd);
-}
+    /* Jendela utama dibuat TERSEMBUNYI dulu; splash yang menampilkannya
+       saat fade-out selesai (urutan: splash -> main). */
+    ShowWindow(hwnd, SW_HIDE);
+    UpdateWindow(hwnd);
 
-int WINAPI wWinMain(HINSTANCE hInst, HINSTANCE hPrev, PWSTR cmd, int show) {
-    (void)hPrev; (void)cmd;
-    g_show_flag = show;
-
-    /* 1) Splash screen tampil duluan; blok sampai animasi selesai
-          (bisa dipercepat dengan klik pada splash). */
-    splash_show(hInst);
-    while (splash_active()) {
-        MSG m;
-        if (GetMessageW(&m, NULL, 0, 0) <= 0) return 0; /* quit saat splash */
-        TranslateMessage(&m);
-        DispatchMessageW(&m);
-    }
-
-    /* 2) Baru kemudian window utama muncul */
-    main_window_create(hInst);
+    splash_run(hInst, hwnd);   /* tampilkan splash screen terlebih dahulu */
 
     /* Accelerator klasik untuk menu bar: Ctrl+N/O/S, F5 (Run/Stop), F9 */
     ACCEL accels[] = {
