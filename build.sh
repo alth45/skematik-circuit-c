@@ -23,6 +23,7 @@ fi
 SRC_PROD=(
     src/main.c src/splash.c src/model.c src/fileio.c src/sim.c
     src/ui/draw.c src/ui/events.c
+    src/ui/splash.c
     src/ui/toolbar_menubar.c src/ui/toolbar_symbols.c
     src/ui/toolbar_actions.c src/ui/toolbar_palette.c
 )

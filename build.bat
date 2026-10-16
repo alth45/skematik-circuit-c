@@ -7,7 +7,7 @@ REM    include\schematic.h  - header bersama
 REM    src\main.c src\splash.c src\model.c src\fileio.c src\sim.c
 REM    src\ui\draw.c src\ui\events.c src\ui\toolbar_menubar.c
 REM    src\ui\toolbar_symbols.c src\ui\toolbar_actions.c
-REM    src\ui\toolbar_palette.c
+REM    src\ui\toolbar_palette.c src\ui\splash.c  (splash screen saat .exe mulai)
 REM    src\komponen\*.c     - 1 file per simbol komponen
 REM                          (termasuk komponen_acsource.c = sumber AC)
 REM
@@ -37,6 +37,7 @@ if defined SCHEMATIC_TEST_STUBS (
 gcc -O2 -Wall -mwindows -municode -DUNICODE -D_UNICODE -DSCHEMATIC_PRODUCTION=1 -Iinclude ^
     src\main.c src\splash.c src\model.c src\fileio.c src\sim.c ^
     src\ui\draw.c src\ui\events.c ^
+    src\ui\splash.c ^
     src\ui\toolbar_menubar.c src\ui\toolbar_symbols.c ^
     src\ui\toolbar_actions.c src\ui\toolbar_palette.c ^
     src\komponen\komponen_resistor.c src\komponen\komponen_switch.c ^
