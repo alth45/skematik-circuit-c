@@ -162,38 +162,6 @@ static void fill_heads(const int *roots, int nn, int *head, int nhcap) {
     }
 }
 
-/* Biaya resistif antara dua SIMPUL graf mentah satu untaian:
-   - kedua simpul satu ROOT (mis. dua ujung resistor yang sudah disatukan
-     union pass-1): resistor/LDR internal menyumbang R-nya; penghantar
-     lain (kawat/saklar/dioda-fwd/transistor-ON/kapasitor-AC) ideal 0 Ω.
-   - beda root (jembatan anomali yang tak tergabung, mis. resistor 0 Ω):
-     pakai bridge_cost komponen yang menyentuh kedua node tsb.
-   Mengembalikan -1 bila pasangan simpul tidak terhubung penghantar mana pun. */
-static double edge_cost_(int cs, int nb, const int *gmap_rev) {
-    int nds = gmap_rev[cs], ndt = gmap_rev[nb];
-    int rs = find_root(nds), rt = find_root(ndt);
-    if (rs == rt) {
-        /* cari komponen penghantar yang kedua pin-nya = nds & ndt (beda node) */
-        for (int i = 0; i < comp_count; i++) {
-            if (comp_pin_count(&comps[i]) < 2) continue;
-            int bk = bridge_kind_(i);
-            if (bk == BRIDGE_BLOCK || bk == BRIDGE_LED) continue;
-            int p0 = node_of(i, 0), p1 = node_of(i, 1);
-            if ((p0 == nds && p1 == ndt) || (p1 == nds && p0 == ndt)) {
-                if (comps[i].type == COMP_RESISTOR)
-                    return (comps[i].v > 0.0) ? comps[i].v : 0.0;
-                if (comps[i].type == COMP_LDR) {
-                    double reff = sim_ldr_effective_r(&comps[i]);
-                    return (reff >= 0.0) ? reff : 0.0;
-                }
-                return 0.0;
-            }
-        }
-        return 0.0;   /* murni kabel */
-    }
-    return -1.0;      /* beda root: hanya lewat sisi jembatan eksplisit */
-}
-
 /* ---- Helper penelusuran graf mentah (Pass 3) ----
    node_pin_of_(idx): kebalikan dari map[] — indeks simpul graf -> node pin.
    intra_net_r(root): resistansi internal suatu net HASIL UNION penghantar
@@ -481,8 +449,6 @@ void sim_recompute(void) {
             (9-2)V/350Ω = 20.000 mA selalu dinyatakan AMAN. ---- */
     {
         static int head_[NETQ_MAX];
-        static double jr_[NETQ_MAX], jd_[NETQ_MAX];
-        static int q_[NETQ_MAX], seen_[NETQ_MAX];
 
         for (int i = 0; i < comp_count; i++) {
             if (comps[i].type != COMP_LED) continue;
