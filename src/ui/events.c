@@ -14,6 +14,7 @@ static CompType tool_to_comp(ToolKind t) {
         case TOOL_CAPOLAR:    return COMP_CAPOLAR;
         case TOOL_LDR:        return COMP_LDR;
         case TOOL_BUZZER:     return COMP_BUZZER;
+        case TOOL_VOLTMETER:  return COMP_VOLTMETER;
         default: return COMP_NONE;
     }
 }
@@ -43,6 +44,7 @@ static const wchar_t *comp_kind_name(CompType t) {
         case COMP_CAPOLAR:    return L"Kapasitor Polar";
         case COMP_LDR:        return L"LDR (Fotoresistor)";
         case COMP_BUZZER:     return L"Buzzer";
+        case COMP_VOLTMETER:  return L"Voltmeter";
         default:              return L"Komponen";
     }
 }
@@ -158,6 +160,23 @@ void show_context_menu(HWND hwnd, int sx, int sy, Component *c) {
                             sim_comp_blown(c) ? L"  << BAHAYA/MELEDAK" : L"");
                         wcscat_s(buf, 512, extra);
                     }
+                }
+                if (c->type == COMP_VOLTMETER) {
+                    /* informasi alat ukur: bacaan beda potensial saat RUN */
+                    wchar_t extra[160];
+                    if (!sim_running) {
+                        wcscpy_s(extra, 160, L"\nPasang paralel: pin (+) ke titik A, pin (-) ke titik B."
+                                          L" Tekan RUN untuk membaca tegangan.");
+                    } else if (sim_voltmeter_connected(c)) {
+                        double v = sim_voltmeter_reading(c);
+                        wchar_t vs[32];
+                        swprintf(vs, 32, L"%.3g V", v);
+                        swprintf(extra, 160, L"\nBacaan: %ls%s", vs,
+                            v < 0.0 ? L"  (kutub terbalik)" : L"");
+                    } else {
+                        wcscpy_s(extra, 160, L"\nBacaan: - (salah satu ujung tidak terhubung).");
+                    }
+                    wcscat_s(buf, 512, extra);
                 }
                 if (c->type == COMP_BUZZER) {
                     wchar_t extra[96];
@@ -629,6 +648,7 @@ void on_key_down(HWND hwnd, WPARAM key) {
     else if (key == '9') { current_tool = TOOL_CAPOLAR; }
     else if (key == 'L' || key == 'l') { current_tool = TOOL_LDR; }
     else if (key == 'U' || key == 'u') { current_tool = TOOL_BUZZER; }
+    else if (key == 'M' || key == 'm') { current_tool = TOOL_VOLTMETER; }
     else if (key == VK_DELETE || key == VK_BACK) {
         if (sim_running) return; /* hapus dikunci saat RUN */
         if (sel_count > 1) {
