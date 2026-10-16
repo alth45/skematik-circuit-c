@@ -70,11 +70,60 @@ static int net_index_of(int root, int nn) {
     return -1;
 }
 
-/* BFS dari node `start` mengikuti kabel saja (union tanpa komponen).
-   Mengisi nrk_/qn_ (daftar net satu untaian, max *nn_out), dan head[] =
-   index komponen dua-pin yang menyentuh tiap net (-1 = buntu). */
-static void net_heads_from(int start, int *head, int nhcap, int *nn_out) {
-    for (int i = 0; i < nhcap; i++) head[i] = -1;
+/* Klasifikasi "jembatan" komponen dua-pin antar net untuk penelusuran
+   jalur (net_heads_from) — dihitung SETELAH seluruh union selesai,
+   memakai state final pass-1/1b/2:
+     BRIDGE_PASSIVE : penghantar ideal yang pin-pinnya SUDAH disatukan
+                      union (saklar-ON / dioda-fwd / transistor-ON /
+                      kapasitor mode AC murni). Ia tak pernah muncul
+                      sebagai jembatan beda-net; bila tetap muncul
+                      (anomali), dianggap kawat 0 Ω.
+     BRIDGE_RESIST  : resistor/LDR — ikut menghantar tapi menyumbang R;
+                      normalnya sudah tergabung union, hanya terlihat
+                      sebagai jembatan bila bernilai <= 0.
+     BRIDGE_LED     : beban LED (memotong jalur DC; dipakai pass-4).
+     BRIDGE_BLOCK   : memutus jalur (kapasitor DC, saklar OFF, dioda
+                      reverse, sumber, ground, voltmeter, dll). */
+enum { BRIDGE_PASSIVE = 0, BRIDGE_RESIST = 1, BRIDGE_LED = 2, BRIDGE_BLOCK = 3 };
+
+static int bridge_kind_(int i) {
+    const Component *c = &comps[i];
+    switch (c->type) {
+        case COMP_RESISTOR: case COMP_LDR:
+            return BRIDGE_RESIST;
+        case COMP_BUZZER:   return BRIDGE_PASSIVE;
+        case COMP_SWITCH:   return c->on ? BRIDGE_PASSIVE : BRIDGE_BLOCK;
+        case COMP_DIODE:    return dfwd_[i] ? BRIDGE_PASSIVE : BRIDGE_BLOCK;
+        case COMP_TRANSISTOR: return cond_[i] ? BRIDGE_PASSIVE : BRIDGE_BLOCK;
+        case COMP_CAPACITOR: case COMP_CAPOLAR:
+            /* catu AC campuran (DC+AC): kapasitor BLOKIR DC (pass-1 tidak
+               menggabungnya) -> harus memotong jalur LED juga di pass-3 */
+            return sim_ac_mode ? BRIDGE_PASSIVE : BRIDGE_BLOCK;
+        case COMP_LED:      return BRIDGE_LED;
+        default:            return BRIDGE_BLOCK;   /* sumber/ground/voltmeter */
+    }
+}
+
+/* Kontribusi satu jembatan penghantar yang masih terlihat sebagai dua net
+   terpisah: R ke radd, drop tegangan ke vadd. */
+static void bridge_cost(int i, double *radd, double *vadd) {
+    const Component *c = &comps[i];
+    *radd = 0.0; *vadd = 0.0;
+    switch (c->type) {
+        case COMP_RESISTOR: *radd = (c->v > 0.0) ? c->v : 0.0; break;
+        case COMP_LDR: {
+            double reff = sim_ldr_effective_r(c);
+            *radd = (reff >= 0.0) ? reff : 0.0;
+            break;
+        }
+        case COMP_DIODE:    *vadd = (c->v > 0.0) ? c->v : VF_DIODE; break;
+        case COMP_TRANSISTOR: *vadd = 0.2; break;   /* V_CE saturasi */
+        default: break;                             /* kawat ideal 0 V / 0 Ω */
+    }
+}
+
+/* Kumpulkan daftar root net satu untaian kabel ke dalam qn_/nrk_ lewat BFS. */
+static void chain_roots_from(int start, int *nn_out) {
     int nn = 0;
     net_find_or_add(find_root(start), qn_, &nn, NETQ_MAX);
     for (int h = 0; h < nn; h++) {
@@ -85,23 +134,135 @@ static void net_heads_from(int start, int *head, int nhcap, int *nn_out) {
             if (!ca || !cb) continue;
             int ia = (int)(ca - comps), ib = (int)(cb - comps);
             if (ia < 0 || ia >= comp_count || ib < 0 || ib >= comp_count) continue;
-            int na = node_of(ia, wires[w].a.pin_idx);
-            int nb = node_of(ib, wires[w].b.pin_idx);
-            int ra = find_root(na), rb = find_root(nb);
+            int ra = find_root(node_of(ia, wires[w].a.pin_idx));
+            int rb = find_root(node_of(ib, wires[w].b.pin_idx));
             if (ra == r && rb != r) net_find_or_add(rb, qn_, &nn, NETQ_MAX);
             if (rb == r && ra != r) net_find_or_add(ra, qn_, &nn, NETQ_MAX);
         }
     }
+    *nn_out = nn;
+}
+
+/* Tabel head[]: untuk tiap net k dalam untaian `roots`, head[k] = komponen
+   dua-pin yang menghubungkan net k ke net lain DALAM untaian yang sama
+   (jembatan antar-net — mis. kapasitor DC-block, saklar OFF, LED lain).
+   Komponen penghantar pasif yang sudah disatukan union tak pernah muncul
+   di sini karena kedua pin-nya berada pada root/net yang sama. -1 = buntu. */
+static void fill_heads(const int *roots, int nn, int *head, int nhcap) {
+    for (int i = 0; i < nhcap && i < nn; i++) head[i] = -1;
     for (int i = 0; i < comp_count; i++) {
         int n = comp_pin_count(&comps[i]);
         if (n < 2) continue;
         int h0 = -1, h1 = -1;
         for (int k = 0; k < nn; k++) {
-            if (find_root(node_of(i, 0)) == nrk_[k]) h0 = k;
-            if (find_root(node_of(i, 1)) == nrk_[k]) h1 = k;
+            if (find_root(node_of(i, 0)) == roots[k]) h0 = k;
+            if (find_root(node_of(i, 1)) == roots[k]) h1 = k;
         }
         if (h0 >= 0 && h1 >= 0 && h0 != h1) { head[h0] = i; head[h1] = i; }
     }
+}
+
+/* Biaya resistif antara dua SIMPUL graf mentah satu untaian:
+   - kedua simpul satu ROOT (mis. dua ujung resistor yang sudah disatukan
+     union pass-1): resistor/LDR internal menyumbang R-nya; penghantar
+     lain (kawat/saklar/dioda-fwd/transistor-ON/kapasitor-AC) ideal 0 Ω.
+   - beda root (jembatan anomali yang tak tergabung, mis. resistor 0 Ω):
+     pakai bridge_cost komponen yang menyentuh kedua node tsb.
+   Mengembalikan -1 bila pasangan simpul tidak terhubung penghantar mana pun. */
+static double edge_cost_(int cs, int nb, const int *gmap_rev) {
+    int nds = gmap_rev[cs], ndt = gmap_rev[nb];
+    int rs = find_root(nds), rt = find_root(ndt);
+    if (rs == rt) {
+        /* cari komponen penghantar yang kedua pin-nya = nds & ndt (beda node) */
+        for (int i = 0; i < comp_count; i++) {
+            if (comp_pin_count(&comps[i]) < 2) continue;
+            int bk = bridge_kind_(i);
+            if (bk == BRIDGE_BLOCK || bk == BRIDGE_LED) continue;
+            int p0 = node_of(i, 0), p1 = node_of(i, 1);
+            if ((p0 == nds && p1 == ndt) || (p1 == nds && p0 == ndt)) {
+                if (comps[i].type == COMP_RESISTOR)
+                    return (comps[i].v > 0.0) ? comps[i].v : 0.0;
+                if (comps[i].type == COMP_LDR) {
+                    double reff = sim_ldr_effective_r(&comps[i]);
+                    return (reff >= 0.0) ? reff : 0.0;
+                }
+                return 0.0;
+            }
+        }
+        return 0.0;   /* murni kabel */
+    }
+    return -1.0;      /* beda root: hanya lewat sisi jembatan eksplisit */
+}
+
+/* Bangun graf "net mentah" pada SATU untaian kabel: simpul = node pin
+   (comp*3+pin) yang root-nya termasuk untaian `roots`; sisi = kabel +
+   jembatan penghantar pasif final. Mengembalikan jumlah simpul;
+   `map[node]` = indeks simpul (-1 bila bukan bagian untaian);
+   `rev[idx]` = node asal tiap simpul; `edges` = matriks bool ns*ns. */
+#define NG_MAX (MAX_COMP * 3)
+static int raw_graph_build(const int *roots, int nn, int *map, int *rev, char *edges) {
+    int ns = 0;
+    for (int i = 0; i < NG_MAX; i++) map[i] = -1;
+    for (int i = 0; i < comp_count; i++) {
+        int npins = comp_pin_count(&comps[i]);
+        for (int p = 0; p < npins; p++) {
+            int nd = node_of(i, p);
+            if (map[nd] >= 0) continue;
+            int r = find_root(nd);
+            int hit = -1;
+            for (int k = 0; k < nn; k++) if (roots[k] == r) { hit = k; break; }
+            if (hit >= 0 && ns < NG_MAX) { map[nd] = ns; rev[ns] = nd; ns++; }
+        }
+    }
+    for (int a = 0; a < ns; a++)
+        for (int b = 0; b < ns; b++) edges[a * ns + b] = 0;
+    for (int w = 0; w < wire_count; w++) {
+        Component *ca = find_comp_by_id(wires[w].a.comp_id);
+        Component *cb = find_comp_by_id(wires[w].b.comp_id);
+        if (!ca || !cb) continue;
+        int ia = (int)(ca - comps), ib = (int)(cb - comps);
+        if (ia < 0 || ia >= comp_count || ib < 0 || ib >= comp_count) continue;
+        int na = node_of(ia, wires[w].a.pin_idx);
+        int nb = node_of(ib, wires[w].b.pin_idx);
+        if (map[na] >= 0 && map[nb] >= 0) {
+            edges[map[na] * ns + map[nb]] = 1;
+            edges[map[nb] * ns + map[na]] = 1;
+        }
+    }
+    /* jembatan penghantar final (resistor/LDR/saklar-ON/buzzer/dioda-fwd/
+       transistor-ON/kapasitor AC): kedua pin boleh beda-node walau satu
+       root (hasil union) — tambahkan sebagai sisi agar penelusuran jalur
+       tetap melihat R per komponen. */
+    for (int i = 0; i < comp_count; i++) {
+        if (comp_pin_count(&comps[i]) < 2) continue;
+        int bk = bridge_kind_(i);
+        if (bk == BRIDGE_BLOCK || bk == BRIDGE_LED) continue;
+        int n0 = node_of(i, 0), n1 = node_of(i, 1);
+        if (n0 >= 0 && n0 < NG_MAX && n1 >= 0 && n1 < NG_MAX &&
+            map[n0] >= 0 && map[n1] >= 0) {
+            edges[map[n0] * ns + map[n1]] = 1;
+            edges[map[n1] * ns + map[n0]] = 1;
+        }
+    }
+    return ns;
+}
+
+/* BFS dari node `start` mengikuti kabel saja (union tanpa komponen).
+   Mengisi nrk_/qn_ (daftar net satu untaian, max *nn_out), dan head[] =
+   index komponen dua-pin yang menyentuh tiap net (-1 = buntu).
+   Jembatan penghantar pasif (sudah disatukan union) dilewati secara
+   transparan: bila sebuah komponen passive menyentuh suatu net lewat
+   kedua pin-nya yang kini satu root, komponen itu TIDAK dianggap
+   jembatan — ia sudah menjadi bagian dari net itu sendiri. Hanya
+   komponen yang pin-nya benar-benar beda-net yang tercatat sebagai head
+   (LED / kapasitor DC / saklar OFF / dioda reverse / sumber / ground,
+   atau passive anomali mis. resistor 0 Ω yang tak tergabung). */
+static void net_heads_from(int start, int *head, int nhcap, int *nn_out) {
+    for (int i = 0; i < nhcap; i++) head[i] = -1;
+    int nn = 0;
+    chain_roots_from(start, &nn);
+    /* nrk_/qn_ telah terisi oleh chain_roots_from (nrk_ mirror qn_) */
+    fill_heads(nrk_, nn, head, nhcap);
     *nn_out = nn;
 }
 
@@ -257,45 +418,43 @@ void sim_recompute(void) {
     }
 
 
-    /* ---- Pass 3: PENYALAAN LED + PERHITUNGAN NILAI (Hukum Ohm & Kirchhoff).
-       Untuk tiap LED yang terhubung benar (anoda ke net (+), katoda ke
-       net (-)), telusuri jalur dari anoda kembali ke kutub (+):
-         R_total = jumlah resistor sepanjang jalur
-         V_drops = Vf LED + Vf dioda forward + 0.2 V transistor saturasi
-         I = (V_sumber - V_drops) / R_total
-       V_sumber = tegangan sumber pada LOOP LED itu sendiri (KVL): sumber
-       yang kutub (+)-nya berada pada untaian net yang sama dengan anoda
-       LED. Dulu dipakai maksimum GLOBAL seluruh rangkaian — itu salah:
-       misal baterai 9 V + LED+R (aman), lalu ditambahkan sumber AC 220 V
-       terpisah -> loop LED yang sudah benar tetap dituduh "MELEDAK".
-       Bila tidak ada sumber pada untaian LED, fallback: baterai terbesar,
-       lalu AC terbesar (RMS). Kapasitor dianggap tembus hanya pada mode AC.
-       Tanpa resistor pengaman -> arus praktis tak hingga -> LED MELEDAK.
-       Percabangan paralel -> arus TERBESAR dipakai (konservatif). ---- */
+    /* ---- Pass 3: PENYALAAN LED + PERHITUNGAN NILAI (Hukum Ohm + KVL).
+       Model listrik per LOOP LED (bukan aturan global seluruh canvas):
+         1. Telusuri SEMUA jalur konduktif dari anoda LED kembali ke kutub
+            (+) sumber pada untaian netnya (BFS di graf net; jembatan antar
+            net = komponen dua-pin penghantar: R/LDR/saklar-ON/buzzer/
+            dioda-fwd/transistor-ON/kapasitor mode AC — nilainya dihitung
+            ulang via bridge_cost() karena union pass-1 sudah menyatukan
+            pin-pinnya sehingga tidak terlihat sebagai jembatan lagi).
+            Tidak ada jalur kembali ke (+) => loop TERBUKA: arus tak
+            terdefinisi, LED TIDAK meledak dan TIDAK dikorsletkan.
+            (Kesalahan lama: jalur cacat diklasifikasi "tak hingga" dan
+            nilai tanpa-R dianggap ledak meski loop belum tertutup —
+            rangkaian yang sebenarnya aman tetap dituduh MELEDAK.)
+         2. Hukum Ohm + KVL tiap jalur: I = (V_loop - total_drop)/R_jalur
+            dengan V_loop = tegangan sumber pada untaian anoda LED itu
+            sendiri (sumber seri dijumlahkan; loop berbeda dinilai sendiri,
+            bukan maksimum global — regresi AC-terpisah 220 V).
+         3. Percabangan paralel: dipakai jalur dengan resistansi TERKECIL
+            (konduktansi terbesar -> arus terbesar -> konservatif).
+         4. Nasib LED murni hasil perhitungan terhadap datasheet:
+              - loop tertutup TANPA resistansi (R = 0) -> I ~ tak hingga
+                -> MELEDAK (arus pendek nyata, mis. baterai -> kawat -> LED)
+              - I > 5x If_max (100 mA)                         -> MELEDAK
+              - I > If_max DAN sumber loop > rating bolak-balik
+                maksimum LED (V_EXPLODE = 50 V)               -> MELEDAK
+              - If_max < I <= 5x If_max                        -> overcurrent
+            Ambang memakai toleransi relatif 1e-6 supaya nilai IDEAL
+            (9-2)V/350Ω = 20.000 mA selalu dinyatakan AMAN. ---- */
     {
         static int head_[NETQ_MAX];
-        static int nn_led[MAX_COMP];      /* jumlah net untaian per LED */
-        static int start_net_[MAX_COMP];  /* indeks net awal per LED */
-        double vsrc_max = 0.0;
-        for (int i = 0; i < comp_count; i++) {
-            if (comps[i].type == COMP_BATTERY && comps[i].v > vsrc_max) {
-                vsrc_max = comps[i].v;
-            }
-        }
-        if (vsrc_max <= 0.0) {
-            /* tak ada DC: pakai sumber AC terbesar (RMS) */
-            for (int i = 0; i < comp_count; i++) {
-                if (comps[i].type == COMP_ACSOURCE && comps[i].v > vsrc_max) {
-                    vsrc_max = comps[i].v;
-                }
-            }
-        }
-        sim_vsrc = vsrc_max;
+        static double jr_[NETQ_MAX], jd_[NETQ_MAX];
+        static int q_[NETQ_MAX], seen_[NETQ_MAX];
 
         for (int i = 0; i < comp_count; i++) {
             if (comps[i].type != COMP_LED) continue;
-            int r0 = find_root(node_of(i, 0));
-            int r1 = find_root(node_of(i, 1));
+            int r0 = find_root(node_of(i, 0));   /* anoda */
+            int r1 = find_root(node_of(i, 1));   /* katoda */
             int on_plus = 0, on_minus = 0;
             for (int k = 0; k < n_plus; k++) if (plus_root[k] == r0) on_plus = 1;
             for (int k = 0; k < n_minus; k++) if (minus_root[k] == r1) on_minus = 1;
@@ -322,102 +481,195 @@ void sim_recompute(void) {
                     buzz_[b] = 1;
             }
 
-            /* bangun untaian net dari anoda mengikuti kabel saja */
+            /* (1) untaian net dari anoda mengikuti kabel saja */
             int nn = 0;
             net_heads_from(node_of(i, 0), head_, NETQ_MAX, &nn);
             int sn = net_index_of(r0, nn);
-            if (sn < 0) { nn_led[i] = 0; start_net_[i] = -1; continue; }
-            nn_led[i] = nn;
-            start_net_[i] = sn;
-            (void)nn_led[i]; (void)start_net_[i]; /* info debug per-LED, non-fatal */
+            if (sn < 0) { ilead_[i] = -1.0; continue; }
 
-            double rsum = 0.0;
-            double vdrop = (comps[i].v > 0.0 ? comps[i].v : VF_LED_DEFAULT);
-            int cur_net = sn, guard = 0;
-            int found_path = 0;
-            for (int k = 0; k < n_plus; k++)
-                if (plus_root[k] == nrk_[cur_net]) { found_path = 1; break; }
-            while (!found_path && guard++ < nn) {
-                int h = head_[cur_net];
-                if (h < 0) break;                    /* buntu */
-                Component *hc = &comps[h];
-                int other_pin;
-                if (hc->type == COMP_RESISTOR) {
-                    rsum += hc->v;
-                } else if (hc->type == COMP_LDR) {
-                    /* R efektif ikut cahaya: TERANG ~1% R gelap */
-                    double reff = sim_ldr_effective_r(hc);
-                    rsum += (reff >= 0.0) ? reff : 0.0;
-                } else if (hc->type == COMP_BUZZER) {
-                    /* impedansi buzzer diabaikan (ideal) */
-                } else if (hc->type == COMP_DIODE && dfwd_[h]) {
-                    vdrop += (hc->v > 0.0 ? hc->v : VF_DIODE);
-                } else if (hc->type == COMP_SWITCH && hc->on) {
-                    /* ideal: tanpa drop */
-                } else if (hc->type == COMP_TRANSISTOR && cond_[h]) {
-                    vdrop += 0.2;                    /* V_CE saturasi */
-                } else if (sim_ac_mode &&
-                           (hc->type == COMP_CAPACITOR || hc->type == COMP_CAPOLAR)) {
-                    /* ideal AC: kapasitor tembus tanpa drop */
-                } else {
-                    break;   /* baterai/ground/kapasitor/dioda reverse -> stop */
-                }
-                other_pin = (find_root(node_of(h, 0)) == nrk_[cur_net]) ? 1 : 0;
-                int oroot = find_root(node_of(h, other_pin));
-                for (int k = 0; k < n_plus; k++)
-                    if (plus_root[k] == oroot) { found_path = 1; break; }
-                if (found_path) break;
-                int idx2 = net_index_of(oroot, nn);
-                if (idx2 < 0) break;                 /* keluar untaian -> buntu */
-                cur_net = idx2;
-            }
-
-            double iled;
-            /* Tegangan sumber utk LED ini: sumber yang kutub (+)-nya duduk
-               pada untaian net anoda LED (loop KVL yang sama). Kalau tidak
-               ketemu (mis. (+) baterai baru tersambung ke net anoda lewat
-               dioda/transistor), pakai baterai terbesar, lalu AC terbesar. */
-            double vled = 0.0;
+            /* (2) V_loop: jumlah tegangan semua sumber whose (+) duduk pada
+                   untaian anoda ini (seri terakumulasi). Fallback terukur:
+                   bila (+) tak berada di untaian ini (mis. tersambung ke
+                   anoda lewat dioda/transistor), pakai baterai terbesar,
+                   lalu AC terbesar. */
+            double vloop = 0.0;
             for (int s = 0; s < comp_count; s++) {
                 if (comps[s].type != COMP_BATTERY && comps[s].type != COMP_ACSOURCE)
                     continue;
                 int rp = find_root(node_of(s, 0));
-                int inChain = 0;
-                for (int k = 0; k < nn; k++) if (nrk_[k] == rp) { inChain = 1; break; }
-                if (!inChain) continue;
+                int hit = 0;
+                for (int k = 0; k < nn; k++) if (nrk_[k] == rp) { hit = 1; break; }
+                if (!hit) continue;
                 double vv = comps[s].v;
                 if (vv <= 0.0) vv = (comps[s].type == COMP_ACSOURCE) ? 220.0 : 9.0;
-                if (vv > vled) vled = vv;
+                vloop += vv;                       /* sumber seri dijumlahkan */
             }
-            if (vled <= 0.0) vled = vsrc_max;   /* fallback global */
-            if (!found_path)      iled = 1e9;        /* jalur tak lengkap -> korslet */
-            else if (rsum <= 0.0) iled = 1e9;        /* tanpa R = arus tak hingga */
-            else {
-                double dv = vled - vdrop;
-                iled = (dv > 0.0) ? dv / rsum : 0.0; /* Vf >= Vbat -> tak menyala */
+            if (vloop <= 0.0) {
+                double vb = 0.0, va = 0.0;
+                for (int s = 0; s < comp_count; s++) {
+                    double vv = comps[s].v;
+                    if (comps[s].type == COMP_BATTERY) {
+                        if (vv <= 0.0) vv = 9.0;
+                        if (vv > vb) vb = vv;
+                    } else if (comps[s].type == COMP_ACSOURCE) {
+                        if (vv <= 0.0) vv = 220.0;
+                        if (vv > va) va = vv;
+                    }
+                }
+                vloop = (vb > 0.0) ? vb : va;
+            }
+
+            /* (3) Semua jalur konduktif dari anoda kembali ke kutub (+),
+               ditelusuri pada GRAF NET MENTAH untaian kabel ini (simpul =
+               node pin, sisi = kabel + jembatan penghantar). Union pass-1
+               sudah menyatukan penghantar pasif sehingga penelusuran di
+               level root kehilangan jejak R per komponen — graf mentah
+               memulihkannya. Biaya per langkah antar simpul:
+                 - kedua simpul satu ROOT  : intra_net_r(root) (R internal,
+                   mis. resistor yang pin-pinnya tergabung; kawat = 0 Ω)
+                 - beda root (jembatan anomali, mis. resistor 0 Ω / kapasitor
+                   AC yang tak tergabung): bridge_cost()
+               Target: simpul dengan root == root kutub (+) sumber mana pun
+               -> loop tertutup. Tidak ada target terjangkau => loop TERBUKA
+               (arus tak terdefinisi, BUKAN korslet/meledak). */
+            double vf_led = (comps[i].v > 0.0 ? comps[i].v : VF_LED_DEFAULT);
+            static int gmap_[NG_MAX];
+            static char gedges_[NG_MAX * NG_MAX];   /* 768^2 byte ~ 0.6 MB */
+            int ns = raw_graph_build(nrk_, nn, gmap_, gedges_);
+            int a_node = node_of(i, 0);             /* anoda LED */
+            double best_r = -1.0;      /* jalur terpilih: R terkecil */
+            double best_drop = 0.0;
+            if (ns > 0 && gmap_[a_node] >= 0) {
+                static double gr_[NG_MAX];
+                static int gseen_[NG_MAX];
+                int qh = 0, qt = 0, guard = 0;
+                for (int s2 = 0; s2 < ns; s2++) { gseen_[s2] = 0; gr_[s2] = 0.0; }
+                int start = gmap_[a_node];
+                gseen_[start] = 1; gr_[start] = 0.0; q_[qt++] = start;
+                /* antrean pakai q_ (ukuran NETQ_MAX cukup? simpul bisa >NETQ_MAX
+                   bila banyak pin; pakai antrean lokal berukuran NS) */
+                static int gnq_[NG_MAX];
+                qh = 0; qt = 0;
+                gnq_[qt++] = start;
+                while (qh < qt && guard++ <= 4 * ns + 8) {
+                    int cs = gnq_[qh++];
+                    int croot = find_root(node_pin_of_(cs)); /* root simpul cs */
+                    /* jangan menembus sumber: simpul yang root-nya = (+) atau (-)
+                       boleh DITETAPKAN sebagai akhir jalur, tapi tidak dilanjutkan */
+                    int is_plus = 0;
+                    for (int k = 0; k < n_plus; k++)
+                        if (plus_root[k] == croot) { is_plus = 1; break; }
+                    if (is_plus && cs != start) {
+                        /* kembali ke (+): loop tertutup */
+                        if (best_r < 0.0 || gr_[cs] < best_r) {
+                            best_r = gr_[cs]; best_drop = vf_led;
+                        }
+                        continue;
+                    }
+                    for (int nb = 0; nb < ns; nb++) {
+                        if (!gedges_[cs * ns + nb]) continue;
+                        int nroot = find_root(node_pin_of_(nb));
+                        double addR = 0.0, addV = 0.0;
+                        if (nroot == croot) {
+                            addR = intra_net_r(croot);
+                        } else {
+                            /* cari komponen jembatan penghantar antara dua node */
+                            int found = 0;
+                            for (int cc = 0; cc < comp_count; cc++) {
+                                if (comp_pin_count(&comps[cc]) < 2) continue;
+                                int bk = bridge_kind_(cc);
+                                if (bk == BRIDGE_BLOCK || bk == BRIDGE_LED) continue;
+                                int p0 = node_of(cc, 0), p1 = node_of(cc, 1);
+                                int m0 = (p0 < NG_MAX) ? gmap_[p0] : -1;
+                                int m1 = (p1 < NG_MAX) ? gmap_[p1] : -1;
+                                if ((m0 == cs && m1 == nb) || (m1 == cs && m0 == nb)) {
+                                    bridge_cost(cc, &addR, &addV);
+                                    found = 1; break;
+                                }
+                            }
+                            if (!found) continue;    /* bukan penghantar -> buntu */
+                            if (addV > 0.0) best_drop_extra_ += addV; /* lihat catatan */
+                        }
+                        double nr = gr_[cs] + addR;
+                        if (!gseen_[nb]) {
+                            gseen_[nb] = 1; gr_[nb] = nr; gnq_[qt++] = nb;
+                        } else if (nr < gr_[nb]) {
+                            gr_[nb] = nr; gnq_[qt++] = nb;   /* BF ringan */
+                        }
+                    }
+                }
+            }
+            /* Anoda duduk di net (+) DAN katoda duduk di net (-): loop hanya
+               terdiri kabel + LED saja (semua penghantar lain sudah tergabung
+               ke dalam satu root yang sama dengan (+)/(-)). Bila BFS di atas
+               tidak menemukan jalur kembali, loop ini tetap tertutup via
+               sumber -> arus pendek tanpa resistansi (MELEDAK).
+               Pengecualian: baterai "terpotong" oleh kapasitor DC-block —
+               root (+)-nya adalah hasil union yang menyilang kapasitor, jadi
+               jalur 0 Ω itu tidak nyata. Deteksi: ada kapasitor blokir yang
+               salah satu pin-nya ikut root (+)/(-) LED ini. */
+            {
+                int dc_block_split = 0;
+                if (!sim_ac_mode) {
+                    for (int c2 = 0; c2 < comp_count && !dc_block_split; c2++) {
+                        if (comps[c2].type != COMP_CAPACITOR &&
+                            comps[c2].type != COMP_CAPOLAR) continue;
+                        if (bridge_kind_(c2) != BRIDGE_BLOCK) continue;
+                        int rc0 = find_root(node_of(c2, 0));
+                        int rc1 = find_root(node_of(c2, 1));
+                        int touch_p = 0, touch_m = 0;
+                        for (int k = 0; k < n_plus; k++) {
+                            if (plus_root[k] == rc0 || plus_root[k] == rc1) touch_p = 1;
+                        }
+                        for (int k = 0; k < n_minus; k++) {
+                            if (minus_root[k] == rc0 || minus_root[k] == rc1) touch_m = 1;
+                        }
+                        /* kapasitor memotong untaian anoda LED? */
+                        int on_anode_chain = 0;
+                        for (int k = 0; k < nn; k++)
+                            if (nrk_[k] == rc0 || nrk_[k] == rc1) { on_anode_chain = 1; break; }
+                        if (touch_p && (on_anode_chain || touch_m)) dc_block_split = 1;
+                    }
+                }
+                if (!dc_block_split) {
+                    int anode_on_plus = 0;
+                    for (int k = 0; k < n_plus; k++) if (plus_root[k] == r0) anode_on_plus = 1;
+                    if (anode_on_plus && on_minus) {
+                        /* jalur 0 Ω: R loop nol -> arus pendek */
+                        if (best_r < 0.0) { best_r = 0.0; best_drop = vf_led; }
+                    }
+                }
+            }
+
+            /* (4) arus & nasib LED */
+            double iled;
+            if (best_r < 0.0) {
+                /* Loop terbuka: tidak ada arus terdefinisi. LED dicatat
+                   terhubung (lit_ topologi) tapi BUKAN korslet/meledak. */
+                ilead_[i] = -1.0;
+                continue;
+            }
+            if (best_r <= 0.0) {
+                iled = 1e9;                              /* tanpa R: ~tak hingga */
+            } else {
+                double dv = vloop - best_drop;
+                iled = (dv > 0.0) ? dv / best_r : 0.0;   /* Vf >= Vbat -> tak menyala */
             }
             ilead_[i] = iled;
-            vdrop_[i] = vdrop;
+            vdrop_[i] = best_drop;
             if (iled > sim_iled_max) {
-                sim_iled_max = iled; sim_rloop = rsum;
-                sim_vsrc = vled; sim_vdrop_max = vdrop;
+                sim_iled_max = iled; sim_rloop = best_r;
+                sim_vsrc = vloop; sim_vdrop_max = best_drop;
             } else if (sim_iled_max >= 1e8 && iled < 1e8) {
                 /* ada LED korslet (arus "tak hingga") — tetap tampilkan
                    angka loop LED yang benar-benar tersambung */
-                sim_iled_max = iled; sim_rloop = rsum;
-                sim_vsrc = vled; sim_vdrop_max = vdrop;
+                sim_iled_max = iled; sim_rloop = best_r;
+                sim_vsrc = vloop; sim_vdrop_max = best_drop;
             }
 
-            /* Nasib LED (hukum Ohm, dengan toleransi pembulatan):
-               - I praktis tak hingga (tanpa R / jalur cacat) -> MELEDAK
-               - I > 5x If_max (100 mA) atau V_sumber loop > 50 V -> MELEDAK
-               - If_max < I <= 5x If_max -> rusak pelan (overcurrent)
-               Perbandingan memakai epsilon relatif: nilai IDEAL I = 20 mA
-               (mis. (9-2)V / 350Ω) harus selalu dinyatakan AMAN, bukan
-               terkena galat pembulatan floating-point. */
             const double tol = 1.0 + 1e-6;
             if (iled >= 1e8 || iled > 5.0 * VF_LED_MAX * tol ||
-                (iled > VF_LED_MAX * tol && vled > V_EXPLODE)) {
+                (iled > VF_LED_MAX * tol && vloop > V_EXPLODE)) {
                 blown_[i] = 1;
                 sim_exploded = 1;
             } else if (iled > VF_LED_MAX * tol) {
