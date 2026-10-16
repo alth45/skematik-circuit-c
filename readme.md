@@ -419,7 +419,7 @@ Alur: events/toolbar -> model -> sim_recompute (union-find â†’ analisis nodal â†
 ## Lisensi
 
 Bebas dipakai untuk belajar / tugas. Sebut sumber jika disebar ulang.
-```
+
 
 ---
 
