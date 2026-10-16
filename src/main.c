@@ -231,7 +231,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
 
 /* ===================== Entry Point ===================== */
 int WINAPI wWinMain(HINSTANCE hInst, HINSTANCE hPrev, PWSTR cmd, int show) {
-    (void)hPrev; (void)cmd;
+    (void)hPrev; (void)cmd; (void)show; /* jendela utama ditampilkan oleh splash */
 
     WNDCLASSW wc = {0};
     wc.lpfnWndProc   = WndProc;
@@ -249,8 +249,12 @@ int WINAPI wWinMain(HINSTANCE hInst, HINSTANCE hPrev, PWSTR cmd, int show) {
         CW_USEDEFAULT, CW_USEDEFAULT, 1100, 650,
         NULL, NULL, hInst, NULL);
 
-    ShowWindow(hwnd, show);
+    /* Jendela utama dibuat TERSEMBUNYI dulu; splash yang menampilkannya
+       saat fade-out selesai (urutan: splash -> main). */
+    ShowWindow(hwnd, SW_HIDE);
     UpdateWindow(hwnd);
+
+    splash_run(hInst, hwnd);   /* tampilkan splash screen terlebih dahulu */
 
     /* Accelerator klasik untuk menu bar: Ctrl+N/O/S, F5 (Run/Stop), F9 */
     ACCEL accels[] = {
