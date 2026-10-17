@@ -33,12 +33,12 @@ int g_show_status = 1;
 /* Tombol toolbar (digambar manual di atas, bukan HWND).
    Urutan: Select, Wire, Resistor, Switch, Battery, Sumber AC, LED, Ground,
    Capacitor, Transistor, Diode, Kapasitor Polar, LDR, Buzzer, Voltmeter,
-   Delete. + 4 tombol aksi. */
+   Ammeter, Delete. + 4 tombol aksi. */
 const ToolKind btnTools[BTN_COUNT] = {
     TOOL_SELECT, TOOL_BOX, TOOL_WIRE,
     TOOL_RESISTOR, TOOL_SWITCH, TOOL_BATTERY, TOOL_ACSOURCE, TOOL_LED, TOOL_GROUND,
     TOOL_CAPACITOR, TOOL_TRANSISTOR, TOOL_DIODE, TOOL_CAPOLAR,
-    TOOL_LDR, TOOL_BUZZER, TOOL_VOLTMETER,
+    TOOL_LDR, TOOL_BUZZER, TOOL_VOLTMETER, TOOL_AMMETER,
     TOOL_DELETE
 };
 const wchar_t *btnLabels[BTN_COUNT] = {
@@ -46,7 +46,7 @@ const wchar_t *btnLabels[BTN_COUNT] = {
     L"Resistor (1)", L"Saklar / Switch (2)", L"Baterai (3)", L"Sumber AC (0)",
     L"LED (4)", L"Ground (5)",
     L"Kapasitor (6)", L"Transistor NPN (7)", L"Dioda (8)", L"Kapasitor Polar (9)",
-    L"LDR / Sensor Cahaya (L)", L"Buzzer (U)", L"Voltmeter (M)",
+    L"LDR / Sensor Cahaya (L)", L"Buzzer (U)", L"Voltmeter (M)", L"Ammeter (A)",
     L"Hapus / Delete (Del)"
 };
 

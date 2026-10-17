@@ -15,6 +15,7 @@ static CompType tool_to_comp(ToolKind t) {
         case TOOL_LDR:        return COMP_LDR;
         case TOOL_BUZZER:     return COMP_BUZZER;
         case TOOL_VOLTMETER:  return COMP_VOLTMETER;
+        case TOOL_AMMETER:    return COMP_AMMETER;
         default: return COMP_NONE;
     }
 }
@@ -45,6 +46,7 @@ static const wchar_t *comp_kind_name(CompType t) {
         case COMP_LDR:        return L"LDR (Fotoresistor)";
         case COMP_BUZZER:     return L"Buzzer";
         case COMP_VOLTMETER:  return L"Voltmeter";
+        case COMP_AMMETER:    return L"Ammeter";
         default:              return L"Komponen";
     }
 }
@@ -175,6 +177,29 @@ void show_context_menu(HWND hwnd, int sx, int sy, Component *c) {
                             v < 0.0 ? L"  (kutub terbalik)" : L"");
                     } else {
                         wcscpy_s(extra, 160, L"\nBacaan: - (salah satu ujung tidak terhubung).");
+                    }
+                    wcscat_s(buf, 512, extra);
+                }
+                if (c->type == COMP_AMMETER) {
+                    /* informasi alat ukur: bacaan arus cabang saat RUN */
+                    wchar_t extra[200];
+                    if (!sim_running) {
+                        wcscpy_s(extra, 200, L"\nPasang SERI pada cabang yang diukur: putuskan kabel, "
+                                          L"sambungkan pin masuk ke sisi datang dan pin keluar ke sisi pergi. "
+                                          L"Tekan RUN untuk membaca arus.");
+                    } else if (sim_ammeter_connected(c)) {
+                        double a = sim_ammeter_reading(c);
+                        if (a < 0.0) {
+                            wcscpy_s(extra, 200, L"\nBacaan: - (cabang tidak dialiri arus / terbuka).");
+                        } else if (a == 0.0) {
+                            wcscpy_s(extra, 200, L"\nBacaan: ~ (cabang short 0 \x03A9 — arus teoretis tak hingga, korslet!).");
+                        } else {
+                            wchar_t as[32];
+                            sim_format_si(a, L"A", as, 32);
+                            swprintf(extra, 200, L"\nBacaan arus cabang: %ls", as);
+                        }
+                    } else {
+                        wcscpy_s(extra, 200, L"\nBacaan: - (salah satu ujung tidak terhubung).");
                     }
                     wcscat_s(buf, 512, extra);
                 }
