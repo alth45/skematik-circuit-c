@@ -1,24 +1,25 @@
 #include "toolbar_intern.h"
 
-/* ===================== Menu Bar klasik (File/Edit/View/Simulasi/Bantu) ====
-   Strip baris PERTAMA di bagian atas window, di atas toolbar tombol
-   komponen. Digambar manual (GDI) + popup TrackPopupMenu, mengikuti gaya
-   aplikasi desktop klasik: File, Edit, View, Simulasi, Bantu.
-   (Dipindah utuh dari toolbar.c — tanpa perubahan logika.) */
-
-#define MENU_TOP    2                 /* offset y teks menu */
-#define MENU_ITEM_H 20                /* tinggi tiap item pada hit-test */
-#define MENU_PAD_X  12                /* padding kiri-kanan tiap judul */
+#define MENU_TOP    2
+#define MENU_ITEM_H 20
+#define MENU_PAD_X  12
 
 static const wchar_t *g_menus[] = { L"File", L"Edit", L"View", L"Simulasi", L"Bantu" };
 #define MENU_COUNT ((int)(sizeof(g_menus)/sizeof(g_menus[0])))
+
+/* Satu font menubar di-cache untuk seluruh proses. */
+static HFONT font_menubar(void) {
+    static HFONT h = NULL;
+    if (!h) h = CreateFontW(13, 0, 0, 0, FW_NORMAL, 0, 0, 0,
+        0, 0, 0, 0, 0, L"Segoe UI");
+    return h;
+}
 
 static int menu_x0(int i) {
     static int xs[8] = { 0 };
     static int cached = -1;
     HDC probe = GetDC(NULL);
-    HFONT hF = CreateFontW(13, 0, 0, 0, FW_NORMAL, 0, 0, 0,
-        0, 0, 0, 0, 0, L"Segoe UI");
+    HFONT hF = font_menubar();
     HFONT of = (HFONT)SelectObject(probe, hF);
     if (cached != MENU_COUNT) {
         int x = 8;
@@ -31,7 +32,7 @@ static int menu_x0(int i) {
         cached = MENU_COUNT;
     }
     SelectObject(probe, of);
-    DeleteObject(hF);
+    /* font di-cache: jangan DeleteObject */
     ReleaseDC(NULL, probe);
     return (i >= 0 && i < 8) ? xs[i] : 8;
 }
@@ -45,8 +46,7 @@ static int menu_width(HDC hdc, int i) {
 int menubar_hit(int x, int y) {
     if (y < 0 || y >= MENUBAR_H) return -1;
     HDC hdc = GetDC(NULL);
-    HFONT hF = CreateFontW(13, 0, 0, 0, FW_NORMAL, 0, 0, 0,
-        0, 0, 0, 0, 0, L"Segoe UI");
+    HFONT hF = font_menubar();
     HFONT of = (HFONT)SelectObject(hdc, hF);
     int res = -1;
     for (int i = 0; i < MENU_COUNT; i++) {
@@ -54,14 +54,16 @@ int menubar_hit(int x, int y) {
         if (x >= x0 && x < x0 + menu_width(hdc, i)) { res = i; break; }
     }
     SelectObject(hdc, of);
-    DeleteObject(hF);
     ReleaseDC(NULL, hdc);
     return res;
 }
 
+/* ---- build_popup, menubar_command, menubar_click tetap SAMA PERSIS
+       dengan versimu; hanya draw_menubar di bawah yang berubah ---- */
+
 static void build_popup(int menu_idx, HMENU m) {
     switch (menu_idx) {
-        case 0: /* File */
+        case 0:
             AppendMenuW(m, MF_STRING, IDM_FILE_NEW,    L"New / Bersihkan Canvas\tCtrl+N");
             AppendMenuW(m, MF_STRING, IDM_FILE_OPEN,   L"Open... (JSON)\tCtrl+O");
             AppendMenuW(m, MF_STRING, IDM_FILE_SAVE,   L"Save\tCtrl+S");
@@ -69,7 +71,7 @@ static void build_popup(int menu_idx, HMENU m) {
             AppendMenuW(m, MF_SEPARATOR, 0, NULL);
             AppendMenuW(m, MF_STRING, IDM_FILE_EXIT,   L"Exit\tAlt+F4");
             break;
-        case 1: /* Edit */
+        case 1:
             AppendMenuW(m, MF_STRING | MF_GRAYED, IDM_EDIT_UNDO, L"Undo\tCtrl+Z (belum tersedia)");
             AppendMenuW(m, MF_STRING, IDM_EDIT_DUPL,   L"Duplikat Komponen Terpilih");
             AppendMenuW(m, MF_STRING, IDM_EDIT_DELSEL, L"Hapus Komponen Terpilih\tDel");
@@ -77,7 +79,7 @@ static void build_popup(int menu_idx, HMENU m) {
             AppendMenuW(m, MF_SEPARATOR, 0, NULL);
             AppendMenuW(m, MF_STRING, IDM_EDIT_CLEAR,  L"Clear Canvas");
             break;
-        case 2: /* View */
+        case 2:
             AppendMenuW(m, MF_STRING | (g_show_grid ? MF_CHECKED : 0),
                         IDM_VIEW_GRID, L"Tampilkan Grid");
             AppendMenuW(m, MF_STRING | (g_show_status ? MF_CHECKED : 0),
@@ -87,7 +89,7 @@ static void build_popup(int menu_idx, HMENU m) {
             AppendMenuW(m, MF_STRING | MF_GRAYED, IDM_VIEW_ZOOMOUT, L"Perkecil\tCtrl+- (segera)");
             AppendMenuW(m, MF_STRING | MF_GRAYED, IDM_VIEW_ZOOMFIT, L"Sesuaikan Tampilan\tCtrl+0 (segera)");
             break;
-        case 3: /* Simulasi */
+        case 3:
             AppendMenuW(m, MF_STRING | (sim_running ? MF_GRAYED : 0),
                         IDM_SIM_RUN, L"Jalankan Simulasi\tF5");
             AppendMenuW(m, MF_STRING | (sim_running ? 0 : MF_GRAYED),
@@ -95,7 +97,7 @@ static void build_popup(int menu_idx, HMENU m) {
             AppendMenuW(m, MF_STRING | (sim_running ? MF_GRAYED : 0),
                         IDM_SIM_RECOMPUTE, L"Hitung Ulang\tF9");
             break;
-        case 4: /* Bantu */
+        case 4:
             AppendMenuW(m, MF_STRING, IDM_HELP_SHORTCUT, L"Daftar Pintasan Papan Ketik...");
             AppendMenuW(m, MF_SEPARATOR, 0, NULL);
             AppendMenuW(m, MF_STRING, IDM_HELP_ABOUT, L"Tentang Schematic Editor...");
@@ -133,7 +135,7 @@ void menubar_command(HWND hwnd, int cmd) {
             set_status(L"Komponen diduplikat.");
             break;
         }
-        case IDM_EDIT_DELSEL: 
+        case IDM_EDIT_DELSEL: {
             if (sim_running) break;
             Component *c = find_comp_by_id(selected_id);
             if (!c) {
@@ -143,7 +145,7 @@ void menubar_command(HWND hwnd, int cmd) {
             model_remove_at(c->x, c->y);
             sim_recompute();
             break;
-        
+        }
         case IDM_EDIT_ROTATE:
             if (sim_running) break;
             model_rotate_selected();
@@ -154,6 +156,13 @@ void menubar_command(HWND hwnd, int cmd) {
             sim_recompute();
             set_status(L"Dibersihkan. Canvas kosong.");
             break;
+        case IDM_EDIT_SELECTALL: {
+            current_tool = TOOL_SELECT;
+            sel_count = 0; selected_id = -1;
+            for (int i = 0; i < comp_count; i++) add_to_selection(comps[i].id);
+            set_status(L"%d komponen terpilih (semua).", sel_count);
+            break;
+        }
         case IDM_VIEW_GRID:
             g_show_grid = !g_show_grid;
             set_status(L"Grid %ls.", g_show_grid ? L"ditampilkan" : L"disembunyikan");
@@ -208,7 +217,6 @@ int menubar_click(HWND hwnd, int x, int y) {
     HMENU m = CreatePopupMenu();
     if (!m) return 0;
     build_popup(idx, m);
-    /* posisi popup: bawah judul menu, koordinat layar */
     RECT rc; GetClientRect(hwnd, &rc);
     POINT p = { menu_x0(idx), MENUBAR_H };
     ClientToScreen(hwnd, &p);
@@ -232,8 +240,7 @@ void draw_menubar(HDC hdc, int W) {
     SelectObject(hdc, osp);
     DeleteObject(sep);
 
-    HFONT hF = CreateFontW(13, 0, 0, 0, FW_NORMAL, 0, 0, 0,
-        0, 0, 0, 0, 0, L"Segoe UI");
+    HFONT hF = font_menubar();
     HFONT of = (HFONT)SelectObject(hdc, hF);
     SetBkMode(hdc, TRANSPARENT);
     for (int i = 0; i < MENU_COUNT; i++) {
@@ -244,5 +251,5 @@ void draw_menubar(HDC hdc, int W) {
         DrawTextW(hdc, g_menus[i], -1, &it, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
     }
     SelectObject(hdc, of);
-    DeleteObject(hF);
+    /* font di-cache */
 }

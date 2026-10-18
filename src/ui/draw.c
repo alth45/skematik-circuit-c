@@ -1,27 +1,28 @@
 #include "schematic.h"
 
-/* ===================== draw.c: Dispatcher Gambar & Utilitas Bersama =====================
-   Simbol tiap komponen kini dipisah ke file sendiri-sendiri:
-     komponen_resistor.c  -> draw_k_resistor
-     komponen_switch.c    -> draw_k_switch
-     komponen_battery.c   -> draw_k_battery
-     komponen_acsource.c  -> draw_k_acsource
-     komponen_led.c       -> draw_k_led
-     komponen_ground.c    -> draw_k_ground
-     komponen_capacitor.c -> draw_k_capacitor
-     transistor.c         -> draw_k_transistor
-     komponen_diode.c     -> draw_k_diode
-     komponen_capolar.c   -> draw_k_capolar
-   File ini hanya berisi: utilitas rotasi dunia (with_rotation), dispatcher
-   draw_component, label nilai, titik pin, kabel, dan canvas. */
+/* ===================== draw.c: Dispatcher Gambar & Utilitas Bersama ===================== */
 
-/* Deklarasi awal: helper seleksi multi (definisi di bagian bawah file ini). */
+/* Font di-cache sekali per proses (bukan per paint / per komponen).
+   Cache boleh NULL bila CreateFontW gagal -> retry pada pemanggilan
+   berikutnya, tidak menyimpan kegagalan permanen. Tidak ada DeleteObject
+   karena umur font = umur proses (GDI bersihkan otomatis saat exit). */
+static HFONT font_value_label(void) {
+    static HFONT h = NULL;
+    if (!h) h = CreateFontW(14, 0, 0, 0, FW_NORMAL, 0, 0, 0,
+        DEFAULT_CHARSET, 0, 0, CLEARTYPE_QUALITY, 0, L"Segoe UI");
+    return h;
+}
+static HFONT font_sel_label(void) {
+    static HFONT h = NULL;
+    if (!h) h = CreateFontW(13, 0, 0, 0, FW_NORMAL, 0, 0, 0,
+        DEFAULT_CHARSET, 0, 0, CLEARTYPE_QUALITY, 0, L"Segoe UI");
+    return h;
+}
+
 static int comp_in_selection(int id);
 static void draw_selection_boxes(HDC hdc);
 static void draw_marquee(HDC hdc);
 
-/* Bungkus gambar simbol dengan rotasi dunia (GDI World Transform).
-   Semua fungsi draw_* di file komponen menggambar asumsi rot=0 (horizontal). */
 void with_rotation(HDC hdc, Component *c,
                    void (*fn)(HDC, int, int, BOOL)) {
     int r = ((c->rot % 4) + 4) % 4;
@@ -29,11 +30,6 @@ void with_rotation(HDC hdc, Component *c,
     int saved = SaveDC(hdc);
     SetGraphicsMode(hdc, GM_ADVANCED);
     XFORM xf;
-    /* peta: local (lx,ly) -> world (cx + rx, cy + ry), dgn (rx,ry) spt comp_local_to_world.
-       r=1: (x,y)->(-y,x): eM11=0,eM12=1,eM21=-1,eM22=0
-       r=2: (x,y)->(-x,-y): eM11=-1,eM12=0,eM21=0,eM22=-1
-       r=3: (x,y)->(y,-x): eM11=0,eM12=-1,eM21=1,eM22=0
-       world = M*local + (cx,cy); jadi gambar di (0,0) = pusat. */
     if (r == 1)      { xf.eM11 = 0;  xf.eM12 = 1;  xf.eM21 = -1; xf.eM22 = 0; }
     else if (r == 2) { xf.eM11 = -1; xf.eM12 = 0;  xf.eM21 = 0;  xf.eM22 = -1; }
     else             { xf.eM11 = 0;  xf.eM12 = -1; xf.eM21 = 1;  xf.eM22 = 0; }
@@ -63,8 +59,6 @@ static void draw_pins(HDC hdc, Component *c) {
     }
 }
 
-/* Label NILAI komponen (R/BAT/LED/C/CP/D) — digambar TANPA rotasi agar
-   teks selalu tegak dan mudah dibaca. Dipanggil dari draw_component. */
 static void draw_value_label(HDC hdc, Component *c) {
     if (!comp_has_value(c->type)) return;
 
@@ -72,24 +66,20 @@ static void draw_value_label(HDC hdc, Component *c) {
     wchar_t vs[VALUE_STR_CAP];
     format_value(c->v, unit, vs, VALUE_STR_CAP);
 
-    HFONT hf = CreateFontW(14, 0, 0, 0, FW_NORMAL, 0, 0, 0,
-        DEFAULT_CHARSET, 0, 0, CLEARTYPE_QUALITY, 0, L"Segoe UI");
+    HFONT hf = font_value_label();
     HFONT of = (HFONT)SelectObject(hdc, hf);
     SetBkMode(hdc, TRANSPARENT);
 
     SIZE sz; GetTextExtentPoint32W(hdc, vs, (int)wcslen(vs), &sz);
     int tw = sz.cx, th = sz.cy;
 
-    /* posisi default: horizontal -> atas; vertikal -> samping kiri/kanan */
     int tx = c->x - tw / 2;
     int ty = (c->rot % 2 == 0) ? c->y - 34 : c->y - th / 2;
     if (c->rot % 2 != 0) {
-        /* vertikal: taruh di sisi yang kosong (kiri untuk rot 1, kanan rot 3) */
         if ((c->rot % 4) == 1) tx = c->x - tw - 52;
         else                   tx = c->x + 52;
     }
 
-    /* kotak putih tipis agar terbaca di atas grid/kabel */
     HPEN bp = CreatePen(PS_SOLID, 1, RGB(220,220,220));
     HPEN obp = (HPEN)SelectObject(hdc, bp);
     HBRUSH bb = CreateSolidBrush(RGB(255,255,255));
@@ -100,15 +90,14 @@ static void draw_value_label(HDC hdc, Component *c) {
 
     COLORREF col = RGB(70, 70, 70);
     if (sim_running && c->type == COMP_LED && sim_comp_blown(c))
-        col = RGB(200, 30, 30);                 /* LED meledak -> merah */
+        col = RGB(200, 30, 30);
     SetTextColor(hdc, col);
     TextOutW(hdc, tx, ty, vs, (int)wcslen(vs));
 
     SelectObject(hdc, of);
-    DeleteObject(hf);
+    /* font di-cache: JANGAN DeleteObject(hf) */
 }
 
-/* ===================== Dispatch Komponen (ke file simbol masing-masing) ===================== */
 void draw_component(HDC hdc, Component *c) {
     BOOL sel = (c->id == selected_id);
     switch (c->type) {
@@ -125,23 +114,21 @@ void draw_component(HDC hdc, Component *c) {
         case COMP_LDR:         draw_k_ldr(hdc, c);         break;
         case COMP_BUZZER:      draw_k_buzzer(hdc, c);      break;
         case COMP_VOLTMETER:   draw_k_voltmeter(hdc, c);   break;
+        case COMP_AMMETER:     draw_k_ammeter(hdc, c);     break;
         default: break;
     }
-    draw_value_label(hdc, c);   /* teks nilai selalu tegak (tanpa rotasi) */
+    draw_value_label(hdc, c);
     if (sel) {
         HPEN pen = CreatePen(PS_DOT, 1, RGB(50,128,255));
         HPEN old = (HPEN)SelectObject(hdc, pen);
         HBRUSH oldb = (HBRUSH)SelectObject(hdc, GetStockObject(NULL_BRUSH));
         int hw = (c->rot % 2 == 0) ? 48 : 38;
         int hh = (c->rot % 2 == 0) ? 38 : 48;
-        /* transistor: kaki C/E menjulur sampai y=+-30 & x=+-40,
-           jadi kotak seleksinya dibuat lebih besar */
         if (c->type == COMP_TRANSISTOR) { hw = 52; hh = 42; }
         Rectangle(hdc, c->x - hw, c->y - hh, c->x + hw, c->y + hh);
         SelectObject(hdc, oldb);
         SelectObject(hdc, old);
         DeleteObject(pen);
-        /* label sudut rotasi */
         wchar_t buf[16];
         swprintf(buf, 16, L"%d deg", (c->rot % 4) * 90);
         SetTextColor(hdc, RGB(50,128,255));
@@ -151,30 +138,19 @@ void draw_component(HDC hdc, Component *c) {
     draw_pins(hdc, c);
 }
 
-/* ===================== Overlay Seleksi (dipakai WM_PAINT di main.c) ===================== */
-
-/* Gambar highlight blok multi-select + kotak marquee pada hdc yang sudah
-   memakai koordinat canvas (viewport offset TOOLBAR_H diterapkan pemanggil).
-   `hdc_screen` = HDC target akhir (untuk efek tint marquee); boleh sama hdc. */
 void draw_selection_overlay(HDC hdc, HDC hdc_screen) {
     draw_selection_boxes(hdc);
     if (box_selecting) draw_marquee(hdc_screen);
 }
 
-/* ===================== Multi-Select: Highlight & Kotak Marquee ===================== */
-
-/* 1 = komponen termasuk dalam blok multi-select (bukan seleksi primer). */
 static int comp_in_selection(int id) {
     for (int i = 0; i < sel_count; i++)
         if (selection[i] == id) return 1;
     return 0;
 }
 
-/* Gambar kotak putus-putus hijau di sekeliling SEMUA anggota seleksi, plus
-   satu kotak pembatas grup (bounding box) agar blok terlihat sebagai satu
-   kesatuan yang siap di-drag and drop. */
 static void draw_selection_boxes(HDC hdc) {
-    if (sel_count <= 1) return;   /* tunggal sudah digambar draw_component */
+    if (sel_count <= 1) return;
     int minx = 1 << 30, miny = 1 << 30, maxx = -(1 << 30), maxy = -(1 << 30);
     HPEN pen = CreatePen(PS_DOT, 1, RGB(0, 160, 90));
     HPEN oldp = (HPEN)SelectObject(hdc, pen);
@@ -194,7 +170,6 @@ static void draw_selection_boxes(HDC hdc) {
     SelectObject(hdc, oldp);
     DeleteObject(pen);
     if (minx <= maxx) {
-        /* bounding box grup + jumlah anggota */
         HPEN gp = CreatePen(PS_SOLID, 1, RGB(0, 160, 90));
         HPEN ogp = (HPEN)SelectObject(hdc, gp);
         HBRUSH gb = (HBRUSH)SelectObject(hdc, GetStockObject(NULL_BRUSH));
@@ -204,19 +179,16 @@ static void draw_selection_boxes(HDC hdc) {
         DeleteObject(gp);
         wchar_t buf[32];
         swprintf(buf, 32, L"%d komponen (blok)", sel_count);
-        HFONT hf = CreateFontW(13, 0, 0, 0, FW_NORMAL, 0, 0, 0,
-            DEFAULT_CHARSET, 0, 0, CLEARTYPE_QUALITY, 0, L"Segoe UI");
+        HFONT hf = font_sel_label();
         HFONT ofh = (HFONT)SelectObject(hdc, hf);
         SetBkMode(hdc, TRANSPARENT);
         SetTextColor(hdc, RGB(0, 130, 75));
         TextOutW(hdc, minx - 4, miny - 24, buf, (int)wcslen(buf));
         SelectObject(hdc, ofh);
-        DeleteObject(hf);
+        /* font di-cache: JANGAN DeleteObject(hf) */
     }
 }
 
-/* Kotak "marquee" saat klik kiri ditekan & diseret: isian biru transparan
-   dengan garis tepi biru (gaya canvas umum). */
 static void draw_marquee(HDC hdc) {
     if (!box_selecting) return;
     int lx = (box_x1 < box_x2) ? box_x1 : box_x2;
@@ -228,7 +200,7 @@ static void draw_marquee(HDC hdc) {
         HDC mdc = CreateCompatibleDC(hdc);
         HBITMAP mono = CreateBitmap(rx - lx, by - ty, 1, 1, NULL);
         HBITMAP omono = (HBITMAP)SelectObject(mdc, mono);
-        PatBlt(mdc, 0, 0, rx - lx, by - ty, BLACKNESS);   /* mask 0 -> warna inversi */
+        PatBlt(mdc, 0, 0, rx - lx, by - ty, BLACKNESS);
         BitBlt(hdc, lx, ty, rx - lx, by - ty, mdc, 0, 0, MERGEPAINT);
         SelectObject(mdc, omono);
         DeleteObject(mono);
@@ -244,7 +216,6 @@ static void draw_marquee(HDC hdc) {
     DeleteObject(pen);
 }
 
-/* ===================== Kabel ===================== */
 static void stroke_ortho(HDC hdc, int x1, int y1, int x2, int y2) {
     MoveToEx(hdc, x1, y1, NULL);
     LineTo(hdc, x2, y1);
@@ -259,7 +230,6 @@ void draw_wires(HDC hdc) {
         int ax, ay, bx, by;
         comp_pin_pos(ca, wires[i].a.pin_idx, &ax, &ay);
         comp_pin_pos(cb, wires[i].b.pin_idx, &bx, &by);
-        /* kabel bertegangan (+) = merah saat RUN */
         int hot = sim_running && sim_wire_hot(i);
         HPEN pen = CreatePen(PS_SOLID, hot ? 3 : 2,
                              hot ? RGB(230,50,50) : RGB(20,20,20));
@@ -275,7 +245,6 @@ void draw_wires(HDC hdc) {
         DeleteObject(pen);
     }
 
-    /* preview kabel saat drag */
     if (wiring_active) {
         Component *ca = find_comp_by_id(wiring_from.comp_id);
         if (ca) {
@@ -287,7 +256,6 @@ void draw_wires(HDC hdc) {
             stroke_ortho(hdc, ax, ay, mx, my);
             SelectObject(hdc, opv);
             DeleteObject(pv);
-            /* highlight pin target */
             PinRef t; int tx, ty;
             if (find_pin_at(wiring_mx, wiring_my, &t, &tx, &ty)) {
                 HBRUSH br = CreateSolidBrush(RGB(60, 180, 60));
@@ -300,7 +268,6 @@ void draw_wires(HDC hdc) {
     }
 }
 
-/* ===================== Gambar Seluruh Canvas ===================== */
 void draw_canvas(HWND hwnd) {
     PAINTSTRUCT ps;
     HDC hdc = BeginPaint(hwnd, &ps);
@@ -309,17 +276,14 @@ void draw_canvas(HWND hwnd) {
     GetClientRect(hwnd, &rc);
     int W = rc.right, H = rc.bottom;
 
-    // Double buffer untuk menghilangkan flicker
     HDC memDC = CreateCompatibleDC(hdc);
     HBITMAP memBmp = CreateCompatibleBitmap(hdc, W, H);
     HBITMAP oldBmp = (HBITMAP)SelectObject(memDC, memBmp);
 
-    // background putih
     HBRUSH bg = CreateSolidBrush(RGB(255,255,255));
     FillRect(memDC, &rc, bg);
     DeleteObject(bg);
 
-    // grid halus
     HPEN gridPen = CreatePen(PS_SOLID, 1, RGB(235,235,235));
     HPEN oldp = (HPEN)SelectObject(memDC, gridPen);
     for (int x = 0; x < W; x += GRID) {
@@ -331,12 +295,10 @@ void draw_canvas(HWND hwnd) {
     SelectObject(memDC, oldp);
     DeleteObject(gridPen);
 
-    // gambar semua komponen
     for (int i = 0; i < comp_count; i++) {
         draw_component(memDC, &comps[i]);
     }
 
-    // highlight blok multi-select + kotak marquee (klik kiri ditekan & diseret)
     draw_selection_boxes(memDC);
     if (box_selecting) draw_marquee(memDC);
 

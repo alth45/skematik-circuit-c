@@ -1,27 +1,26 @@
 #include "schematic.h"
 
-/* ---- Splash screen (src/ui/splash.c) ----
-   Ditampilkan lebih dulu saat .exe dijalankan; window utama baru muncul
-<<<<<<< HEAD
-   setelah splash selesai (atau dilewati dengan klik). */
-void splash_show(HINSTANCE hInst);  /* buat + tampilkan splash (animasi) */
-int  splash_active(void);           /* 1 selama splash masih tampil */
-=======
-   setelah splash selesai (atau dilewati dengan klik).
-   main_hwnd = jendela utama yang SUDAH dibuat (dalam keadaan hidden);
-   splash akan ShowWindow saat animasi fade-out selesai. */
-void splash_run(HINSTANCE hInst, HWND main_hwnd);
-int splash_active(void); /* 1 selama splash masih tampil */
->>>>>>> splash-screen-implementation-036a4
+/* Cache font sekali per proses (bukan per WM_PAINT). */
+static HFONT font_banner(void) {
+    static HFONT h = NULL;
+    if (!h) h = CreateFontW(16, 0, 0, 0, FW_BOLD, 0, 0, 0, 0, 0, 0, 0, 0,
+                            L"Segoe UI");
+    return h;
+}
+static HFONT font_status(void) {
+    static HFONT h = NULL;
+    if (!h) h = CreateFontW(13, 0, 0, 0, FW_NORMAL, 0, 0, 0, 0, 0, 0, 0, 0,
+                            L"Segoe UI");
+    return h;
+}
 
-/* ===================== Window Procedure ===================== */
+void splash_run(HINSTANCE hInst, HWND main_hwnd);
+
 static void setup_keyboard(HWND hwnd) { SetFocus(hwnd); }
 
 static void toolbar_click(HWND hwnd, int x, int y) {
-  /* y relatif terhadap strip toolbar komponen (di bawah menubar) */
   int idx = toolbar_hit(x, y);
-  if (idx < 0)
-    return;
+  if (idx < 0) return;
   if (idx == CLEAR_BTN_INDEX) {
     menubar_command(hwnd, IDM_EDIT_CLEAR);
   } else if (idx == SAVE_BTN_INDEX) {
@@ -32,8 +31,7 @@ static void toolbar_click(HWND hwnd, int x, int y) {
   } else if (idx == RUN_BTN_INDEX) {
     sim_set_running(!sim_running);
   } else {
-    if (sim_running)
-      return; /* ganti tool dikunci saat RUN */
+    if (sim_running) return;
     current_tool = btnTools[idx];
     dragging_id = -1;
     wiring_active = 0;
@@ -52,14 +50,8 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
   case WM_LBUTTONDOWN: {
     int x = (short)LOWORD(lp);
     int y = (short)HIWORD(lp);
-    if (y < MENUBAR_H) {
-      menubar_click(hwnd, x, y);
-      return 0;
-    }
-    if (y < TOOLBAR_H) {
-      toolbar_click(hwnd, x, y - MENUBAR_H);
-      return 0;
-    }
+    if (y < MENUBAR_H) { menubar_click(hwnd, x, y); return 0; }
+    if (y < TOOLBAR_H) { toolbar_click(hwnd, x, y - MENUBAR_H); return 0; }
     setup_keyboard(hwnd);
     y -= TOOLBAR_H;
     on_lbutton_down(hwnd, x, y);
@@ -70,8 +62,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     int x = (short)LOWORD(lp);
     int y = (short)HIWORD(lp);
     if (y < TOOLBAR_H) {
-      if (y < MENUBAR_H)
-        menubar_click(hwnd, x, y);
+      if (y < MENUBAR_H) menubar_click(hwnd, x, y);
       return 0;
     }
     y -= TOOLBAR_H;
@@ -82,8 +73,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
   case WM_MOUSEMOVE: {
     int x = (short)LOWORD(lp);
     int y = (short)HIWORD(lp);
-    if (y < TOOLBAR_H)
-      y = TOOLBAR_H;
+    if (y < TOOLBAR_H) y = TOOLBAR_H;
     y -= TOOLBAR_H;
     on_mouse_move(hwnd, x, y);
     return 0;
@@ -92,8 +82,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
   case WM_LBUTTONUP: {
     int x = (short)LOWORD(lp);
     int y = (short)HIWORD(lp);
-    if (y < TOOLBAR_H)
-      y = TOOLBAR_H;
+    if (y < TOOLBAR_H) y = TOOLBAR_H;
     y -= TOOLBAR_H;
     on_lbutton_up(hwnd, x, y);
     return 0;
@@ -102,12 +91,8 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
   case WM_LBUTTONDBLCLK: {
     int x = (short)LOWORD(lp);
     int y = (short)HIWORD(lp);
-    if (y < MENUBAR_H) {
-      menubar_click(hwnd, x, y);
-      return 0;
-    }
-    if (y < TOOLBAR_H)
-      return 0;
+    if (y < MENUBAR_H) { menubar_click(hwnd, x, y); return 0; }
+    if (y < TOOLBAR_H) return 0;
     y -= TOOLBAR_H;
     on_lbutton_dblclk(hwnd, x, y);
     return 0;
@@ -116,8 +101,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
   case WM_RBUTTONDBLCLK: {
     int x = (short)LOWORD(lp);
     int y = (short)HIWORD(lp);
-    if (y < TOOLBAR_H)
-      return 0;
+    if (y < TOOLBAR_H) return 0;
     y -= TOOLBAR_H;
     on_rbutton_dblclk(hwnd, x, y);
     return 0;
@@ -184,8 +168,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         fg = RGB(60, 60, 60);
         bgc = RGB(255, 235, 160);
       }
-      HFONT hB = CreateFontW(16, 0, 0, 0, FW_BOLD, 0, 0, 0, 0, 0, 0, 0, 0,
-                             L"Segoe UI");
+      HFONT hB = font_banner();
       HFONT oB = (HFONT)SelectObject(memDC, hB);
       SIZE bsz;
       GetTextExtentPoint32W(memDC, msg, (int)wcslen(msg), &bsz);
@@ -204,7 +187,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
       SetBkMode(memDC, TRANSPARENT);
       TextOutW(memDC, bx + 14, by + 7, msg, (int)wcslen(msg));
       SelectObject(memDC, oB);
-      DeleteObject(hB);
+      /* font di-cache */
     }
 
     RestoreDC(memDC, -1);
@@ -220,8 +203,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
       LineTo(memDC, W, H - STATUS_H);
       SelectObject(memDC, osp4);
       DeleteObject(sp2);
-      HFONT hSt = CreateFontW(13, 0, 0, 0, FW_NORMAL, 0, 0, 0, 0, 0, 0, 0, 0,
-                              L"Segoe UI");
+      HFONT hSt = font_status();
       HFONT oSt = (HFONT)SelectObject(memDC, hSt);
       SetTextColor(memDC, RGB(60, 60, 60));
       SetBkMode(memDC, TRANSPARENT);
@@ -232,7 +214,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
       GetTextExtentPoint32W(memDC, cnt, (int)wcslen(cnt), &csz);
       TextOutW(memDC, W - csz.cx - 10, H - STATUS_H + 5, cnt, (int)wcslen(cnt));
       SelectObject(memDC, oSt);
-      DeleteObject(hSt);
+      /* font di-cache */
     }
 
     BitBlt(hdc, 0, 0, W, H, memDC, 0, 0, SRCCOPY);
@@ -261,31 +243,8 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
   return DefWindowProcW(hwnd, msg, wp, lp);
 }
 
-/* ===================== Entry Point ===================== */
-<<<<<<< HEAD
-int WINAPI wWinMain(HINSTANCE hInst, HINSTANCE hPrev, PWSTR cmd, int show) {
-    (void)hPrev; (void)cmd; (void)show; /* jendela utama ditampilkan oleh splash */
-
-/* Window utama dibuat SETELAH splash selesai, supaya urutan visualnya:
-   splash dulu -> baru main window muncul. */
 static HWND g_main_hwnd = NULL;
-static int  g_show_flag = SW_SHOWNORMAL;
 
-static void main_window_create(HINSTANCE hInst) {
-    WNDCLASSW wc = {0};
-    wc.lpfnWndProc   = WndProc;
-    wc.hInstance     = hInst;
-    wc.hCursor       = LoadCursor(NULL, IDC_ARROW);
-    wc.hbrBackground = (HBRUSH)(COLOR_WINDOW + 1);
-    wc.lpszClassName = L"SchematicEditorWnd";
-=======
-
-/* Handle jendela utama (dibuat tersembunyi; splash yang menampilkannya
-   setelah fade-out selesai). */
-static HWND g_main_hwnd = NULL;
->>>>>>> splash-screen-implementation-036a4
-
-/* Buat jendela utama dalam keadaan HIDDEN + register kelas window. */
 static void main_window_create(HINSTANCE hInst) {
   WNDCLASSW wc = {0};
   wc.lpfnWndProc = WndProc;
@@ -293,41 +252,6 @@ static void main_window_create(HINSTANCE hInst) {
   wc.hCursor = LoadCursor(NULL, IDC_ARROW);
   wc.hbrBackground = (HBRUSH)(COLOR_WINDOW + 1);
   wc.lpszClassName = L"SchematicEditorWnd";
-
-<<<<<<< HEAD
-    g_main_hwnd = CreateWindowExW(
-        0, L"SchematicEditorWnd",
-        L"Schematic Editor - Win32 GDI",
-        WS_OVERLAPPEDWINDOW,
-        CW_USEDEFAULT, CW_USEDEFAULT, 1100, 650,
-        NULL, NULL, hInst, NULL);
-
-    /* Jendela utama dibuat TERSEMBUNYI dulu; splash yang menampilkannya
-       saat fade-out selesai (urutan: splash -> main). */
-    ShowWindow(hwnd, SW_HIDE);
-    UpdateWindow(hwnd);
-
-    splash_run(hInst, hwnd);   /* tampilkan splash screen terlebih dahulu */
-
-    /* Accelerator klasik untuk menu bar: Ctrl+N/O/S, F5 (Run/Stop), F9 */
-    ACCEL accels[] = {
-        { FCONTROL|FVIRTKEY, 'N', IDM_FILE_NEW },
-        { FCONTROL|FVIRTKEY, 'O', IDM_FILE_OPEN },
-        { FCONTROL|FVIRTKEY, 'S', IDM_FILE_SAVE },
-        { FVIRTKEY, VK_F5, IDM_SIM_RUN_TOGGLE },
-        { FVIRTKEY, VK_F9, IDM_SIM_RECOMPUTE },
-    };
-    HACCEL hAccel = CreateAcceleratorTableW(accels, (int)(sizeof(accels)/sizeof(accels[0])));
-
-    MSG msg;
-    while (GetMessageW(&msg, NULL, 0, 0) > 0) {
-        if (hAccel && TranslateAcceleratorW(g_main_hwnd, hAccel, &msg)) continue;
-        TranslateMessage(&msg);
-        DispatchMessageW(&msg);
-    }
-    if (hAccel) DestroyAcceleratorTable(hAccel);
-    return (int)msg.wParam;
-=======
   RegisterClassW(&wc);
 
   g_main_hwnd =
@@ -335,11 +259,8 @@ static void main_window_create(HINSTANCE hInst) {
                       WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT, 1100,
                       650, NULL, NULL, hInst, NULL);
 
-  /* Jendela utama dibuat TERSEMBUNYI dulu; splash yang menampilkannya
-     saat fade-out selesai (urutan: splash -> main). */
   ShowWindow(g_main_hwnd, SW_HIDE);
   UpdateWindow(g_main_hwnd);
->>>>>>> splash-screen-implementation-036a4
 }
 
 int WINAPI wWinMain(HINSTANCE hInst, HINSTANCE hPrev, PWSTR cmd, int show) {
@@ -347,13 +268,9 @@ int WINAPI wWinMain(HINSTANCE hInst, HINSTANCE hPrev, PWSTR cmd, int show) {
   (void)cmd;
   (void)show;
 
-  /* 1) Buat jendela utama (hidden). */
   main_window_create(hInst);
-
-  /* 2) Tampilkan splash; ia akan reveal main window saat fade-out selesai. */
   splash_run(hInst, g_main_hwnd);
 
-  /* 3) Accelerator klasik untuk menu bar: Ctrl+N/O/S, F5 (Run/Stop), F9. */
   ACCEL accels[] = {
       {FCONTROL | FVIRTKEY, 'N', IDM_FILE_NEW},
       {FCONTROL | FVIRTKEY, 'O', IDM_FILE_OPEN},

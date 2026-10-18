@@ -30,15 +30,12 @@ int group_drag_ox = 0, group_drag_oy = 0;
 int g_show_grid   = 1;
 int g_show_status = 1;
 
-/* Tombol toolbar (digambar manual di atas, bukan HWND).
-   Urutan: Select, Wire, Resistor, Switch, Battery, Sumber AC, LED, Ground,
-   Capacitor, Transistor, Diode, Kapasitor Polar, LDR, Buzzer, Voltmeter,
-   Delete. + 4 tombol aksi. */
+/* Tombol toolbar (digambar manual di atas, bukan HWND). */
 const ToolKind btnTools[BTN_COUNT] = {
     TOOL_SELECT, TOOL_BOX, TOOL_WIRE,
     TOOL_RESISTOR, TOOL_SWITCH, TOOL_BATTERY, TOOL_ACSOURCE, TOOL_LED, TOOL_GROUND,
     TOOL_CAPACITOR, TOOL_TRANSISTOR, TOOL_DIODE, TOOL_CAPOLAR,
-    TOOL_LDR, TOOL_BUZZER, TOOL_VOLTMETER,
+    TOOL_LDR, TOOL_BUZZER, TOOL_VOLTMETER, TOOL_AMMETER,
     TOOL_DELETE
 };
 const wchar_t *btnLabels[BTN_COUNT] = {
@@ -46,7 +43,7 @@ const wchar_t *btnLabels[BTN_COUNT] = {
     L"Resistor (1)", L"Saklar / Switch (2)", L"Baterai (3)", L"Sumber AC (0)",
     L"LED (4)", L"Ground (5)",
     L"Kapasitor (6)", L"Transistor NPN (7)", L"Dioda (8)", L"Kapasitor Polar (9)",
-    L"LDR / Sensor Cahaya (L)", L"Buzzer (U)", L"Voltmeter (M)",
+    L"LDR / Sensor Cahaya (L)", L"Buzzer (U)", L"Voltmeter (M)", L"Ammeter (I)",
     L"Hapus / Delete (Del)"
 };
 
@@ -73,8 +70,6 @@ Component *find_comp_at(int x, int y) {
     return NULL;
 }
 
-/* Setengah kotak pembatas: default hw=48/hh=38 (bertukar saat rotasi
-   ganjil); transistor sedikit lebih besar karena kaki C/E menjulur. */
 void comp_bounding_half(const Component *c, int *hw, int *hh) {
     int w = 48, h = 38;
     if (c->type == COMP_TRANSISTOR) { w = 52; h = 42; }
@@ -85,7 +80,7 @@ void comp_bounding_half(const Component *c, int *hw, int *hh) {
 int comp_pin_count(const Component *c) {
     if (!c) return 0;
     if (c->type == COMP_GROUND) return 1;
-    if (c->type == COMP_TRANSISTOR) return 3; /* C, E, B */
+    if (c->type == COMP_TRANSISTOR) return 3;
     if (c->type == COMP_NONE) return 0;
     return 2;
 }
@@ -99,10 +94,6 @@ void comp_local_to_world(const Component *c, int lx, int ly, int *wx, int *wy) {
     if (!c || !wx || !wy) return;
     int r = ((c->rot % 4) + 4) % 4;
     int rx = lx, ry = ly;
-    /* rotasi searah jarum jam, koordinat layar (y ke bawah):
-       r=1 (90 CW):  (x,y) -> (-y, x)
-       r=2 (180):    (x,y) -> (-x,-y)
-       r=3 (270 CW): (x,y) -> (y, -x) */
     if (r == 1)      { rx = -ly; ry = lx; }
     else if (r == 2) { rx = -lx; ry = -ly; }
     else if (r == 3) { rx = ly;  ry = -lx; }
@@ -115,11 +106,6 @@ void comp_pin_pos(const Component *c, int pin_idx, int *px, int *py) {
     if (c->type == COMP_GROUND) {
         comp_local_to_world(c, 0, -30, px, py);
     } else if (c->type == COMP_TRANSISTOR) {
-        /* NPN: titik pin HARUS tepat di ujung kaki simbol
-           (lihat draw_transistor):
-           pin0 = Kolektor -> ujung kaki kiri-atas  (-40,-30)
-           pin1 = Emitor   -> ujung kaki kanan-bawah (+40,+30)
-           pin2 = Basis    -> ujung kawat basis kiri (-40,  0) */
         if (pin_idx == 2)      comp_local_to_world(c, -40,  0, px, py);
         else if (pin_idx == 1) comp_local_to_world(c,  40, 30, px, py);
         else                   comp_local_to_world(c, -40, -30, px, py);
@@ -169,29 +155,27 @@ void clear_selection(void) {
 }
 
 int add_to_selection(int id) {
-    if (id < 0 || !find_comp_by_id(id)) return 0;   /* id tak dikenal -> tolak */
+    if (id < 0 || !find_comp_by_id(id)) return 0;
     for (int i = 0; i < sel_count; i++)
-        if (selection[i] == id) return 0;           /* sudah ada -> duplikat ditolak */
-    if (sel_count >= MAX_SEL) return 0;             /* kapasitas penuh */
+        if (selection[i] == id) return 0;
+    if (sel_count >= MAX_SEL) return 0;
     selection[sel_count++] = id;
-    selected_id = id;                              /* anggota terakhir = primer */
+    selected_id = id;
     return 1;
 }
 
 void toggle_selection(int id) {
     for (int i = 0; i < sel_count; i++) {
-        if (selection[i] == id) {                  /* sudah terpilih -> keluarkan */
+        if (selection[i] == id) {
             for (int j = i; j < sel_count - 1; j++) selection[j] = selection[j + 1];
             sel_count--;
             selected_id = (sel_count > 0) ? selection[sel_count - 1] : -1;
             return;
         }
     }
-    add_to_selection(id);                          /* belum ada -> masukkan */
+    add_to_selection(id);
 }
 
-/* Blok semua komponen yang PENUH berada dalam kotak (sudut bebas).
-   add=1: gabungkan dengan seleksi yang ada (Shift+drag). Return jumlah kena. */
 int model_select_rect(int x1, int y1, int x2, int y2, int add) {
     int lx = (x1 < x2) ? x1 : x2, rx = (x1 < x2) ? x2 : x1;
     int ty = (y1 < y2) ? y1 : y2, by = (y1 < y2) ? y2 : y1;
@@ -213,7 +197,6 @@ int model_select_rect(int x1, int y1, int x2, int y2, int add) {
     return n;
 }
 
-/* Geser seluruh anggota seleksi sebesar (dx,dy) pixel. */
 void model_translate_selection(int dx, int dy) {
     if (dx == 0 && dy == 0) return;
     for (int i = 0; i < sel_count; i++) {
@@ -222,20 +205,18 @@ void model_translate_selection(int dx, int dy) {
     }
 }
 
-/* Hapus semua anggota seleksi + kabel yang menempel padanya. Return jumlah. */
 int model_delete_selection(void) {
-    if (sim_running) return 0;               /* edit dikunci saat RUN */
+    if (sim_running) return 0;
     int removed = 0;
     while (sel_count > 0) {
         Component *c = find_comp_by_id(selection[0]);
-        if (!c) {                            /* anggota basi -> buang dari daftar */
+        if (!c) {
             for (int j = 0; j < sel_count - 1; j++) selection[j] = selection[j + 1];
             sel_count--;
             continue;
         }
         int cx = c->x, cy = c->y;
-        model_remove_at(cx, cy);             /* juga membersihkan selected_id/dragging */
-        /* model_remove_at tidak menyentuh selection[] -> sinkronkan ulang */
+        model_remove_at(cx, cy);
         for (int j = 0; j < sel_count; ) {
             if (!find_comp_by_id(selection[j])) {
                 for (int k = j; k < sel_count - 1; k++) selection[k] = selection[k + 1];
@@ -250,12 +231,10 @@ int model_delete_selection(void) {
     return removed;
 }
 
-/* Salin blok terpilih sebagai grup baru dengan offset (dx,dy).
-   Kabel antar anggota ikut tersalin; seleksi berpindah ke salinan. */
 int model_duplicate_selection(int dx, int dy) {
     if (sim_running) return 0;
     if (sel_count == 0) return 0;
-    if (comp_count + sel_count > MAX_COMP) return 0;   /* tak cukup ruang */
+    if (comp_count + sel_count > MAX_COMP) return 0;
 
     int old_ids[MAX_SEL], new_ids[MAX_SEL];
     int n = sel_count;
@@ -267,14 +246,13 @@ int model_duplicate_selection(int dx, int dy) {
         CompType t = c->type;
         double v = c->v;
         int rot = c->rot, on = c->on;
-        model_add_component(t, c->x + dx, c->y + dy);  /* selected_id := id baru */
+        model_add_component(t, c->x + dx, c->y + dy);
         Component *nc = find_comp_by_id(selected_id);
         if (nc) { nc->v = v; nc->rot = rot; nc->on = on; }
         new_ids[i] = selected_id;
     }
 
-    /* salin kabel internal (kedua ujungnya termasuk yang diduplikasi) */
-    int nw = wire_count;                               /* batas kabel lama */
+    int nw = wire_count;
     for (int i = 0; i < wire_count && i < nw; i++) {
         int ai = -1, bi = -1;
         for (int k = 0; k < n; k++) {
@@ -288,7 +266,6 @@ int model_duplicate_selection(int dx, int dy) {
         }
     }
 
-    /* seleksi kini menunjuk ke salinan baru */
     sel_count = 0;
     for (int i = 0; i < n; i++)
         if (new_ids[i] > 0) add_to_selection(new_ids[i]);
@@ -298,19 +275,19 @@ int model_duplicate_selection(int dx, int dy) {
 
 /* ===================== Operasi Model ===================== */
 
-/* ---- Nilai (value) default per tipe komponen ---- */
 double comp_default_value(CompType t) {
     switch (t) {
-        case COMP_RESISTOR:   return 220.0;          /* Ohm */
-        case COMP_BATTERY:    return 9.0;            /* Volt */
-        case COMP_ACSOURCE:   return 220.0;          /* VAC RMS, 50 Hz */
-        case COMP_LED:        return VF_LED_DEFAULT; /* Vf = 2.0 V */
-        case COMP_DIODE:      return VF_DIODE;       /* Vf = 0.7 V */
-        case COMP_CAPACITOR:  return 100e-9;         /* 100 nF */
-        case COMP_CAPOLAR:    return 100e-6;         /* 100 uF */
-        case COMP_LDR:        return LDR_DARK_DEFAULT; /* 1 MOhm saat gelap */
-        case COMP_BUZZER:     return BUZZER_FREQ_DEFAULT; /* 1 kHz */
-        default:              return 0.0;            /* switch/transistor/ground */
+        case COMP_RESISTOR:   return 220.0;
+        case COMP_BATTERY:    return 9.0;
+        case COMP_ACSOURCE:   return 220.0;
+        case COMP_LED:        return VF_LED_DEFAULT;
+        case COMP_DIODE:      return VF_DIODE;
+        case COMP_CAPACITOR:  return 100e-9;
+        case COMP_CAPOLAR:    return 100e-6;
+        case COMP_LDR:        return LDR_DARK_DEFAULT;
+        case COMP_BUZZER:     return BUZZER_FREQ_DEFAULT;
+        case COMP_AMMETER:    return 0.0;
+        default:              return 0.0;
     }
 }
 
@@ -323,21 +300,19 @@ int comp_has_value(CompType t) {
 
 const wchar_t *comp_value_unit(CompType t) {
     switch (t) {
-        case COMP_RESISTOR:  return L"\x03A9";     /* Ω */
+        case COMP_RESISTOR:  return L"\x03A9";
         case COMP_BATTERY:   return L"V";
         case COMP_ACSOURCE:  return L"VAC";
         case COMP_LED:       return L"Vf";
         case COMP_DIODE:     return L"Vf";
         case COMP_CAPACITOR: return L"F";
         case COMP_CAPOLAR:   return L"F";
-        case COMP_LDR:       return L"Rgelap"; /* R saat gelap, dalam Ohm */
+        case COMP_LDR:       return L"Rgelap";
         case COMP_BUZZER:    return L"Hz";
         default:             return NULL;
     }
 }
 
-/* Parser teks nilai: "220", "4.7k", "2.2K", "1M", "100n", "100u", "47uF",
-   "2.2e3", "0.5". Mengembalikan 1 sukses, out = nilai SI (Ohm/V/F). */
 static int parse_value_core(const wchar_t *s, double *out) {
     if (!s || !out) return 0;
     while (*s == L' ' || *s == L'\t') s++;
@@ -345,12 +320,10 @@ static int parse_value_core(const wchar_t *s, double *out) {
     wchar_t *end = NULL;
     double v = wcstod(s, &end);
     if (end == s) return 0;
-    if (!(v >= 0.0)) return 0;   /* menolak NaN/negatif */
-    /* lewati spasi & satuan huruf dasar (Ohm/U+03A9, V, F, Hz diabaikan) */
+    if (!(v >= 0.0)) return 0;
     while (*end == L' ' || *end == L'\t') end++;
     wchar_t mult = L'\0';
     if (*end && wcschr(L"\x03A9" L"vVfFuUnN", *end)) {
-        /* satuan lengkap: "Ohm", "ohm", "V", "F" -> lewati dulu */
         const wchar_t *p2 = end;
         if ((p2[0] == L'O' || p2[0] == L'o') && (p2[1] == L'h' || p2[1] == L'H') &&
             (p2[2] == L'm' || p2[2] == L'M')) end += 3;
@@ -360,27 +333,22 @@ static int parse_value_core(const wchar_t *s, double *out) {
     if (*end) {
         wchar_t c = *end;
         if (c == L'k' || c == L'K') mult = L'k';
-        else if (c == L'M')         mult = L'M';   /* Mega (huruf besar) */
-        else if (c == L'm')         mult = L'm';   /* milli (huruf kecil) */
-        else if (c == L'u' || c == L'\xB5' || c == L'\u03BC') mult = L'u'; /* u / µ / μ */
+        else if (c == L'M')         mult = L'M';
+        else if (c == L'm')         mult = L'm';
+        else if (c == L'u' || c == L'\xB5' || c == L'\u03BC') mult = L'u';
         else if (c == L'n' || c == L'N') mult = L'n';
         else if (c == L'p' || c == L'P') mult = L'p';
-        else if (c == L'e' || c == L'E') {
-            /* notasi ilmiah: wcstod sudah memakainya bila langsung menempel;
-               kalau masih ada 'e' setelah angka biasa berarti tak valid */
-            return 0;
-        }
-        else return 0; /* karakter asing -> tolak */
+        else if (c == L'e' || c == L'E') return 0;
+        else return 0;
         end++;
-        /* terima satuan yang menempel setelah prefiks: "100uF", "2k2"? tidak; "100uF" ya */
         while (*end && (*end == L'F' || *end == L'f' || *end == L'V' || *end == L'v' ||
                         *end == L'\x03A9' || *end == L' ')) end++;
-        while (*end) { /* sisa teks lain -> tolak */
+        while (*end) {
             if (*end != L' ') return 0;
             end++;
         }
     } else {
-        end = (wchar_t *)end; /* habis */
+        end = (wchar_t *)end;
     }
     switch (mult) {
         case L'k': v *= 1e3; break;
@@ -398,7 +366,6 @@ int parse_value_text(const wchar_t *s, double *out) {
     return parse_value_core(s, out);
 }
 
-/* Varian ASCII (dipakai parser JSON di fileio.c). */
 int parse_value_text_a(const char *s, double *out) {
     wchar_t w[64];
     if (!s || !out) return 0;
@@ -408,14 +375,12 @@ int parse_value_text_a(const char *s, double *out) {
     return parse_value_core(w, out);
 }
 
-/* Format human-readable dengan prefiks SI: 220 -> "220 \x03A9", 2200 -> "2.2 k\x03A9",
-   100e-9 -> "100 nF", 9.0 -> "9 V". */
 void format_value(double v, const wchar_t *unit, wchar_t *out, int cap) {
     const wchar_t *pre = L"";
     double a = fabs(v);
     if (a >= 1e6)      { v /= 1e6; pre = L"M"; }
     else if (a >= 1e3) { v /= 1e3; pre = L"k"; }
-    else if (a >= 1.0) { /* tetap */ }
+    else if (a >= 1.0) { }
     else if (a >= 1e-3){ v /= 1e-3; pre = L"m"; }
     else if (a >= 1e-6){ v /= 1e-6; pre = L"u"; }
     else if (a >= 1e-9){ v /= 1e-9; pre = L"n"; }
@@ -459,7 +424,6 @@ void model_remove_at(int x, int y) {
     if (selected_id == dead_id) selected_id = -1;
     if (dragging_id == dead_id) dragging_id = -1;
     if (wiring_active && wiring_from.comp_id == dead_id) wiring_active = 0;
-    /* keluarkan dari seleksi multi agar daftar tidak basi */
     for (int i = 0; i < sel_count; ) {
         if (selection[i] == dead_id) {
             for (int j = i; j < sel_count - 1; j++) selection[j] = selection[j + 1];
@@ -552,28 +516,45 @@ int model_remove_wire_at(int x, int y) {
 }
 
 /* ===================== Dialog Edit Nilai (Value) Komponen =====================
-   Dipanggil dari menu konteks (klik-kanan) maupun double-klik kiri.
-   Implementasi: window kelas hasil RegisterClassExW; pointer ValEditCtx
-   dibawa lewat CREATESTRUCT.lpCreateParams lalu disimpan di GWLP_USERDATA
-   sejak WM_NCCREATE. Loop pesan lokal membuat dialog bersifat modal. */
+   Catatan: PostQuitMessage(0) TIDAK dipakai di WM_DESTROY dialog. Loop
+   modal memakai flag ctx->done; setiap jalur penutupan memanggil
+   ve_do_close() yang mem-PostThreadMessageW(WM_NULL) sebagai wake-up
+   agar GetMessageW tidak memblokir setelah dialog dihancurkan. */
 
 typedef struct {
-    Component *c;                     /* komponen target (slot array comps) */
-    HWND   edit;                      /* kotak input nilai */
-    wchar_t start[VALUE_STR_CAP];     /* teks nilai ketika dialog dibuka */
-    int    ok;                        /* 1 = user menekan OK dgn nilai valid */
+    Component *c;
+    HWND   edit;
+    wchar_t start[VALUE_STR_CAP];
+    int    ok;      /* 1 = user menekan OK dgn nilai valid */
+    int    done;    /* 1 = dialog sudah dihancurkan (WM_DESTROY) */
 } ValEditCtx;
 
 #define VE_ID_EDIT 1001
 
-/* Simpan ctx lewat GWLP_USERDATA sejak WM_NCCREATE (lpCreateParams),
-   supaya proc bisa membacanya di pesan berikutnya. */
 static ValEditCtx *ve_get_ctx(HWND hDlg) {
     return (ValEditCtx *)(LONG_PTR)GetWindowLongPtrW(hDlg, GWLP_USERDATA);
 }
 
 static void ve_set_ctx(HWND hDlg, ValEditCtx *ctx) {
     SetWindowLongPtrW(hDlg, GWLP_USERDATA, (LONG_PTR)ctx);
+}
+
+/* Tutup dialog secara "aman": DestroyWindow + wake-up thread queue. */
+static void ve_do_close(ValEditCtx *ctx, HWND hDlg) {
+    if (ctx) ctx->done = 1;
+    if (hDlg && IsWindow(hDlg)) DestroyWindow(hDlg);
+    PostThreadMessageW(GetCurrentThreadId(), WM_NULL, 0, 0);
+}
+
+/* Font dialog di-cache sekali per proses. Signature WAJIB `(void)`.
+   Handle yang diberikan ke control lewat WM_SETFONT tidak boleh
+   di-DeleteObject selama control masih hidup — karena itu font
+   di-cache untuk umur proses, bukan dibuat/dihapus per dialog. */
+static HFONT ve_font(void) {
+    static HFONT h = NULL;
+    if (!h) h = CreateFontW(15, 0, 0, 0, FW_NORMAL, 0, 0, 0,
+        DEFAULT_CHARSET, 0, 0, CLEARTYPE_QUALITY, 0, L"Segoe UI");
+    return h;
 }
 
 static LRESULT CALLBACK ValEditProc(HWND hDlg, UINT msg, WPARAM wp, LPARAM lp) {
@@ -623,14 +604,15 @@ static LRESULT CALLBACK ValEditProc(HWND hDlg, UINT msg, WPARAM wp, LPARAM lp) {
                 WS_CHILD | WS_VISIBLE | WS_TABSTOP,
                 DLG_W - 100, btnY, 85, 28, hDlg, (HMENU)(INT_PTR)IDCANCEL, hi, NULL);
 
-            HFONT hfont = CreateFontW(15, 0, 0, 0, FW_NORMAL, 0, 0, 0,
-                DEFAULT_CHARSET, 0, 0, CLEARTYPE_QUALITY, 0, L"Segoe UI");
-            SendMessageW(hLbl,  WM_SETFONT, (WPARAM)hfont, TRUE);
-            SendMessageW(hEd,   WM_SETFONT, (WPARAM)hfont, TRUE);
-            SendMessageW(hHint, WM_SETFONT, (WPARAM)hfont, TRUE);
-            SendMessageW(hOk,   WM_SETFONT, (WPARAM)hfont, TRUE);
-            SendMessageW(hCa,   WM_SETFONT, (WPARAM)hfont, TRUE);
-            DeleteObject(hfont);
+            HFONT hfont = ve_font();
+            if (hfont) {
+                SendMessageW(hLbl,  WM_SETFONT, (WPARAM)hfont, TRUE);
+                SendMessageW(hEd,   WM_SETFONT, (WPARAM)hfont, TRUE);
+                SendMessageW(hHint, WM_SETFONT, (WPARAM)hfont, TRUE);
+                SendMessageW(hOk,   WM_SETFONT, (WPARAM)hfont, TRUE);
+                SendMessageW(hCa,   WM_SETFONT, (WPARAM)hfont, TRUE);
+            }
+            /* font di-cache: JANGAN DeleteObject(hfont) */
             return 0;
         }
 
@@ -655,18 +637,21 @@ static LRESULT CALLBACK ValEditProc(HWND hDlg, UINT msg, WPARAM wp, LPARAM lp) {
                 }
                 ctx->c->v = v;
                 ctx->ok = 1;
-                DestroyWindow(hDlg);
+                ve_do_close(ctx, hDlg);
                 return 0;
             }
-            if (LOWORD(wp) == IDCANCEL) { DestroyWindow(hDlg); return 0; }
+            if (LOWORD(wp) == IDCANCEL) {
+                ve_do_close(ctx, hDlg);
+                return 0;
+            }
             return 0;
 
         case WM_CLOSE:
-            DestroyWindow(hDlg);
+            ve_do_close(ctx, hDlg);
             return 0;
 
         case WM_DESTROY:
-            PostQuitMessage(0);
+            if (ctx) ctx->done = 1;
             return 0;
     }
     return DefWindowProcW(hDlg, msg, wp, lp);
@@ -711,6 +696,7 @@ void edit_value_dialog(HWND hwnd, Component *c) {
     ZeroMemory(&ctx, sizeof ctx);
     ctx.c = c;
     ctx.ok = 0;
+    ctx.done = 0;
     lstrcpynW(ctx.start, start, VALUE_STR_CAP);
 
     const int DLG_W = 380, DLG_H = 150;
@@ -721,7 +707,6 @@ void edit_value_dialog(HWND hwnd, Component *c) {
         hwnd, NULL, GetModuleHandleW(NULL), &ctx);
     if (!hDlg) return;
 
-    /* posisi: tengah jendela utama */
     RECT pr; GetWindowRect(hwnd, &pr);
     int px = pr.left + (((pr.right - pr.left) - DLG_W) / 2);
     int py = pr.top  + (((pr.bottom - pr.top) - DLG_H) / 2);
@@ -733,14 +718,16 @@ void edit_value_dialog(HWND hwnd, Component *c) {
     UpdateWindow(hDlg);
     if (ctx.edit) { SetFocus(ctx.edit); SendMessageW(ctx.edit, EM_SETSEL, 0, -1); }
 
-    EnableWindow(hwnd, FALSE);   /* modal manual */
+    EnableWindow(hwnd, FALSE);
 
     MSG m;
-    while (GetMessageW(&m, NULL, 0, 0)) {
+    while (!ctx.done && GetMessageW(&m, NULL, 0, 0) > 0) {
         if (IsWindow(hDlg) && IsDialogMessageW(hDlg, &m)) continue;
         TranslateMessage(&m);
         DispatchMessageW(&m);
     }
+
+    if (IsWindow(hDlg)) DestroyWindow(hDlg);
 
     EnableWindow(hwnd, TRUE);
     SetForegroundWindow(hwnd);

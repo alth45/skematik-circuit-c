@@ -15,6 +15,7 @@ static CompType tool_to_comp(ToolKind t) {
         case TOOL_LDR:        return COMP_LDR;
         case TOOL_BUZZER:     return COMP_BUZZER;
         case TOOL_VOLTMETER:  return COMP_VOLTMETER;
+        case TOOL_AMMETER:    return COMP_AMMETER;
         default: return COMP_NONE;
     }
 }
@@ -45,6 +46,7 @@ static const wchar_t *comp_kind_name(CompType t) {
         case COMP_LDR:        return L"LDR (Fotoresistor)";
         case COMP_BUZZER:     return L"Buzzer";
         case COMP_VOLTMETER:  return L"Voltmeter";
+        case COMP_AMMETER:    return L"Ammeter";
         default:              return L"Komponen";
     }
 }
@@ -175,6 +177,24 @@ void show_context_menu(HWND hwnd, int sx, int sy, Component *c) {
                             v < 0.0 ? L"  (kutub terbalik)" : L"");
                     } else {
                         wcscpy_s(extra, 160, L"\nBacaan: - (salah satu ujung tidak terhubung).");
+                    }
+                    wcscat_s(buf, 512, extra);
+                }
+                if (c->type == COMP_AMMETER) {
+                    /* informasi alat ukur arus: bacaan saat RUN */
+                    wchar_t extra[160];
+                    if (!sim_running) {
+                        wcscpy_s(extra, 160, L"\nPasang SERI: pin (+) masuk, pin (-) keluar jalur."
+                                          L" Tekan RUN untuk membaca arus.");
+                    } else {
+                        double a = sim_ammeter_reading(c);
+                        if (a < 0.0) {
+                            wcscpy_s(extra, 160, L"\nBacaan: - (tidak terhubung).");
+                        } else {
+                            wchar_t as[32];
+                            sim_format_si(a, L"A", as, 32);
+                            swprintf(extra, 160, L"\nBacaan arus: %ls", as);
+                        }
                     }
                     wcscat_s(buf, 512, extra);
                 }
@@ -601,10 +621,13 @@ void on_key_down(HWND hwnd, WPARAM key) {
             InvalidateRect(hwnd, NULL, FALSE);
             return;
         }
-        /* Ctrl + tool shortcut (mis. Ctrl+B untuk Blok) jangan dianggap B/LDR */
+        /* Ctrl + tool shortcut (mis. Ctrl+B untuk Blok) jangan dianggap B/LDR.
+           Tambahan 'M' (Voltmeter) & 'I' (Ammeter) diblok di sini agar
+           Ctrl+M / Ctrl+I tidak memicu pemilihan tool. */
         if (key == 'B' || key == 'b' || key == 'L' || key == 'l' ||
             key == 'U' || key == 'u' || key == 'V' || key == 'v' ||
-            key == 'W' || key == 'w') return;
+            key == 'W' || key == 'w' || key == 'M' || key == 'm' ||
+            key == 'I' || key == 'i') return;
     }
     if (key == 'R' || key == 'r') {
         if (sim_running) return; /* rotasi dikunci saat RUN */
@@ -649,6 +672,7 @@ void on_key_down(HWND hwnd, WPARAM key) {
     else if (key == 'L' || key == 'l') { current_tool = TOOL_LDR; }
     else if (key == 'U' || key == 'u') { current_tool = TOOL_BUZZER; }
     else if (key == 'M' || key == 'm') { current_tool = TOOL_VOLTMETER; }
+    else if (key == 'I' || key == 'i') { current_tool = TOOL_AMMETER; }
     else if (key == VK_DELETE || key == VK_BACK) {
         if (sim_running) return; /* hapus dikunci saat RUN */
         if (sel_count > 1) {
@@ -681,4 +705,3 @@ void on_key_down(HWND hwnd, WPARAM key) {
     wiring_active = 0;
     InvalidateRect(hwnd, NULL, FALSE);
 }
-

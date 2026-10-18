@@ -1,6 +1,18 @@
 #include "toolbar_intern.h"
 
-/* Palette: hit-test + tombol aksi Clear/Save/Open/Run. */
+/* Cache font toolbar: sekali per proses, bukan per draw_toolbar. */
+static HFONT font_btn_label(void) {
+    static HFONT h = NULL;
+    if (!h) h = CreateFontW(12, 0, 0, 0, FW_NORMAL, 0, 0, 0,
+        0, 0, 0, 0, 0, L"Segoe UI");
+    return h;
+}
+static HFONT font_hint(void) {
+    static HFONT h = NULL;
+    if (!h) h = CreateFontW(14, 0, 0, 0, FW_NORMAL, 0, 0, 0,
+        0, 0, 0, 0, 0, L"Segoe UI");
+    return h;
+}
 
 int toolbar_btn_x(int idx) {
     return 8 + idx * (TOOLBAR_BTN_W + 6);
@@ -31,8 +43,6 @@ int toolbar_tool_at(int x, int y, int *is_clear) {
     return -1;
 }
 
-
-
 void draw_toolbar(HDC hdc, int W) {
     draw_menubar(hdc, W);
     int saved = SaveDC(hdc);
@@ -46,8 +56,7 @@ void draw_toolbar(HDC hdc, int W) {
     MoveToEx(hdc, 0, PALETTE_H - 1, NULL); LineTo(hdc, W, PALETTE_H - 1);
     SelectObject(hdc, osp);
     DeleteObject(sep);
-    HFONT hF = CreateFontW(12, 0, 0, 0, FW_NORMAL, 0, 0, 0,
-        0, 0, 0, 0, 0, L"Segoe UI");
+    HFONT hF = font_btn_label();
     HFONT of = (HFONT)SelectObject(hdc, hF);
     for (int i = 0; i <= BTN_COUNT + 3; i++) {
         int is_action = (i >= BTN_COUNT);
@@ -88,21 +97,21 @@ void draw_toolbar(HDC hdc, int W) {
         }
     }
     SelectObject(hdc, of);
-    DeleteObject(hF);
+    /* font di-cache */
+
     wchar_t status[256];
     const wchar_t *cur = L"";
     for (int i = 0; i < BTN_COUNT; i++)
         if (btnTools[i] == current_tool) { cur = btnLabels[i]; break; }
     _snwprintf(status, 256, L"%ls   |   F5: run/stop   R: rotate", cur);
     status[255] = L'\0';
-    HFONT hS = CreateFontW(14, 0, 0, 0, FW_NORMAL, 0, 0, 0,
-        0, 0, 0, 0, 0, L"Segoe UI");
+    HFONT hS = font_hint();
     HFONT os2 = (HFONT)SelectObject(hdc, hS);
     SetTextColor(hdc, RGB(90,90,90));
     SetBkMode(hdc, TRANSPARENT);
     SIZE sz; GetTextExtentPoint32W(hdc, status, (int)wcslen(status), &sz);
     TextOutW(hdc, W - sz.cx - 12, 22, status, (int)wcslen(status));
     SelectObject(hdc, os2);
-    DeleteObject(hS);
+    /* font di-cache */
     RestoreDC(hdc, saved);
 }

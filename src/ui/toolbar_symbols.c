@@ -19,6 +19,7 @@ static CompType toolbar_tool_comp(ToolKind t) {
         case TOOL_LDR:        return COMP_LDR;
         case TOOL_BUZZER:     return COMP_BUZZER;
         case TOOL_VOLTMETER:  return COMP_VOLTMETER;
+        case TOOL_AMMETER:    return COMP_AMMETER;
         default: return COMP_NONE;
     }
 }
@@ -140,6 +141,17 @@ static void sym_voltmeter(HDC hdc) {
     MoveToEx(hdc, -8, -9, NULL); LineTo(hdc, 0, 9); LineTo(hdc, 8, -9);
 }
 
+static void sym_ammeter(HDC hdc) {
+    MoveToEx(hdc, -40, 0, NULL); LineTo(hdc, -20, 0);
+    MoveToEx(hdc, 20, 0, NULL); LineTo(hdc, 40, 0);
+    Ellipse(hdc, -20, -20, 20, 20);
+    /* huruf "A" di tengah lingkaran: dua diagonal + crossbar horizontal.
+       (Versi lama menggambar 3 garis siku yang justru tampak seperti ">".) */
+    MoveToEx(hdc, -8, 9, NULL); LineTo(hdc, 0, -9);      /* kaki kiri    */
+    MoveToEx(hdc,  0, -9, NULL); LineTo(hdc, 8, 9);      /* kaki kanan   */
+    MoveToEx(hdc, -4,  2, NULL); LineTo(hdc, 4, 2);      /* crossbar     */
+}
+
 void toolbar_draw_symbol(HDC hdc, ToolKind tool, int cx, int cy, BOOL active) {
     int saved = SaveDC(hdc);
     SetGraphicsMode(hdc, GM_ADVANCED);
@@ -166,6 +178,7 @@ void toolbar_draw_symbol(HDC hdc, ToolKind tool, int cx, int cy, BOOL active) {
     else if (ct == COMP_LDR) sym_ldr(hdc);
     else if (ct == COMP_BUZZER) sym_buzzer(hdc);
     else if (ct == COMP_VOLTMETER) sym_voltmeter(hdc);
+    else if (ct == COMP_AMMETER) sym_ammeter(hdc);
     else if (tool == TOOL_SELECT) {
         POINT cur[7] = { {0,-14},{10,4},{4,4},{4,14},{-2,14},{-2,4},{-8,4} };
         HBRUSH br = CreateSolidBrush(active ? RGB(50,128,255) : RGB(40,40,40));
@@ -248,6 +261,7 @@ const wchar_t *toolbar_tool_shortname(ToolKind tool) {
     if (tool == TOOL_SELECT) return L"Select";
     if (tool == TOOL_BOX) return L"Blok";
     if (tool == TOOL_WIRE) return L"Wire";
+    if (tool == TOOL_AMMETER) return L"AM";
     return L"Hapus";
 }
 
@@ -266,6 +280,7 @@ int toolbar_tool_is_component(ToolKind tool) {
         case TOOL_LDR:
         case TOOL_BUZZER:
         case TOOL_VOLTMETER:
+        case TOOL_AMMETER:
             return 1;
         default:
             return 0;

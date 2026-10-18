@@ -24,17 +24,14 @@ static const wchar_t *comp_type_name(CompType t) {
         case COMP_TRANSISTOR: return L"transistor";
         case COMP_DIODE:      return L"diode";
         case COMP_CAPOLAR:    return L"capolar";
-        case COMP_VOLTMETER:    return L"voltmeter";
-        /* NOTE(komponen-ldr-buzzer): fileio.c belum mengenali tipe baru ini —
-           save JSON akan menulis "none" dan load akan membuang komponennya.
-           TODO: tambahkan mapping "ldr"/"buzzer" + update tes round-trip di
-           tests/test_fileio.c ketika dukungan JSON untuk LDR/Buzzer masuk. */
+        case COMP_VOLTMETER:  return L"voltmeter";
+        case COMP_AMMETER:    return L"ammeter";
+        case COMP_LDR:        return L"ldr";
+        case COMP_BUZZER:     return L"buzzer";
         default: return L"none";
     }
 }
 
-/* Varian ASCII dari comp_type_name — diekspor agar round-trip JSON bisa
-   diuji langsung dari unit test (lihat tests/test_fileio.c). */
 const char *comp_type_json_name(CompType t) {
     switch (t) {
         case COMP_RESISTOR:   return "resistor";
@@ -47,7 +44,10 @@ const char *comp_type_json_name(CompType t) {
         case COMP_TRANSISTOR: return "transistor";
         case COMP_DIODE:      return "diode";
         case COMP_CAPOLAR:    return "capolar";
-        case COMP_VOLTMETER:    return "voltmeter";
+        case COMP_VOLTMETER:  return "voltmeter";
+        case COMP_AMMETER:    return "ammeter";
+        case COMP_LDR:        return "ldr";
+        case COMP_BUZZER:     return "buzzer";
         default:              return "none";
     }
 }
@@ -77,15 +77,15 @@ static int comp_type_from_name(const char *s) {
         strcmp(s, "CP") == 0) return COMP_CAPOLAR;
     if (strcmp(s, "voltmeter") == 0 || strcmp(s, "Voltmeter") == 0 ||
         strcmp(s, "VM") == 0) return COMP_VOLTMETER;
-    /* NOTE(komponen-ldr-buzzer): "ldr" & "buzzer" sengaja BELUM diterima di
-       sini karena comp_type_name() (sisi save) belum menulis nama kanoniknya;
-       menerima load tanpa dukungan save akan membuat round-trip diam-diam
-       merusak file. TODO: tambahkan kedua sisi sekaligus + test round-trip. */
+    if (strcmp(s, "ammeter") == 0 || strcmp(s, "Ammeter") == 0 ||
+        strcmp(s, "AM") == 0) return COMP_AMMETER;
+    if (strcmp(s, "ldr") == 0 || strcmp(s, "LDR") == 0 ||
+        strcmp(s, "photoresistor") == 0) return COMP_LDR;
+    if (strcmp(s, "buzzer") == 0 || strcmp(s, "Buzzer") == 0 ||
+        strcmp(s, "BZR") == 0) return COMP_BUZZER;
     return COMP_NONE;
 }
 
-/* Alias publik dari comp_type_from_name — diekspor untuk unit test
-   (lihat tests/test_fileio.c). Mengembalikan CompType sebagai int. */
 int comp_type_from_json_name(const char *s) {
     return comp_type_from_name(s);
 }
@@ -101,7 +101,6 @@ int model_save_json(const wchar_t *path, wchar_t *err, int err_cap) {
     fwprintf(f, L"  \"version\": 1,\n");
     fwprintf(f, L"  \"components\": [\n");
     for (int i = 0; i < comp_count; i++) {
-        /* nilai ditulis sebagai number JSON dengan 6 desimal signifikan */
         wchar_t vnum[40];
         swprintf(vnum, 40, L"%.6g", comps[i].v);
         fwprintf(f, L"    {\"id\": %d, \"type\": \"%ls\", \"x\": %d, \"y\": %d, \"rot\": %d, \"on\": %d, \"value\": %ls}%ls\n",
@@ -169,7 +168,6 @@ static int parse_int(const char **p, int *out) {
     return 1;
 }
 
-/* Parse number JSON apa adanya (integer / pecahan / notasi eksponen). */
 static int parse_double(const char **p, double *out) {
     skip_ws(p);
     char *end = NULL;
@@ -180,13 +178,40 @@ static int parse_double(const char **p, double *out) {
     return 1;
 }
 
+/* Cari key JSON pada level struktur (BUKAN di dalam string value).
+   `key` sudah termasuk tanda kutip pembuka-penutup, mis. "\"components\"".
+   Cocokkan hanya bila karakter saat ini berada di luar string DAN
+   substring persis sama (termasuk tanda kutip) diikuti `:` (boleh
+   dipisah whitespace). Ini menggantikan strstr() naif yang bisa
+   salah cocok di dalam string value komponen mana pun. */
 static int find_key(const char **p, const char *key) {
-    const char *s = strstr(*p, key);
-    if (!s) return 0;
-    s = strchr(s + strlen(key), ':');
-    if (!s) return 0;
-    *p = s + 1;
-    return 1;
+    const char *s = *p;
+    int in_str = 0, esc = 0;
+    size_t klen = strlen(key);
+    while (*s) {
+        if (in_str) {
+            if (esc)                  esc = 0;
+            else if (*s == '\\')      esc = 1;
+            else if (*s == '"')       in_str = 0;
+            s++;
+            continue;
+        }
+        if (*s == '"') {
+            if (strncmp(s, key, klen) == 0) {
+                const char *t = s + klen;
+                while (*t == ' ' || *t == '\t' || *t == '\r' || *t == '\n') t++;
+                if (*t == ':') {
+                    *p = t + 1;
+                    return 1;
+                }
+            }
+            in_str = 1;
+            s++;
+            continue;
+        }
+        s++;
+    }
+    return 0;
 }
 
 int model_load_json(const wchar_t *path, wchar_t *err, int err_cap) {
@@ -232,7 +257,7 @@ int model_load_json(const wchar_t *path, wchar_t *err, int err_cap) {
     else {
         while (1) {
             int id = tmp_next, x = 0, y = 0, rot = 0, on = 0;
-            double v = -1.0;             /* -1 = tidak ada di file -> pakai default */
+            double v = -1.0;
             char tname[32] = "";
             if (!expect_char(&q, '{')) goto bad;
             while (1) {
@@ -286,8 +311,8 @@ int model_load_json(const wchar_t *path, wchar_t *err, int err_cap) {
                     tmp_comps[tmp_n].y = y;
                     tmp_comps[tmp_n].id = id;
                     tmp_comps[tmp_n].rot = ((rot % 4) + 4) % 4;
-                    tmp_comps[tmp_n].on = (tp == COMP_SWITCH && on) ? 1 : 0;
-                    /* nilai: pakai dari file bila valid, kalau tidak default tipe */
+                    tmp_comps[tmp_n].on =
+                        ((tp == COMP_SWITCH || tp == COMP_LDR) && on) ? 1 : 0;
                     if (v > 0.0) tmp_comps[tmp_n].v = v;
                     else         tmp_comps[tmp_n].v = comp_default_value((CompType)tp);
                     tmp_n++;

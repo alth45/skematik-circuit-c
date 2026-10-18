@@ -51,12 +51,16 @@ typedef enum {
     COMP_BUZZER,     /* buzzer (piezo/elektromagnetik): pin0=input(+) pin1=gnd(-).
                         v = frekuensi bunyi Hz (default 1000). Berbunyi bila kedua pin
                         terhubung ke kutub berlawanan lewat jalur menghantar. */
-    COMP_VOLTMETER   /* voltmeter: mengukur BEDA POTENSIAL (tegangan) antara dua titik
+    COMP_VOLTMETER,   /* voltmeter: mengukur BEDA POTENSIAL (tegangan) antara dua titik
                         dalam rangkaian. Dipasang PARALEL — pin0=(+) terpotong kabel/
                         titik A, pin1=(-) ke titik B. TIDAK menghantar arus (impedansi
                         tak hingga => kedua pin tidak pernah disatukan menjadi satu net).
                         Hasil bacaan per komponen via sim_voltmeter_reading() (volt);
                         saat mode RUN angka tegangan tampil di bawah simbol. */
+    COMP_AMMETER     /* ammeter: mengukur ARUS lewat jalur. Dipasang SERI — pin0=(+) masuk
+                        ke jalur, pin1=(-) keluar jalur. Menghantar arus (resistansi
+                        sangat kecil). Hasil bacaan per komponen via sim_comp_current()
+                        (ampere); saat mode RUN angka arus tampil di bawah simbol. */
 } CompType;
 
 /* Tool yang dipilih user di palette */
@@ -77,6 +81,7 @@ typedef enum {
     TOOL_LDR,            /* LDR / fotoresistor (sensor cahaya) */
     TOOL_BUZZER,         /* buzzer (output suara) */
     TOOL_VOLTMETER,      /* voltmeter (ukur beda potensial dua titik) */
+    TOOL_AMMETER,        /* ammeter (ukur arus lewat jalur) */
     TOOL_DELETE
 } ToolKind;
 
@@ -92,7 +97,7 @@ typedef struct {
                        //   acsource   = VAC RMS  (default 220, 50 Hz)
                        //   LED        = Vf volt  (default 2.0)
                        //   dioda      = Vf volt  (default 0.7)
-                       //   kapasitor & polar = farad (default 100e-9)
+                       //   kapasitor = farad (default 100e-9 = 100 nF)
                        //   LDR        = R gelap dalam Ohm (default 1e6 / 1 MOhm)
                        //   buzzer     = frekuensi Hz (default 1000)
                        //   voltmeter  = tidak dipakai (0); bacaan via sim_voltmeter_reading()
@@ -299,6 +304,7 @@ void draw_k_acsource(HDC hdc, Component *c);
 void draw_k_ldr(HDC hdc, Component *c);
 void draw_k_buzzer(HDC hdc, Component *c);
 void draw_k_voltmeter(HDC hdc, Component *c);
+void draw_k_ammeter(HDC hdc, Component *c); //baru 
 
 void draw_component(HDC hdc, Component *c);
 void draw_canvas(HWND hwnd);
@@ -407,6 +413,8 @@ double sim_ldr_effective_r(const Component *c);   /* R efektif LDR: gelap=v, ter
    sim_voltmeter_connected() = 1 bila kedua pin tersambung ke net yang berbeda. */
 double sim_voltmeter_reading(const Component *c); /* >=0 volt; -1 = bukan voltmeter/tak terhubung */
 int    sim_voltmeter_connected(const Component *c);
+double sim_ammeter_reading(const Component *c); /* >=0 ampere; -1 = bukan ammeter/tak terhubung */
+
 
 #ifdef SCHEMATIC_TEST_STUBS
 /* ---- Helper khusus suite uji (realisasi: tests/test_support.c) ----

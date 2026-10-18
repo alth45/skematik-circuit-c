@@ -37,7 +37,10 @@ int sim_overcur = 0;
 #define R_SHORT_THRESH 0.01    /* < ini dianggap short (Ohm) */
 #define R_OPEN_THRESH 1e9      /* > ini dianggap loop terbuka (Ohm) */
 #define G_REG 1e-12            /* regularisasi konduktansi ke ground (S) */
-#define V_UNKNOWN 1e30         /* penanda node "belum ter-fix" */
+#ifdef V_UNKNOWN
+#undef V_UNKNOWN
+#endif
+#define V_UNKNOWN 1e30         /* penanda node "belum ter-fix" (internal sim.c) */
 #define VM_DISCONNECTED (-1e30)
 
 /* ---- State per-komponen ---- */
@@ -52,7 +55,7 @@ static double vdrop_[MAX_COMP];
 static double vmread_[MAX_COMP];
 static int vmconn_[MAX_COMP];
 static int hot_[MAX_WIRES];
-
+static double amread_[MAX_COMP];
 /* ============================================================================
    Bagian 1: Union-Find & helper node
 ============================================================================ */
@@ -209,6 +212,8 @@ static double comp_edge_r(int i) {
       return (xc > 0.0) ? xc : 0.001;
     }
     return -1.0; /* blokir DC */
+  case COMP_AMMETER:
+    return 0.001; /* resistansi sangat kecil */
   default:
     return -1.0;
   }
@@ -330,6 +335,7 @@ void sim_recompute(void) {
     vdrop_[i] = 0.0;
     vmread_[i] = VM_DISCONNECTED;
     vmconn_[i] = 0;
+    amread_[i] = -1.0;
   }
   for (int i = 0; i < MAX_WIRES; i++)
     hot_[i] = 0;
@@ -633,6 +639,22 @@ void sim_recompute(void) {
   }
 
   /* ============================================================
+     Pass 6: Ammeter — bacaan = |V(pin0) − V(pin1)| / R_ammeter.
+     ============================================================ */
+  for (int i = 0; i < comp_count; i++){
+    if(comps[i].type != COMP_AMMETER) continue;
+    int i0 = root_to_idx_[find_root(node_of(i, 0))];
+    int i1 = root_to_idx_[find_root(node_of(i, 1))];
+    if(i0 < 0 || i1 < 0) continue;
+    if(!vth_ok) continue;
+
+    double dv = Vth_node[i0] - Vth_node[i1];
+    if(fabs(dv) > 1e6) continue; /* floating */
+    double current = fabs(dv) / 0.001; /* R_ammeter = 1 mOhm */
+    amread_[i] = current;
+  }
+
+  /* ============================================================
      Hot-wire: kabel di net (+) → merah.
      ============================================================ */
   for (int i = 0; i < wire_count; i++) {
@@ -831,4 +853,11 @@ const wchar_t *sim_message(void) {
   }
   return L"Rangkaian belum lengkap — LED mati. "
          L"Tutup saklar & sambungkan kabel.";
+}
+
+double sim_ammeter_reading(const Component *c){
+  if(!c || c->type != COMP_AMMETER) return -1.0;
+  int i = (int)(c-comps);
+  if(i < 0 || i >= comp_count) return -1.0;
+  return amread_[i];
 }
