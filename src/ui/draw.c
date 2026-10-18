@@ -157,6 +157,7 @@ void draw_component(HDC hdc, Component *c) {
         case COMP_AMMETER:     draw_k_ammeter(hdc, c);     break;
         case COMP_OSCPROBE:    draw_k_oscprobe(hdc, c);    break;
         case COMP_INDUCTOR:    draw_k_inductor(hdc, c);    break;
+        case COMP_ZENER:       draw_k_zener(hdc, c);       break;
         default: break;
     }
     draw_value_label(hdc, c);

@@ -122,7 +122,7 @@ const ToolKind btnTools[BTN_COUNT] = {
     TOOL_SELECT, TOOL_BOX, TOOL_WIRE,
     TOOL_RESISTOR, TOOL_SWITCH, TOOL_BATTERY, TOOL_ACSOURCE, TOOL_LED, TOOL_GROUND,
     TOOL_CAPACITOR, TOOL_TRANSISTOR, TOOL_DIODE, TOOL_CAPOLAR,
-    TOOL_LDR, TOOL_BUZZER, TOOL_VOLTMETER, TOOL_AMMETER, TOOL_OSCPROBE, TOOL_INDUCTOR,
+    TOOL_LDR, TOOL_BUZZER, TOOL_VOLTMETER, TOOL_AMMETER, TOOL_OSCPROBE, TOOL_INDUCTOR, TOOL_ZENER,
     TOOL_DELETE
 };
 const wchar_t *btnLabels[BTN_COUNT] = {
@@ -131,7 +131,7 @@ const wchar_t *btnLabels[BTN_COUNT] = {
     L"LED (4)", L"Ground (5)",
     L"Kapasitor (6)", L"Transistor NPN (7)", L"Dioda (8)", L"Kapasitor Polar (9)",
     L"LDR / Sensor Cahaya (L)", L"Buzzer (U)", L"Voltmeter (M)",
-    L"Ammeter (I)", L"OSC Probe (P)", L"Induktor (J)",
+    L"Ammeter (I)", L"OSC Probe (P)", L"Induktor (J)", L"Dioda Zener (Z)",
     L"Hapus / Delete (Del)"
 };
 
@@ -381,6 +381,7 @@ double comp_default_value(CompType t) {
         case COMP_AMMETER:    return 0.0;
         case COMP_OSCPROBE:   return 0.0;
         case COMP_INDUCTOR:   return IND_DEFAULT_H;
+        case COMP_ZENER:      return VZENER_DEFAULT;
         default:              return 0.0;
     }
 }
@@ -389,7 +390,8 @@ int comp_has_value(CompType t) {
     return t == COMP_RESISTOR || t == COMP_BATTERY || t == COMP_ACSOURCE ||
            t == COMP_LED ||
            t == COMP_DIODE || t == COMP_CAPACITOR || t == COMP_CAPOLAR ||
-           t == COMP_LDR || t == COMP_BUZZER || t == COMP_INDUCTOR;
+           t == COMP_LDR || t == COMP_BUZZER || t == COMP_INDUCTOR ||
+           t == COMP_ZENER;
 }
 
 const wchar_t *comp_value_unit(CompType t) {
@@ -404,6 +406,7 @@ const wchar_t *comp_value_unit(CompType t) {
         case COMP_LDR:       return L"Rgelap";
         case COMP_BUZZER:    return L"Hz";
         case COMP_INDUCTOR:  return L"H";
+        case COMP_ZENER:     return L"Vz";
         default:             return NULL;
     }
 }

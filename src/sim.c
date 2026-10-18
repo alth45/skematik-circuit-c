@@ -59,6 +59,7 @@ static double vmread_[MAX_COMP];
 static int vmconn_[MAX_COMP];
 static int hot_[MAX_WIRES];
 static double amread_[MAX_COMP];
+static int zener_bd_[MAX_COMP];   /* 1 = Zener sedang reverse breakdown */
 /* ============================================================================
    Bagian 1: Union-Find & helper node
 ============================================================================ */
@@ -148,21 +149,45 @@ static double src_val(int idx, SrcMode mode, int target) {
     return 0.0;
 }
 
-static void na_assign_fixed_mode(double *vfix, SrcMode mode, int target) {
-  for (int i = 0; i < na_n; i++)
-    vfix[i] = V_UNKNOWN;
+static int is_dc_source(int idx) {
+    return comps[idx].type == COMP_BATTERY;
+}
+static int is_ac_source(int idx) {
+    return comps[idx].type == COMP_ACSOURCE;
+}
+static int is_zener_bd(int idx) {
+    return comps[idx].type == COMP_ZENER && zener_bd_[idx];
+}
 
+static double zener_val(int idx, SrcMode mode) {
+    if (mode == SRC_MODE_ZERO_ALL || mode == SRC_MODE_UNIT_ONE) return 0.0;
+    return (comps[idx].v > 0.0) ? comps[idx].v : VZENER_DEFAULT;
+}
+
+/* Versi baru: parameter lebih rinci untuk tiap jenis sumber. */
+static void na_assign_fixed_mode(double *vfix, SrcMode mode, int target) {
+  for (int i = 0; i < na_n; i++) vfix[i] = V_UNKNOWN;
+
+  /* Pilih node ground: sumber (termasuk Zener breakdown) dengan |V| terbesar.
+     Sisi "−" dari sumber tsb = ground. */
   int ground_idx = -1;
   double best_v = -1.0;
   for (int i = 0; i < comp_count; i++) {
-    if (comps[i].type != COMP_BATTERY && comps[i].type != COMP_ACSOURCE)
+    double vv;
+    int neg_pin;
+    if (is_zener_bd(i)) {
+      vv = fabs(zener_val(i, mode));
+      neg_pin = 0;                                 /* A = kutub "−" Zener */
+    } else if (is_ac_source(i) || is_dc_source(i)) {
+      vv = fabs(src_val(i, mode, target));
+      neg_pin = 1;                                 /* pin1 = "−" sumber    */
+    } else {
       continue;
-    double vv = src_val(i, mode, target);
-    if (fabs(vv) > best_v) {
-      best_v = fabs(vv);
-      int rm = find_root(node_of(i, 1));
-      if (rm >= 0 && rm < MAX_COMP * 3)
-        ground_idx = root_to_idx_[rm];
+    }
+    if (vv > best_v) {
+      best_v = vv;
+      int rm = find_root(node_of(i, neg_pin));
+      if (rm >= 0 && rm < MAX_COMP * 3) ground_idx = root_to_idx_[rm];
     }
   }
   if (ground_idx < 0) {
@@ -172,21 +197,30 @@ static void na_assign_fixed_mode(double *vfix, SrcMode mode, int target) {
       if (rg >= 0) { ground_idx = rg; break; }
     }
   }
-  if (ground_idx >= 0)
-    vfix[ground_idx] = 0.0;
+  if (ground_idx >= 0) vfix[ground_idx] = 0.0;
 
+  /* Propagasi. */
   int changed = 1, iter = 0;
   while (changed && iter <= na_n + 2) {
     changed = 0;
     iter++;
     for (int i = 0; i < comp_count; i++) {
-      if (comps[i].type != COMP_BATTERY && comps[i].type != COMP_ACSOURCE)
+      double vv;
+      int pos_pin, neg_pin;
+      if (is_zener_bd(i)) {
+        vv = zener_val(i, mode);
+        pos_pin = 1;                                /* K = "+" untuk Zener */
+        neg_pin = 0;
+      } else if (is_ac_source(i) || is_dc_source(i)) {
+        vv = src_val(i, mode, target);
+        pos_pin = 0;
+        neg_pin = 1;
+      } else {
         continue;
-      double vv = src_val(i, mode, target);
-      int ip = root_to_idx_[find_root(node_of(i, 0))];
-      int im = root_to_idx_[find_root(node_of(i, 1))];
-      if (ip < 0 || im < 0 || ip == im)
-        continue;
+      }
+      int ip = root_to_idx_[find_root(node_of(i, pos_pin))];
+      int im = root_to_idx_[find_root(node_of(i, neg_pin))];
+      if (ip < 0 || im < 0 || ip == im) continue;
       if (vfix[im] != V_UNKNOWN && vfix[ip] == V_UNKNOWN) {
         vfix[ip] = vfix[im] + vv;
         changed = 1;
@@ -197,28 +231,35 @@ static void na_assign_fixed_mode(double *vfix, SrcMode mode, int target) {
     }
   }
 
+  /* Sumber yatim (kedua sisi belum ter-fix). */
   for (int i = 0; i < comp_count; i++) {
-    if (comps[i].type != COMP_BATTERY && comps[i].type != COMP_ACSOURCE)
+    double vv;
+    int pos_pin, neg_pin;
+    if (is_zener_bd(i)) {
+      vv = zener_val(i, mode);
+      pos_pin = 1; neg_pin = 0;
+    } else if (is_ac_source(i) || is_dc_source(i)) {
+      vv = src_val(i, mode, target);
+      pos_pin = 0; neg_pin = 1;
+    } else {
       continue;
-    int ip = root_to_idx_[find_root(node_of(i, 0))];
-    int im = root_to_idx_[find_root(node_of(i, 1))];
-    if (ip < 0 || im < 0 || ip == im)
-      continue;
+    }
+    int ip = root_to_idx_[find_root(node_of(i, pos_pin))];
+    int im = root_to_idx_[find_root(node_of(i, neg_pin))];
+    if (ip < 0 || im < 0 || ip == im) continue;
     if (vfix[ip] == V_UNKNOWN && vfix[im] == V_UNKNOWN) {
-      double vv = src_val(i, mode, target);
       vfix[im] = 0.0;
       vfix[ip] = vv;
     }
   }
 
+  /* Ground komponen. */
   for (int i = 0; i < comp_count; i++) {
     if (comps[i].type != COMP_GROUND) continue;
     int rg = root_to_idx_[find_root(node_of(i, 0))];
-    if (rg >= 0 && vfix[rg] == V_UNKNOWN)
-      vfix[rg] = 0.0;
+    if (rg >= 0 && vfix[rg] == V_UNKNOWN) vfix[rg] = 0.0;
   }
 }
-
 /* Wrapper kompat: perilaku lama. */
 static void na_assign_fixed(double *vfix) {
   na_assign_fixed_mode(vfix, SRC_MODE_NORMAL, -1);
@@ -379,6 +420,7 @@ void sim_recompute(void) {
     vmread_[i] = VM_DISCONNECTED;
     vmconn_[i] = 0;
     amread_[i] = -1.0;
+    zener_bd_[i] = 0;
   }
   for (int i = 0; i < MAX_WIRES; i++)
     hot_[i] = 0;
@@ -457,7 +499,7 @@ void sim_recompute(void) {
         plus_root[n_plus++] = find_root(node_of(i, 0));
     }
     for (int i = 0; i < comp_count; i++) {
-      if (comps[i].type != COMP_DIODE)
+      if (comps[i].type != COMP_DIODE && comps[i].type != COMP_ZENER)
         continue;
       int ra = find_root(node_of(i, 0));
       for (int k = 0; k < n_plus; k++)
@@ -509,12 +551,45 @@ void sim_recompute(void) {
   }
 
   /* ---- Bangun node & V-fixed ---- */
-  na_build_nodes();
-  double *vfix =
-      (double *)HeapAlloc(GetProcessHeap(), 0, sizeof(double) * NA_MAX);
-  if (!vfix)
-    return;
-  na_assign_fixed(vfix);
+    na_build_nodes();
+  double *vfix = HeapAlloc(GetProcessHeap(), 0, sizeof(double) * NA_MAX);
+  if (!vfix) return;
+
+  /* Iterative Zener breakdown detection. */
+  int has_zener = 0;
+  for (int i = 0; i < comp_count; i++)
+    if (comps[i].type == COMP_ZENER) { has_zener = 1; break; }
+
+  if (has_zener) {
+    for (int iter = 0; iter < 20; iter++) {
+      na_assign_fixed_mode(vfix, SRC_MODE_NORMAL, -1);
+      na_build(vfix, -1, -1);
+      if (!na_solve()) break;
+
+      int any_change = 0;
+      for (int i = 0; i < comp_count; i++) {
+        if (comps[i].type != COMP_ZENER) continue;
+        if (dfwd_[i]) continue;                            /* sudah forward */
+        int i0 = root_to_idx_[find_root(node_of(i, 0))];   /* A */
+        int i1 = root_to_idx_[find_root(node_of(i, 1))];   /* K */
+        if (i0 < 0 || i1 < 0 || i0 == i1) continue;
+
+        double vrev = na_x[i1] - na_x[i0];                 /* V_K − V_A */
+        double vz   = (comps[i].v > 0.0) ? comps[i].v : VZENER_DEFAULT;
+        double tol  = 0.02;
+
+        if (zener_bd_[i]) {
+          if (vrev < vz - tol) { zener_bd_[i] = 0; any_change = 1; }
+        } else {
+          if (vrev > vz + tol) { zener_bd_[i] = 1; any_change = 1; }
+        }
+      }
+      if (!any_change) break;
+    }
+  }
+
+  /* Solve final dengan state breakdown stabil. */
+  na_assign_fixed_mode(vfix, SRC_MODE_NORMAL, -1);
 
   /* ---- Solve global: V_thevenin di setiap node (semua LED OPEN) ---- */
   double Vth_node[NA_MAX];
@@ -919,7 +994,19 @@ int sim_ammeter_connected(const Component *c) {
     if (i < 0 || i >= comp_count) return 0;
     return (amread_[i] >= 0.0);
 }
+int sim_zener_fwd(const Component *c) {
+    if (!c || c->type != COMP_ZENER) return 0;
+    int i = (int)(c - comps);
+    if (i < 0 || i >= comp_count) return 0;
+    return dfwd_[i];
+}
 
+int sim_zener_breakdown(const Component *c) {
+    if (!c || c->type != COMP_ZENER) return 0;
+    int i = (int)(c - comps);
+    if (i < 0 || i >= comp_count) return 0;
+    return zener_bd_[i];
+}
 /* ============================================================================
    Probe Osiloskop — domain-waktu via superposisi
 ============================================================================ */

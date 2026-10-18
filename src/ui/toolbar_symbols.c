@@ -22,6 +22,7 @@ static CompType toolbar_tool_comp(ToolKind t) {
         case TOOL_AMMETER:    return COMP_AMMETER;
         case TOOL_OSCPROBE:   return COMP_OSCPROBE;
         case TOOL_INDUCTOR:   return COMP_INDUCTOR;
+        case TOOL_ZENER:      return COMP_ZENER;
         default: return COMP_NONE;
     }
 }
@@ -210,6 +211,16 @@ static void sym_inductor(HDC hdc) {
     }
 }
 
+static void sym_zener(HDC hdc) {
+    MoveToEx(hdc, -40, 0, NULL); LineTo(hdc, -12, 0);
+    MoveToEx(hdc, 12, 0, NULL); LineTo(hdc, 40, 0);
+    POINT tri[3] = { { -12, -15 }, { -12, 15 }, { 12, 0 } };
+    Polygon(hdc, tri, 3);
+    MoveToEx(hdc, 12, -15, NULL); LineTo(hdc, 12, 15);
+    MoveToEx(hdc, 12, -15, NULL); LineTo(hdc, 5,  -15);   /* sayap Zener kiri-atas */
+    MoveToEx(hdc, 12,  15, NULL); LineTo(hdc, 19,  15);   /* sayap Zener kanan-bawah */
+}
+
 void toolbar_draw_symbol(HDC hdc, ToolKind tool, int cx, int cy, BOOL active) {
     int saved = SaveDC(hdc);
     SetGraphicsMode(hdc, GM_ADVANCED);
@@ -239,6 +250,7 @@ void toolbar_draw_symbol(HDC hdc, ToolKind tool, int cx, int cy, BOOL active) {
     else if (ct == COMP_AMMETER) sym_ammeter(hdc);
     else if (ct == COMP_OSCPROBE) sym_oscprobe(hdc);
     else if (ct == COMP_INDUCTOR) sym_inductor(hdc);
+    else if (ct == COMP_ZENER) sym_zener(hdc);
     else if (tool == TOOL_SELECT) {
         POINT cur[7] = { {0,-14},{10,4},{4,4},{4,14},{-2,14},{-2,4},{-8,4} };
         Polygon(hdc, cur, 7);
@@ -347,6 +359,7 @@ const wchar_t *toolbar_tool_shortname(ToolKind tool) {
     if (tool == TOOL_AMMETER) return L"AM";
     if (tool == TOOL_OSCPROBE) return L"OSC";
     if (tool == TOOL_INDUCTOR) return L"L";
+    if (tool == TOOL_ZENER) return L"Zener";
     return L"Hapus";
 }
 
@@ -368,6 +381,7 @@ int toolbar_tool_is_component(ToolKind tool) {
         case TOOL_AMMETER:
         case TOOL_OSCPROBE:
         case TOOL_INDUCTOR:
+        case TOOL_ZENER:
             return 1;
         default:
             return 0;

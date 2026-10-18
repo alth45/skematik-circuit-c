@@ -32,6 +32,7 @@
 #define LDR_LIGHT_RATIO  0.01  /* saat TERANG: R ~ 1% dari nilai gelap (~10 kOhm) */
 #define BUZZER_FREQ_DEFAULT 1000.0 /* buzzer default: 1 kHz; v = frekuensi Hz */
 #define IND_DEFAULT_H 100e-6
+#define VZENER_DEFAULT 5.1  /* dioda zener default: Vz = 5.1 V */
 
 typedef enum {
     COMP_NONE = 0,
@@ -70,10 +71,13 @@ typedef enum {
                         menjadi satu net). Hasil bacaan per komponen via
                         sim_oscprobe_reading() (volt); saat mode RUN angka tegangan
                         tampil di bawah simbol. */
-    COMP_INDUCTOR     /* induktor: pin0 = kiri, pin1 = kanan.
+    COMP_INDUCTOR,     /* induktor: pin0 = kiri, pin1 = kanan.
                         DC  : short ideal (0 Ω) — disatukan di Pass 1 sim.c.
                         AC  : impedansi XL = 2πfL (saat sim_ac_mode).
                         v = induktansi Henry (default 100e-6 = 100 µH). */
+    COMP_ZENER         /* dioda zener: pin0=A(anoda kiri) pin1=K(katoda kanan); arah sama dgn LED.
+                        Menghantar seperti dioda biasa saat forward bias; saat reverse
+                        bias, menghantar bila tegangan balik > Vz (v = Vz dalam Volt). */
 } CompType;
 
 /* Tool yang dipilih user di palette */
@@ -97,6 +101,7 @@ typedef enum {
     TOOL_AMMETER,        /* ammeter (ukur arus pada cabang, dipasang seri) */
     TOOL_OSCPROBE,       /* osiloscope probe (ukur beda potensial dua titik) */
     TOOL_INDUCTOR,        /* induktor (kumparan) */
+    TOOL_ZENER,          /* dioda zener */
     TOOL_DELETE
 } ToolKind;
 
@@ -140,7 +145,7 @@ typedef struct {
 } Wire;
 
 /* Jumlah tombol palette (Select, Blok, Wire + 15 komponen + Hapus). */
-#define BTN_COUNT 20
+#define BTN_COUNT 21
 
 /* Batas seleksi multi (model.c) */
 #define MAX_SEL 256
@@ -333,6 +338,7 @@ void draw_k_voltmeter(HDC hdc, Component *c);
 void draw_k_ammeter(HDC hdc, Component *c);
 void draw_k_oscprobe(HDC hdc, Component *c);
 void draw_k_inductor(HDC hdc, Component *c);
+void draw_k_zener(HDC hdc, Component *c);
 
 void draw_component(HDC hdc, Component *c);
 void draw_canvas(HWND hwnd);
@@ -517,6 +523,11 @@ int    sim_voltmeter_connected(const Component *c);
    sim_ammeter_connected() = 1 bila kedua pin tergabung ke net aktif (ada sumber). */
 double sim_ammeter_reading(const Component *c);    /* >=0 ampere; -1 = bukan ammeter/tak terhubung */
 int    sim_ammeter_connected(const Component *c);
+
+/* Dioda Zener: status forward (1 = menghantar seperti dioda biasa). */
+int sim_zener_fwd(const Component *c);
+/* Dioda Zener: status reverse breakdown (1 = meng-clamp di Vz). */
+int sim_zener_breakdown(const Component *c);
 
 #ifdef SCHEMATIC_TEST_STUBS
 /* ---- Helper khusus suite uji (realisasi: tests/test_support.c) ----
