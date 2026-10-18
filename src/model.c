@@ -38,7 +38,7 @@ const ToolKind btnTools[BTN_COUNT] = {
     TOOL_SELECT, TOOL_BOX, TOOL_WIRE,
     TOOL_RESISTOR, TOOL_SWITCH, TOOL_BATTERY, TOOL_ACSOURCE, TOOL_LED, TOOL_GROUND,
     TOOL_CAPACITOR, TOOL_TRANSISTOR, TOOL_DIODE, TOOL_CAPOLAR,
-    TOOL_LDR, TOOL_BUZZER, TOOL_VOLTMETER, TOOL_AMMETER,
+    TOOL_LDR, TOOL_BUZZER, TOOL_VOLTMETER, TOOL_AMMETER, TOOL_OSCPROBE,
     TOOL_DELETE
 };
 const wchar_t *btnLabels[BTN_COUNT] = {
@@ -47,6 +47,7 @@ const wchar_t *btnLabels[BTN_COUNT] = {
     L"LED (4)", L"Ground (5)",
     L"Kapasitor (6)", L"Transistor NPN (7)", L"Dioda (8)", L"Kapasitor Polar (9)",
     L"LDR / Sensor Cahaya (L)", L"Buzzer (U)", L"Voltmeter (M)",
+    L"Ammeter (I)", L"OSC Probe (P)",
     L"Hapus / Delete (Del)"
 };
 
@@ -108,11 +109,15 @@ void comp_pin_pos(const Component *c, int pin_idx, int *px, int *py) {
     if (!c || !px || !py) return;
     if (c->type == COMP_GROUND) {
         comp_local_to_world(c, 0, -30, px, py);
-    } else if (c->type == COMP_TRANSISTOR) {
+    }else if (c->type == COMP_TRANSISTOR) {
+        /* NPN standar (B di kiri, C & E di kanan):
+           pin0 = Kolektor -> kanan-atas  (+40, -30)
+           pin1 = Emitor   -> kanan-bawah (+40, +30)  (panah keluar)
+           pin2 = Basis    -> kiri-tengah (-40,  0) */
         if (pin_idx == 2)      comp_local_to_world(c, -40,  0, px, py);
         else if (pin_idx == 1) comp_local_to_world(c,  40, 30, px, py);
-        else                   comp_local_to_world(c, -40, -30, px, py);
-    } else {
+        else                   comp_local_to_world(c,  40, -30, px, py);
+    }else {
         comp_local_to_world(c, (pin_idx == 0) ? -40 : 40, 0, px, py);
     }
 }
@@ -290,6 +295,7 @@ double comp_default_value(CompType t) {
         case COMP_LDR:        return LDR_DARK_DEFAULT;
         case COMP_BUZZER:     return BUZZER_FREQ_DEFAULT;
         case COMP_AMMETER:    return 0.0;
+        case COMP_OSCPROBE:   return 0.0;
         default:              return 0.0;
     }
 }

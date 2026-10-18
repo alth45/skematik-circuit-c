@@ -16,6 +16,7 @@ static CompType tool_to_comp(ToolKind t) {
         case TOOL_BUZZER:     return COMP_BUZZER;
         case TOOL_VOLTMETER:  return COMP_VOLTMETER;
         case TOOL_AMMETER:    return COMP_AMMETER;
+        case TOOL_OSCPROBE:   return COMP_OSCPROBE;
         default: return COMP_NONE;
     }
 }
@@ -30,6 +31,10 @@ static CompType tool_to_comp(ToolKind t) {
 #define IDM_V_TOGGLE_SW   0x0405
 #define IDM_V_INFO        0x0406
 #define IDM_V_LDR_LIGHT   0x0407  /* LDR: ubah kondisi cahaya Terang/Gelap */
+#define IDM_V_WAVE_SINE     0x0408
+#define IDM_V_WAVE_SQUARE   0x0409
+#define IDM_V_WAVE_TRIANGLE 0x040A
+#define IDM_V_OPEN_OSC      0x040B
 
 static const wchar_t *comp_kind_name(CompType t) {
     switch (t) {
@@ -47,6 +52,7 @@ static const wchar_t *comp_kind_name(CompType t) {
         case COMP_BUZZER:     return L"Buzzer";
         case COMP_VOLTMETER:  return L"Voltmeter";
         case COMP_AMMETER:    return L"Ammeter";
+        case COMP_OSCPROBE:   return L"Probe Osiloskop";
         default:              return L"Komponen";
     }
 }
@@ -59,6 +65,8 @@ void show_context_menu(HWND hwnd, int sx, int sy, Component *c) {
     BOOL has_val = c ? comp_has_value(c->type) : FALSE;
     BOOL is_sw   = c && c->type == COMP_SWITCH;
     BOOL is_ldr  = c && c->type == COMP_LDR;
+    BOOL is_ac   = c && c->type == COMP_ACSOURCE;
+    BOOL is_osc  = c && c->type == COMP_OSCPROBE;
 
     AppendMenuW(m, MF_STRING | (has_val ? 0 : MF_GRAYED),
         IDM_V_EDIT_VALUE, L"Edit Nilai (Value)...");
@@ -69,6 +77,18 @@ void show_context_menu(HWND hwnd, int sx, int sy, Component *c) {
         AppendMenuW(m, MF_STRING, IDM_V_LDR_LIGHT,
             c->on ? L"Cahaya: Terang (R rendah) -> ubah ke Gelap"
                   : L"Cahaya: Gelap (R tinggi) -> ubah ke Terang");
+    if (is_ac) {
+        HMENU wm = CreatePopupMenu();
+        AppendMenuW(wm, MF_STRING | (c->wave == WAVE_SINE     ? MF_CHECKED : 0),
+                    IDM_V_WAVE_SINE,     L"Sinus");
+        AppendMenuW(wm, MF_STRING | (c->wave == WAVE_SQUARE   ? MF_CHECKED : 0),
+                    IDM_V_WAVE_SQUARE,   L"Kotak (Square)");
+        AppendMenuW(wm, MF_STRING | (c->wave == WAVE_TRIANGLE ? MF_CHECKED : 0),
+                    IDM_V_WAVE_TRIANGLE, L"Segitiga (Triangle)");
+        AppendMenuW(m, MF_POPUP, (UINT_PTR)wm, L"Bentuk Gelombang");
+    }
+    if (is_osc)
+        AppendMenuW(m, MF_STRING, IDM_V_OPEN_OSC, L"Buka Osiloskop...");
     AppendMenuW(m, MF_STRING, IDM_V_ROTATE, L"Putar 90\xB0");
     AppendMenuW(m, MF_STRING, IDM_V_DUPLICATE, L"Duplikat");
     AppendMenuW(m, MF_SEPARATOR, 0, NULL);
@@ -203,6 +223,14 @@ void show_context_menu(HWND hwnd, int sx, int sy, Component *c) {
                     }
                     wcscat_s(buf, 512, extra);
                 }
+                if (c->type == COMP_OSCPROBE) {
+                    wchar_t extra[128];
+                    wcscpy_s(extra, 128,
+                        L"\nHubungkan pin kiri (sinyal) ke titik ukur dan pin kanan\n"
+                        L"ke titik referensi. Buka View > Oscilloscope untuk\n"
+                        L"melihat gelombangnya.");
+                    wcscat_s(buf, 512, extra);
+                }
                 if (c->type == COMP_BUZZER) {
                     wchar_t extra[96];
                     if (sim_running) {
@@ -225,6 +253,24 @@ void show_context_menu(HWND hwnd, int sx, int sy, Component *c) {
                 model_remove_at(cx, cy);
                 sim_recompute();
             }
+            break;
+                case IDM_V_WAVE_SINE:
+        case IDM_V_WAVE_SQUARE:
+        case IDM_V_WAVE_TRIANGLE:
+            if (c && c->type == COMP_ACSOURCE) {
+                c->wave = (cmd == IDM_V_WAVE_SQUARE)   ? WAVE_SQUARE :
+                          (cmd == IDM_V_WAVE_TRIANGLE) ? WAVE_TRIANGLE :
+                                                         WAVE_SINE;
+                sim_recompute();
+                osc_refresh();
+                const wchar_t *nm =
+                    (c->wave == WAVE_SQUARE)   ? L"kotak" :
+                    (c->wave == WAVE_TRIANGLE) ? L"segitiga" : L"sinus";
+                set_status(L"Sumber AC #%d: gelombang %ls.", c->id, nm);
+            }
+            break;
+        case IDM_V_OPEN_OSC:
+            osc_open(hwnd);
             break;
     }
     InvalidateRect(hwnd, NULL, FALSE);
@@ -632,7 +678,7 @@ void on_key_down(HWND hwnd, WPARAM key) {
         if (key == 'B' || key == 'b' || key == 'L' || key == 'l' ||
             key == 'U' || key == 'u' || key == 'V' || key == 'v' ||
             key == 'W' || key == 'w' || key == 'M' || key == 'm' ||
-            key == 'I' || key == 'i') return;
+            key == 'I' || key == 'i' || key == 'P' || key == 'p') return;
     }
     if (key == 'R' || key == 'r') {
         if (sim_running) return; /* rotasi dikunci saat RUN */
@@ -678,6 +724,7 @@ void on_key_down(HWND hwnd, WPARAM key) {
     else if (key == 'U' || key == 'u') { current_tool = TOOL_BUZZER; }
     else if (key == 'M' || key == 'm') { current_tool = TOOL_VOLTMETER; }
     else if (key == 'I' || key == 'i') { current_tool = TOOL_AMMETER; }
+    else if (key == 'P' || key == 'p') { current_tool = TOOL_OSCPROBE; }
     else if (key == VK_DELETE || key == VK_BACK) {
         if (sim_running) return; /* hapus dikunci saat RUN */
         if (sel_count > 1) {

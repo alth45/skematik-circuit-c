@@ -85,6 +85,9 @@ static void build_popup(int menu_idx, HMENU m) {
             AppendMenuW(m, MF_STRING | (g_show_status ? MF_CHECKED : 0),
                         IDM_VIEW_STATUS, L"Tampilkan Status Bar");
             AppendMenuW(m, MF_SEPARATOR, 0, NULL);
+            AppendMenuW(m, MF_STRING, IDM_VIEW_OSC, L"Oscilloscope (Probe)\tF12");
+            AppendMenuW(m, MF_SEPARATOR, 0, NULL);
+            AppendMenuW(m, MF_SEPARATOR, 0, NULL);
             AppendMenuW(m, MF_STRING | MF_GRAYED, IDM_VIEW_ZOOMIN,  L"Perbesar\tCtrl++ (segera)");
             AppendMenuW(m, MF_STRING | MF_GRAYED, IDM_VIEW_ZOOMOUT, L"Perkecil\tCtrl+- (segera)");
             AppendMenuW(m, MF_STRING | MF_GRAYED, IDM_VIEW_ZOOMFIT, L"Sesuaikan Tampilan\tCtrl+0 (segera)");
@@ -171,6 +174,9 @@ void menubar_command(HWND hwnd, int cmd) {
             g_show_status = !g_show_status;
             set_status(L"Status bar %ls.", g_show_status ? L"ditampilkan" : L"disembunyikan");
             break;
+        case IDM_VIEW_OSC:
+            osc_open(hwnd);
+            break;
         case IDM_SIM_RUN:
             if (!sim_running) sim_set_running(1);
             break;
@@ -207,6 +213,7 @@ void menubar_command(HWND hwnd, int cmd) {
                 "toolbar komponen di bawahnya.",
                 L"Tentang", MB_OK | MB_ICONINFORMATION);
             break;
+        
     }
     InvalidateRect(hwnd, NULL, FALSE);
 }

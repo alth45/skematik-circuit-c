@@ -105,22 +105,58 @@ static void na_build_nodes(void) {
   }
 }
 
-/* Tetapkan tegangan tetap pada node sumber & ground. */
-static void na_assign_fixed(double *vfix) {
+/* ============================================================
+   Sumber nilai untuk na_assign_fixed_mode().
+   - SRC_MODE_NORMAL    : pakai comps[i].v (perilaku lama).
+   - SRC_MODE_DC_ONLY   : sumber AC = 0, sumber DC = c->v.
+   - SRC_MODE_ZERO_ALL  : semua sumber = 0.
+   - SRC_MODE_UNIT_ONE  : hanya sumber index `target` = 1 V, sisanya = 0.
+     (dipakai untuk menghitung gain transfer probe → AC source)
+============================================================ */
+typedef enum {
+    SRC_MODE_NORMAL = 0,
+    SRC_MODE_DC_ONLY,
+    SRC_MODE_ZERO_ALL,
+    SRC_MODE_UNIT_ONE
+} SrcMode;
+
+static double src_val(int idx, SrcMode mode, int target) {
+    int is_ac = (comps[idx].type == COMP_ACSOURCE);
+    int is_dc = (comps[idx].type == COMP_BATTERY);
+    if (!is_ac && !is_dc) return 0.0;
+
+    switch (mode) {
+        case SRC_MODE_NORMAL: {
+            double v = comps[idx].v;
+            if (v <= 0.0) v = is_ac ? 220.0 : 9.0;
+            return v;
+        }
+        case SRC_MODE_DC_ONLY: {
+            if (is_ac) return 0.0;
+            double v = comps[idx].v;
+            if (v <= 0.0) v = 9.0;
+            return v;
+        }
+        case SRC_MODE_ZERO_ALL:
+            return 0.0;
+        case SRC_MODE_UNIT_ONE:
+            return (idx == target) ? 1.0 : 0.0;
+    }
+    return 0.0;
+}
+
+static void na_assign_fixed_mode(double *vfix, SrcMode mode, int target) {
   for (int i = 0; i < na_n; i++)
     vfix[i] = V_UNKNOWN;
 
-  /* Pilih sumber "primer" (V terbesar) sebagai acuan ground. */
   int ground_idx = -1;
   double best_v = -1.0;
   for (int i = 0; i < comp_count; i++) {
     if (comps[i].type != COMP_BATTERY && comps[i].type != COMP_ACSOURCE)
       continue;
-    double vv = comps[i].v;
-    if (vv <= 0.0)
-      vv = (comps[i].type == COMP_ACSOURCE) ? 220.0 : 9.0;
-    if (vv > best_v) {
-      best_v = vv;
+    double vv = src_val(i, mode, target);
+    if (fabs(vv) > best_v) {
+      best_v = fabs(vv);
       int rm = find_root(node_of(i, 1));
       if (rm >= 0 && rm < MAX_COMP * 3)
         ground_idx = root_to_idx_[rm];
@@ -128,19 +164,14 @@ static void na_assign_fixed(double *vfix) {
   }
   if (ground_idx < 0) {
     for (int i = 0; i < comp_count; i++) {
-      if (comps[i].type != COMP_GROUND)
-        continue;
+      if (comps[i].type != COMP_GROUND) continue;
       int rg = root_to_idx_[find_root(node_of(i, 0))];
-      if (rg >= 0) {
-        ground_idx = rg;
-        break;
-      }
+      if (rg >= 0) { ground_idx = rg; break; }
     }
   }
   if (ground_idx >= 0)
     vfix[ground_idx] = 0.0;
 
-  /* Propagasi lewat rantai sumber (seri). */
   int changed = 1, iter = 0;
   while (changed && iter <= na_n + 2) {
     changed = 0;
@@ -148,9 +179,7 @@ static void na_assign_fixed(double *vfix) {
     for (int i = 0; i < comp_count; i++) {
       if (comps[i].type != COMP_BATTERY && comps[i].type != COMP_ACSOURCE)
         continue;
-      double vv = comps[i].v;
-      if (vv <= 0.0)
-        vv = (comps[i].type == COMP_ACSOURCE) ? 220.0 : 9.0;
+      double vv = src_val(i, mode, target);
       int ip = root_to_idx_[find_root(node_of(i, 0))];
       int im = root_to_idx_[find_root(node_of(i, 1))];
       if (ip < 0 || im < 0 || ip == im)
@@ -165,7 +194,6 @@ static void na_assign_fixed(double *vfix) {
     }
   }
 
-  /* Sumber yatim (kedua sisi belum ter-fix): ground sisi minus. */
   for (int i = 0; i < comp_count; i++) {
     if (comps[i].type != COMP_BATTERY && comps[i].type != COMP_ACSOURCE)
       continue;
@@ -174,23 +202,26 @@ static void na_assign_fixed(double *vfix) {
     if (ip < 0 || im < 0 || ip == im)
       continue;
     if (vfix[ip] == V_UNKNOWN && vfix[im] == V_UNKNOWN) {
-      double vv = comps[i].v;
-      if (vv <= 0.0)
-        vv = (comps[i].type == COMP_ACSOURCE) ? 220.0 : 9.0;
+      double vv = src_val(i, mode, target);
       vfix[im] = 0.0;
       vfix[ip] = vv;
     }
   }
 
-  /* Ground tambahan. */
   for (int i = 0; i < comp_count; i++) {
-    if (comps[i].type != COMP_GROUND)
-      continue;
+    if (comps[i].type != COMP_GROUND) continue;
     int rg = root_to_idx_[find_root(node_of(i, 0))];
     if (rg >= 0 && vfix[rg] == V_UNKNOWN)
       vfix[rg] = 0.0;
   }
 }
+
+/* Wrapper kompat: perilaku lama. */
+static void na_assign_fixed(double *vfix) {
+  na_assign_fixed_mode(vfix, SRC_MODE_NORMAL, -1);
+}
+
+
 
 /* Resistansi efektif komponen sebagai EDGE. Return -1 = bukan edge resistif. */
 static double comp_edge_r(int i) {
@@ -323,6 +354,8 @@ static int na_solve(void) {
 ============================================================================ */
 void sim_recompute(void) {
   /* ---- Reset state ---- */
+  {extern int _sim_probe_resp_ready; _sim_probe_resp_ready = 0;}
+
   for (int i = 0; i < MAX_COMP * 3; i++)
     parent_[i] = i;
   for (int i = 0; i < MAX_COMP; i++) {
@@ -860,4 +893,113 @@ double sim_ammeter_reading(const Component *c){
   int i = (int)(c-comps);
   if(i < 0 || i >= comp_count) return -1.0;
   return amread_[i];
+
+}
+
+
+/* Ammeter dianggap "terhubung" bila kedua pin berada di net berbeda dan
+   simulasi nodal berhasil (amread_[i] >= 0). Konsisten dengan perilaku
+   sim_voltmeter_connected(): pin mengambang / short → 0. */
+int sim_ammeter_connected(const Component *c) {
+    if (!c || c->type != COMP_AMMETER) return 0;
+    int i = (int)(c - comps);
+    if (i < 0 || i >= comp_count) return 0;
+    return (amread_[i] >= 0.0);
+}
+
+/* ============================================================================
+   Probe Osiloskop — domain-waktu via superposisi
+============================================================================ */
+
+/* Reset flag respon probe; dipanggil dari sim_recompute. */
+int _sim_probe_resp_ready = 0;
+
+double sim_ac_voltage(const Component *src, double t) {
+    if (!src || src->type != COMP_ACSOURCE) return 0.0;
+    double vrms = (src->v > 0.0) ? src->v : 220.0;
+    double vpk  = vrms * M_SQRT2;
+    double phase = 2.0 * M_PI * AC_FREQ_HZ * t;
+
+    /* Fase ternormalisasi [0,1). */
+    double p = phase / (2.0 * M_PI);
+    p = p - floor(p);
+
+    switch (src->wave) {
+        case WAVE_SQUARE:
+            return (p < 0.5) ? vpk : -vpk;
+        case WAVE_TRIANGLE:
+            if (p < 0.25)      return vpk * (4.0 * p);
+            else if (p < 0.75) return vpk * (2.0 - 4.0 * p);
+            else               return vpk * (4.0 * p - 4.0);
+        case WAVE_SINE:
+        default:
+            return vpk * sin(phase);
+    }
+}
+
+typedef struct {
+    double dc;
+    int    n_ac;
+    int    ac_idx[MAX_COMP];
+    double gain[MAX_COMP];
+} ProbeResp;
+
+static ProbeResp g_probe_resp[MAX_COMP];
+
+void sim_build_probe_responses(void) {
+    _sim_probe_resp_ready = 0;
+
+    /* Kumpulkan indeks sumber AC. */
+    int ac_idx[MAX_COMP], n_ac = 0;
+    for (int i = 0; i < comp_count && n_ac < MAX_COMP; i++)
+        if (comps[i].type == COMP_ACSOURCE) ac_idx[n_ac++] = i;
+
+    double *vfix = (double *)HeapAlloc(GetProcessHeap(), 0, sizeof(double) * NA_MAX);
+    if (!vfix) return;
+
+    for (int p = 0; p < comp_count; p++) {
+        if (comps[p].type != COMP_OSCPROBE) continue;
+        ProbeResp *r = &g_probe_resp[p];
+        r->dc = 0.0;
+        r->n_ac = n_ac;
+        for (int k = 0; k < n_ac; k++) {
+            r->ac_idx[k] = ac_idx[k];
+            r->gain[k]   = 0.0;
+        }
+
+        /* DC: semua sumber AC = 0. */
+        na_assign_fixed_mode(vfix, SRC_MODE_DC_ONLY, -1);
+        na_build(vfix, -1, -1);
+        if (na_solve()) {
+            int i0 = root_to_idx_[find_root(node_of(p, 0))];
+            int i1 = root_to_idx_[find_root(node_of(p, 1))];
+            if (i0 >= 0 && i1 >= 0) r->dc = na_x[i0] - na_x[i1];
+        }
+
+        /* Gain per sumber AC: satu sumber = 1 V, sisanya = 0. */
+        for (int k = 0; k < n_ac; k++) {
+            na_assign_fixed_mode(vfix, SRC_MODE_UNIT_ONE, ac_idx[k]);
+            na_build(vfix, -1, -1);
+            if (na_solve()) {
+                int i0 = root_to_idx_[find_root(node_of(p, 0))];
+                int i1 = root_to_idx_[find_root(node_of(p, 1))];
+                if (i0 >= 0 && i1 >= 0) r->gain[k] = na_x[i0] - na_x[i1];
+            }
+        }
+    }
+    HeapFree(GetProcessHeap(), 0, vfix);
+    _sim_probe_resp_ready = 1;
+}
+
+double sim_probe_voltage(const Component *probe, double t) {
+    if (!probe || probe->type != COMP_OSCPROBE) return 0.0;
+    int p = (int)(probe - comps);
+    if (p < 0 || p >= comp_count) return 0.0;
+    if (!_sim_probe_resp_ready) sim_build_probe_responses();
+
+    ProbeResp *r = &g_probe_resp[p];
+    double v = r->dc;
+    for (int k = 0; k < r->n_ac; k++)
+        v += r->gain[k] * sim_ac_voltage(&comps[r->ac_idx[k]], t);
+    return v;
 }

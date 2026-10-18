@@ -271,13 +271,15 @@ int WINAPI wWinMain(HINSTANCE hInst, HINSTANCE hPrev, PWSTR cmd, int show) {
   main_window_create(hInst);
   splash_run(hInst, g_main_hwnd);
 
-  ACCEL accels[] = {
+   ACCEL accels[] = {
       {FCONTROL | FVIRTKEY, 'N', IDM_FILE_NEW},
       {FCONTROL | FVIRTKEY, 'O', IDM_FILE_OPEN},
       {FCONTROL | FVIRTKEY, 'S', IDM_FILE_SAVE},
       {FVIRTKEY, VK_F5, IDM_SIM_RUN_TOGGLE},
       {FVIRTKEY, VK_F9, IDM_SIM_RECOMPUTE},
+      {FVIRTKEY, VK_F12, IDM_VIEW_OSC},
   };
+  
   HACCEL hAccel = CreateAcceleratorTableW(
       accels, (int)(sizeof(accels) / sizeof(accels[0])));
 

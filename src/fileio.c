@@ -28,6 +28,7 @@ static const wchar_t *comp_type_name(CompType t) {
         case COMP_AMMETER:    return L"ammeter";
         case COMP_LDR:        return L"ldr";
         case COMP_BUZZER:     return L"buzzer";
+        case COMP_OSCPROBE:  return L"oscprobe";
         default: return L"none";
     }
 }
@@ -48,6 +49,7 @@ const char *comp_type_json_name(CompType t) {
         case COMP_AMMETER:    return "ammeter";
         case COMP_LDR:        return "ldr";
         case COMP_BUZZER:     return "buzzer";
+        case COMP_OSCPROBE:   return "oscprobe";
         default:              return "none";
     }
 }
@@ -83,6 +85,8 @@ static int comp_type_from_name(const char *s) {
         strcmp(s, "photoresistor") == 0) return COMP_LDR;
     if (strcmp(s, "buzzer") == 0 || strcmp(s, "Buzzer") == 0 ||
         strcmp(s, "BZR") == 0) return COMP_BUZZER;
+    if (strcmp(s, "oscprobe") == 0 || strcmp(s, "OSCProbe") == 0 ||
+        strcmp(s, "OSC") == 0) return COMP_OSCPROBE;
     return COMP_NONE;
 }
 
@@ -103,10 +107,10 @@ int model_save_json(const wchar_t *path, wchar_t *err, int err_cap) {
     for (int i = 0; i < comp_count; i++) {
         wchar_t vnum[40];
         swprintf(vnum, 40, L"%.6g", comps[i].v);
-        fwprintf(f, L"    {\"id\": %d, \"type\": \"%ls\", \"x\": %d, \"y\": %d, \"rot\": %d, \"on\": %d, \"value\": %ls}%ls\n",
+        fwprintf(f, L"    {\"id\": %d, \"type\": \"%ls\", \"x\": %d, \"y\": %d, \"rot\": %d, \"on\": %d, \"wave\": %d, \"value\": %ls}%ls\n",
             comps[i].id, comp_type_name(comps[i].type),
             comps[i].x, comps[i].y, comps[i].rot % 4, comps[i].on ? 1 : 0,
-            vnum,
+            (int)comps[i].wave, vnum,
             (i + 1 < comp_count) ? L"," : L"");
     }
     fwprintf(f, L"  ],\n");
@@ -256,7 +260,7 @@ int model_load_json(const wchar_t *path, wchar_t *err, int err_cap) {
     if (*q == ']') { q++; }
     else {
         while (1) {
-            int id = tmp_next, x = 0, y = 0, rot = 0, on = 0;
+            int id = tmp_next, x = 0, y = 0, rot = 0, on = 0, wave = 0;
             double v = -1.0;
             char tname[32] = "";
             if (!expect_char(&q, '{')) goto bad;
@@ -282,8 +286,9 @@ int model_load_json(const wchar_t *path, wchar_t *err, int err_cap) {
                     } else {
                         if (!parse_double(&q, &v)) goto bad;
                     }
-                }
-                else if (strcmp(key, "on") == 0 || strcmp(key, "closed") == 0 ||
+                }else if (strcmp(key, "wave") == 0) {
+                    if (!parse_int(&q, &wave)) goto bad;
+                }else if (strcmp(key, "on") == 0 || strcmp(key, "closed") == 0 ||
                          strcmp(key, "state") == 0) {
                     if (*q == '"') {
                         char sv[16] = "";
@@ -317,6 +322,10 @@ int model_load_json(const wchar_t *path, wchar_t *err, int err_cap) {
                     else         tmp_comps[tmp_n].v = comp_default_value((CompType)tp);
                     tmp_n++;
                     if (id >= tmp_next) tmp_next = id + 1;
+                    tmp_comps[tmp_n].wave =
+                        (tp == COMP_ACSOURCE && wave >= 0 && wave <= 2)
+                        ? (WaveKind)wave : WAVE_SINE;
+
                 }
             }
             skip_ws(&q);

@@ -20,6 +20,7 @@ static CompType toolbar_tool_comp(ToolKind t) {
         case TOOL_BUZZER:     return COMP_BUZZER;
         case TOOL_VOLTMETER:  return COMP_VOLTMETER;
         case TOOL_AMMETER:    return COMP_AMMETER;
+        case TOOL_OSCPROBE:   return COMP_OSCPROBE;
         default: return COMP_NONE;
     }
 }
@@ -102,15 +103,45 @@ static void sym_capolar(HDC hdc) {
 }
 
 static void sym_transistor(HDC hdc) {
+    /* Basis: kiri -> bar */
+    MoveToEx(hdc, -40, 0, NULL); LineTo(hdc, -8, 0);
+    /* Bar vertikal */
+    MoveToEx(hdc, -8, -14, NULL); LineTo(hdc, -8, 14);
+    /* Kolektor (ke kanan-atas) */
+    MoveToEx(hdc, -8, -6, NULL); LineTo(hdc, 40, -28);
+    /* Emitor (ke kanan-bawah) + panah NPN */
+    MoveToEx(hdc, -8, 6, NULL); LineTo(hdc, 40, 28);
+
+    /* Panah di jalur emitor. Karena toolbar pakai pen dari caller,
+       panah digambar sebagai garis (bukan Polygon) agar warnanya ikut pen. */
+    {
+        const double ex = 48.0, ey = 22.0;
+        double len = sqrt(ex * ex + ey * ey);
+        double ux = ex / len, uy = ey / len;
+        double nx = -uy, ny = ux;
+
+        double t  = 0.6;
+        double hx = -8 + ex * t;
+        double hy =  6 + ey * t;
+        const double HAL = 8.0, HAW = 3.2;
+
+        POINT a0 = {
+            (LONG)lround(hx - ux * HAL + nx * HAW),
+            (LONG)lround(hy - uy * HAL + ny * HAW)
+        };
+        POINT a1 = {
+            (LONG)lround(hx - ux * HAL - nx * HAW),
+            (LONG)lround(hy - uy * HAL - ny * HAW)
+        };
+        POINT tip = { (LONG)lround(hx), (LONG)lround(hy) };
+
+        MoveToEx(hdc, a0.x, a0.y, NULL);
+        LineTo  (hdc, tip.x, tip.y);
+        LineTo  (hdc, a1.x, a1.y);
+    }
+
+    /* Lingkaran badan (digambar terakhir = paling atas) */
     Ellipse(hdc, -20, -20, 20, 20);
-    MoveToEx(hdc, -4, -12, NULL); LineTo(hdc, -4, 12);
-    MoveToEx(hdc, -40, 0, NULL); LineTo(hdc, -19, 0);
-    MoveToEx(hdc, -19, 0, NULL); LineTo(hdc, -4, -6);
-    MoveToEx(hdc, -4, 6, NULL); LineTo(hdc, 10, 12);
-    MoveToEx(hdc, 10, 12, NULL); LineTo(hdc, 40, 13);
-    MoveToEx(hdc, 10, 12, NULL); LineTo(hdc, 1, 11);
-    MoveToEx(hdc, 10, 12, NULL); LineTo(hdc, 7, 3);
-    MoveToEx(hdc, -4, 30, NULL); LineTo(hdc, -4, 12);
 }
 
 static void sym_ldr(HDC hdc) {
@@ -152,6 +183,19 @@ static void sym_ammeter(HDC hdc) {
     MoveToEx(hdc, -4,  2, NULL); LineTo(hdc, 4, 2);      /* crossbar     */
 }
 
+static void sym_oscprobe(HDC hdc) {
+    MoveToEx(hdc, -40, 0, NULL); LineTo(hdc, -20, 0);
+    MoveToEx(hdc, 20, 0, NULL); LineTo(hdc, 40, 0);
+    POINT tip[3] = { { -20, 0 }, { -8, -10 }, { -8, 10 } };
+    Polygon(hdc, tip, 3);
+    Ellipse(hdc, -8, -10, 20, 10);
+    HBRUSH br = CreateSolidBrush(RGB(20, 20, 20));
+    HBRUSH ob = (HBRUSH)SelectObject(hdc, br);
+    Ellipse(hdc, 15, -4, 23, 4);
+    SelectObject(hdc, ob);
+    DeleteObject(br);
+}
+
 void toolbar_draw_symbol(HDC hdc, ToolKind tool, int cx, int cy, BOOL active) {
     int saved = SaveDC(hdc);
     SetGraphicsMode(hdc, GM_ADVANCED);
@@ -179,6 +223,30 @@ void toolbar_draw_symbol(HDC hdc, ToolKind tool, int cx, int cy, BOOL active) {
     else if (ct == COMP_BUZZER) sym_buzzer(hdc);
     else if (ct == COMP_VOLTMETER) sym_voltmeter(hdc);
     else if (ct == COMP_AMMETER) sym_ammeter(hdc);
+    else if (ct == COMP_OSCPROBE) sym_oscprobe(hdc);
+    else if (tool == TOOL_SELECT) {
+        POINT cur[7] = { {0,-14},{10,4},{4,4},{4,14},{-2,14},{-2,4},{-8,4} };
+        Polygon(hdc, cur, 7);
+    } else if (tool == TOOL_WIRE) {
+        MoveToEx(hdc, -22, -10, NULL); LineTo(hdc, 0, -10); LineTo(hdc, 0, 12);
+        MoveToEx(hdc, 0, 12, NULL); LineTo(hdc, 22, 12);
+        Ellipse(hdc, -27, -15, -17, -5);
+        Ellipse(hdc, 17, 7, 27, 17);
+    } else if (tool == TOOL_BOX) {
+        Rectangle(hdc, -30, -26, 30, 26);
+        Rectangle(hdc, -22, -12, -6, 2);            /* resistor mini */
+        MoveToEx(hdc, -26, -5, NULL); LineTo(hdc, -22, -5);
+        MoveToEx(hdc, -6, -5, NULL); LineTo(hdc, 2, -5);
+        POINT tri[3] = { {6,-8}, {6,0}, {14,-4} };  /* dioda/LED mini */
+        Polygon(hdc, tri, 3);
+    } else if (tool == TOOL_DELETE) {
+        MoveToEx(hdc, -16, -12, NULL); LineTo(hdc, 16, -12);
+        MoveToEx(hdc, -8, -12, NULL); LineTo(hdc,-5,-18); LineTo(hdc,+5,-18); LineTo(hdc,+8,-12);
+        Rectangle(hdc,-13,-12,+13,+16);
+        MoveToEx(hdc,-5,-6,NULL); LineTo(hdc,-5,+10);
+        MoveToEx(hdc,+0,-6,NULL); LineTo(hdc,+0,+10);
+        MoveToEx(hdc,+5,-6,NULL); LineTo(hdc,+5,+10);
+    }
     else if (tool == TOOL_SELECT) {
         POINT cur[7] = { {0,-14},{10,4},{4,4},{4,14},{-2,14},{-2,4},{-8,4} };
         HBRUSH br = CreateSolidBrush(active ? RGB(50,128,255) : RGB(40,40,40));
@@ -262,6 +330,7 @@ const wchar_t *toolbar_tool_shortname(ToolKind tool) {
     if (tool == TOOL_BOX) return L"Blok";
     if (tool == TOOL_WIRE) return L"Wire";
     if (tool == TOOL_AMMETER) return L"AM";
+    if (tool == TOOL_OSCPROBE) return L"OSC";
     return L"Hapus";
 }
 
@@ -281,6 +350,7 @@ int toolbar_tool_is_component(ToolKind tool) {
         case TOOL_BUZZER:
         case TOOL_VOLTMETER:
         case TOOL_AMMETER:
+        case TOOL_OSCPROBE:
             return 1;
         default:
             return 0;

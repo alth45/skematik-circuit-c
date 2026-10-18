@@ -57,13 +57,18 @@ typedef enum {
                         tak hingga => kedua pin tidak pernah disatukan menjadi satu net).
                         Hasil bacaan per komponen via sim_voltmeter_reading() (volt);
                         saat mode RUN angka tegangan tampil di bawah simbol. */
-    COMP_AMMETER     /* ammeter (Ampere Meter): mengukur ARUS yang mengalir pada
+    COMP_AMMETER,     /* ammeter (Ampere Meter): mengukur ARUS yang mengalir pada
                         cabang tertentu. Dipasang SERI — kabel diputus, pin0 sisi
                         datang (arus masuk), pin1 sisi pergi. Ideal: hambatan 0 Ω
                         (penghantar sempurna) sehingga tidak mengubah rangkaian;
                         arus cabang = arus penghantar ideal yang digantikannya.
                         Hasil bacaan per komponen via sim_ammeter_reading() (ampere);
                         saat mode RUN angka arus tampil di bawah simbol. */
+    COMP_OSCPROBE     /* osiloskop probe: pin0=probe(+) pin1=gnd(-). Tidak menghantar arus
+                        (impedansi tak hingga => kedua pin tidak pernah disatukan
+                        menjadi satu net). Hasil bacaan per komponen via
+                        sim_oscprobe_reading() (volt); saat mode RUN angka tegangan
+                        tampil di bawah simbol. */
 } CompType;
 
 /* Tool yang dipilih user di palette */
@@ -85,8 +90,17 @@ typedef enum {
     TOOL_BUZZER,         /* buzzer (output suara) */
     TOOL_VOLTMETER,      /* voltmeter (ukur beda potensial dua titik) */
     TOOL_AMMETER,        /* ammeter (ukur arus pada cabang, dipasang seri) */
+    TOOL_OSCPROBE,       /* osiloscope probe (ukur beda potensial dua titik) */
     TOOL_DELETE
 } ToolKind;
+
+/* Bentuk gelombang sumber AC (COMP_ACSOURCE). */
+typedef enum {
+    WAVE_SINE = 0,     /* sinus (default) */
+    WAVE_SQUARE,       /* kotak */
+    WAVE_TRIANGLE      /* segitiga */
+} WaveKind;
+
 
 typedef struct {
     CompType type;
@@ -106,6 +120,7 @@ typedef struct {
                        //   voltmeter  = tidak dipakai (0); bacaan via sim_voltmeter_reading()
                        //   ammeter    = tidak dipakai (0); bacaan via sim_ammeter_reading()
                        //   switch/transistor/ground tidak dipakai (0)
+    WaveKind wave;      // COMP_ACSOURCE: bentuk gelombang (sine/square/triangle)
 } Component;
 
 /* Pin = terminal komponen. Ground hanya 1 pin (atas). */
@@ -233,6 +248,7 @@ void draw_toolbar(HDC hdc, int W);
 #define IDM_SIM_RUN_TOGGLE 0x1133  /* untuk accelerator F5 */
 #define IDM_HELP_SHORTCUT 0x1140
 #define IDM_HELP_ABOUT    0x1141
+#define IDM_VIEW_OSC      0x1150  /* View > Oscilloscope */
 
 /* Hit-test menubar: -1 = tidak kena; >=0 = indeks menu utama (0=File...). */
 int menubar_hit(int x, int y);
@@ -309,6 +325,7 @@ void draw_k_ldr(HDC hdc, Component *c);
 void draw_k_buzzer(HDC hdc, Component *c);
 void draw_k_voltmeter(HDC hdc, Component *c);
 void draw_k_ammeter(HDC hdc, Component *c);
+void draw_k_oscprobe(HDC hdc, Component *c);
 
 void draw_component(HDC hdc, Component *c);
 void draw_canvas(HWND hwnd);
@@ -375,6 +392,40 @@ extern int    sim_overcur;    /* 1 = ada LED nyala tapi arus > 20 mA (berbahaya)
 int    sim_comp_blown(const Component *c);   /* 1 = LED ini meledak */
 double sim_comp_current(const Component *c); /* arus lewat komponen ini (A), <0 = tak terdefinisi */
 void   sim_format_si(double v, const wchar_t *unit, wchar_t *out, int cap);
+
+/* ---- Probe Osiloskop (bentuk gelombang domain-waktu) ----
+   Komponen COMP_OSCPROBE mengukur V(pin0) - V(pin1) terhadap waktu t.
+   Untuk simulasi domain-waktu, dipakai SUPERPOSISI:
+     V_probe(t) = V_dc + Σ_k  gain_k · V_ac_k(t)
+   di mana:
+     - V_dc        : respon saat semua sumber AC = 0 (hanya sumber DC).
+     - gain_k      : V_probe saat sumber AC ke-k = 1 V (unit) & yang lain = 0.
+     - V_ac_k(t)   : gelombang instan sumber AC ke-k pada waktu t (lihat
+                     sim_ac_voltage).
+   Gain/dc dihitung sekali per sim_recompute() via sim_build_probe_responses(),
+   lalu sim_probe_voltage() mengevaluasi formulir di atas — sangat murah. */
+
+/* Tegangan instan sumber AC pada waktu t (detik). Peak = sqrt(2)*Vrms.
+   Bentuk gelombang mengikuti src->wave. Return 0 untuk non-ACSOURCE. */
+double sim_ac_voltage(const Component *src, double t);
+
+/* Bangun tabel dc + gain untuk semua probe. Harus dipanggil setelah
+   sim_recompute() (memakai state union-find + node bawaan sim.c). */
+void   sim_build_probe_responses(void);
+
+/* V(pin0) - V(pin1) instan untuk probe pada waktu t (detik).
+   Caller WAJIB memastikan probe->type == COMP_OSCPROBE.
+   Return 0 untuk non-probe / state belum siap. */
+double sim_probe_voltage(const Component *probe, double t);
+
+/* ---- Jendela Oscilloscope (oscilloscope.c) ----
+   Jendela top-level terpisah yang menampilkan trace tiap probe (maks 4).
+   Bila belum ada probe di canvas, panel menampilkan pesan bantuan.
+   Refresh otomatis 5 Hz via timer. */
+void osc_open(HWND hwnd_parent);
+void osc_refresh(void);
+void osc_close(void);
+int  osc_is_open(void);
 
 /* ===================== Window Procedure (main.c) ===================== */
 LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp);
