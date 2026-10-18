@@ -181,20 +181,25 @@ void show_context_menu(HWND hwnd, int sx, int sy, Component *c) {
                     wcscat_s(buf, 512, extra);
                 }
                 if (c->type == COMP_AMMETER) {
-                    /* informasi alat ukur arus: bacaan saat RUN */
-                    wchar_t extra[160];
+                    /* informasi alat ukur: bacaan arus cabang saat RUN */
+                    wchar_t extra[200];
                     if (!sim_running) {
-                        wcscpy_s(extra, 160, L"\nPasang SERI: pin (+) masuk, pin (-) keluar jalur."
-                                          L" Tekan RUN untuk membaca arus.");
-                    } else {
+                        wcscpy_s(extra, 200, L"\nPasang SERI pada cabang yang diukur: putuskan kabel, "
+                                          L"sambungkan pin masuk ke sisi datang dan pin keluar ke sisi pergi. "
+                                          L"Tekan RUN untuk membaca arus.");
+                    } else if (sim_ammeter_connected(c)) {
                         double a = sim_ammeter_reading(c);
                         if (a < 0.0) {
-                            wcscpy_s(extra, 160, L"\nBacaan: - (tidak terhubung).");
+                            wcscpy_s(extra, 200, L"\nBacaan: - (cabang tidak dialiri arus / terbuka).");
+                        } else if (a == 0.0) {
+                            wcscpy_s(extra, 200, L"\nBacaan: ~ (cabang short 0 \x03A9 — arus teoretis tak hingga, korslet!).");
                         } else {
                             wchar_t as[32];
                             sim_format_si(a, L"A", as, 32);
-                            swprintf(extra, 160, L"\nBacaan arus: %ls", as);
+                            swprintf(extra, 200, L"\nBacaan arus cabang: %ls", as);
                         }
+                    } else {
+                        wcscpy_s(extra, 200, L"\nBacaan: - (salah satu ujung tidak terhubung).");
                     }
                     wcscat_s(buf, 512, extra);
                 }

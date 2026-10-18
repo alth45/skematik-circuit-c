@@ -57,10 +57,13 @@ typedef enum {
                         tak hingga => kedua pin tidak pernah disatukan menjadi satu net).
                         Hasil bacaan per komponen via sim_voltmeter_reading() (volt);
                         saat mode RUN angka tegangan tampil di bawah simbol. */
-    COMP_AMMETER     /* ammeter: mengukur ARUS lewat jalur. Dipasang SERI — pin0=(+) masuk
-                        ke jalur, pin1=(-) keluar jalur. Menghantar arus (resistansi
-                        sangat kecil). Hasil bacaan per komponen via sim_comp_current()
-                        (ampere); saat mode RUN angka arus tampil di bawah simbol. */
+    COMP_AMMETER     /* ammeter (Ampere Meter): mengukur ARUS yang mengalir pada
+                        cabang tertentu. Dipasang SERI — kabel diputus, pin0 sisi
+                        datang (arus masuk), pin1 sisi pergi. Ideal: hambatan 0 Ω
+                        (penghantar sempurna) sehingga tidak mengubah rangkaian;
+                        arus cabang = arus penghantar ideal yang digantikannya.
+                        Hasil bacaan per komponen via sim_ammeter_reading() (ampere);
+                        saat mode RUN angka arus tampil di bawah simbol. */
 } CompType;
 
 /* Tool yang dipilih user di palette */
@@ -81,7 +84,7 @@ typedef enum {
     TOOL_LDR,            /* LDR / fotoresistor (sensor cahaya) */
     TOOL_BUZZER,         /* buzzer (output suara) */
     TOOL_VOLTMETER,      /* voltmeter (ukur beda potensial dua titik) */
-    TOOL_AMMETER,        /* ammeter (ukur arus lewat jalur) */
+    TOOL_AMMETER,        /* ammeter (ukur arus pada cabang, dipasang seri) */
     TOOL_DELETE
 } ToolKind;
 
@@ -101,6 +104,7 @@ typedef struct {
                        //   LDR        = R gelap dalam Ohm (default 1e6 / 1 MOhm)
                        //   buzzer     = frekuensi Hz (default 1000)
                        //   voltmeter  = tidak dipakai (0); bacaan via sim_voltmeter_reading()
+                       //   ammeter    = tidak dipakai (0); bacaan via sim_ammeter_reading()
                        //   switch/transistor/ground tidak dipakai (0)
 } Component;
 
@@ -114,8 +118,8 @@ typedef struct {
     PinRef a, b;
 } Wire;
 
-/* Jumlah tombol palette (Select, Blok, Wire + 14 komponen + Hapus). */
-#define BTN_COUNT 18
+/* Jumlah tombol palette (Select, Blok, Wire + 15 komponen + Hapus). */
+#define BTN_COUNT 19
 
 /* Batas seleksi multi (model.c) */
 #define MAX_SEL 256
@@ -304,7 +308,7 @@ void draw_k_acsource(HDC hdc, Component *c);
 void draw_k_ldr(HDC hdc, Component *c);
 void draw_k_buzzer(HDC hdc, Component *c);
 void draw_k_voltmeter(HDC hdc, Component *c);
-void draw_k_ammeter(HDC hdc, Component *c); //baru 
+void draw_k_ammeter(HDC hdc, Component *c);
 
 void draw_component(HDC hdc, Component *c);
 void draw_canvas(HWND hwnd);
@@ -413,8 +417,20 @@ double sim_ldr_effective_r(const Component *c);   /* R efektif LDR: gelap=v, ter
    sim_voltmeter_connected() = 1 bila kedua pin tersambung ke net yang berbeda. */
 double sim_voltmeter_reading(const Component *c); /* >=0 volt; -1 = bukan voltmeter/tak terhubung */
 int    sim_voltmeter_connected(const Component *c);
-double sim_ammeter_reading(const Component *c); /* >=0 ampere; -1 = bukan ammeter/tak terhubung */
 
+/* ---- Ammeter (ukur ARUS yang mengalir pada cabang tertentu) ----
+   Ammeter ideal: hambatan 0 Ω -> dipasang SERI (kabel diputus, pin0 sisi
+   datang, pin1 sisi pergi). Karena 0 Ω, kedua pin selalu disatukan menjadi
+   satu net yang sama dengan penghantar ideal pengganti, sehingga memasangnya
+   TIDAK mengubah perilaku rangkaian.
+   Bacaan per komponen (ampere, nilai absolut arus cabang):
+     - cabang membawa arus terhitung (resistor/LDR/buzzer/cap-AC/LED) -> |I| > 0
+     - cabang short 0 Ω (saklar tertutup, kawat biasa)                -> 0 A
+       (arusnya tak hingga secara matematis; UI menampilkan tanda "~")
+     - ammeter tidak tergabung ke loop aktif / cabang terbuka         -> -1 ("-" di UI)
+   sim_ammeter_connected() = 1 bila kedua pin tergabung ke net aktif (ada sumber). */
+double sim_ammeter_reading(const Component *c);    /* >=0 ampere; -1 = bukan ammeter/tak terhubung */
+int    sim_ammeter_connected(const Component *c);
 
 #ifdef SCHEMATIC_TEST_STUBS
 /* ---- Helper khusus suite uji (realisasi: tests/test_support.c) ----
