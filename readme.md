@@ -1,9 +1,10 @@
 
 # Schematic-C — Editor Skematik Rangkaian (Win32 GDI)
 
-Editor skematik sederhana berbasis **C + Win32 GDI**, tanpa framework tambahan.
+Editor skematik berbasis **C + Win32 GDI**, tanpa framework tambahan.
 Gambar simbol, geser (drag & drop), sambungkan dengan kabel, putar, simpan ke JSON,
-lalu **Run** untuk simulasi: klik saklar ON/OFF dan lihat LED menyala.
+lalu **Run** untuk simulasi: klik saklar ON/OFF, lihat LED menyala, ukur tegangan/arus,
+dan **visualisasikan bentuk gelombang AC** lewat probe osiloskop.
 
 ![Platform](https://img.shields.io/badge/platform-Windows-blue)
 ![Language](https://img.shields.io/badge/language-C-orange)
@@ -17,45 +18,87 @@ lalu **Run** untuk simulasi: klik saklar ON/OFF dan lihat LED menyala.
 |---|---|
 | Drag & Drop | Klik badan simbol, tahan, geser. Snap ke grid 20px. Kabel ikut tertarik. |
 | Wiring antar pin | Tarik titik merah pin ke pin lain. Kabel siku + preview + highlight target. |
-| Rotate (R) | Pilih simbol lalu tekan `R`. 0 -> 90 -> 180 -> 270. Pin & kabel ikut sudut. |
-| Toolbar ikon | 18 tombol palet + 4 tombol aksi: Select, Blok, Wire, R, SW, BAT, AC, LED, GND, C, Q, D, CP, LDR, BZR, VM, Hapus — lalu Clear, Save, Open, Run/Stop. |
-| Komponen | Resistor, Saklar, Baterai, LED, Ground, Kapasitor, Transistor NPN, Dioda, Kapasitor Polar, LDR, Buzzer, Sumber AC, **Voltmeter**. |
-| **Analisis nodal (MNA-lite)** | Mesin simulasi menyelesaikan **KCL** (`G·V = I`) dengan Gauss elimination + partial pivoting untuk tiap LED: hitung `V_thevenin` & `R_thevenin`, lalu `I = (Vth − Vf) / Rth`. Akurat untuk topologi **seri / paralel / pembagi tegangan** (presisi ~1% pada kasus tipikal). |
-| Voltmeter | Mengukur **beda potensial (tegangan) antara dua titik** dalam rangkaian. Simbol lingkaran "V" dengan kutub (+)/(−); dipasang paralel; ideal (impedansi tak hingga) sehingga tidak mengubah rangkaian. Angka bacaan (mis. `9 V`) tampil di bawah simbol saat RUN dan di menu *Informasi & Hasil Hitung*. |
-| Nilai komponen | Tiap komponen punya value (Ohm/V/VAC/Vf/F). Edit via dialog: double-klik atau klik-kanan -> *Edit Nilai*. Parser mendukung `2.2k`, `100u`, `47uF`, `2.2e3`. |
-| Menu klik-kanan | Edit Nilai, Toggle saklar, Putar 90°, Duplikat, Informasi & Hasil Hitung (arus LED saat RUN), Hapus. Klik-kanan ganda = hapus. |
-| Save / Open JSON | Dialog Windows, format UTF-8, status saklar & nilai komponen (`"value"`) ikut tersimpan. |
-| Mode Run | Klik Run -> klik saklar ON/OFF -> LED menyala + kabel (+) merah + dioda forward (panah hijau) + deteksi korslet + hitung arus loop + angka bacaan voltmeter. |
-| Analisis arus | Pesan RUN menampilkan I, R_loop, dan V sumber. LED kelebihan arus (>20 mA) memicu peringatan; terlalu besar -> "LED MELEDAK". |
-| Shortcut | V/W/B, 0-9, L (LDR), U (Buzzer), M (Voltmeter), R, F5, Ctrl+S/O/A/D, Del, Esc. |
-| Status bar | Pesan terakhir + counter komponen & kabel. |
+| Rotate (R) | Pilih simbol lalu tekan `R`. 0 → 90 → 180 → 270. Pin & kabel ikut sudut. |
+| **Multi-select / blok** | Drag di area kosong untuk memblok banyak komponen; drag grup terpilih untuk memindahkan satu kesatuan; `Ctrl+D` menduplikat blok + kabel internalnya. |
+| **Zoom & Pan canvas** | Wheel = zoom di kursor, `Ctrl++`/`Ctrl+-` = zoom di tengah, `Ctrl+0` = zoom-fit, **mouse tengah + drag** = pan. Rentang 25 %–800 %. Status bar menampilkan `zoom XX%`. |
+| Toolbar ikon | **20 tombol palet** + 4 tombol aksi: Select, Blok, Wire, R, SW, BAT, AC, LED, GND, C, Q, D, CP, LDR, BZR, VM, AM, OSC, L, Hapus — lalu Clear, Save, Open, Run/Stop. |
+| Komponen | Resistor, Saklar, Baterai, Sumber AC, LED, Ground, Kapasitor, Transistor NPN, Dioda, Kapasitor Polar, LDR, Buzzer, Voltmeter, Ammeter, **Probe Osiloskop**, **Induktor**. |
+| **Analisis nodal (MNA-lite)** | Mesin simulasi menyelesaikan **KCL** (`G·V = I`) dengan Gauss elimination + partial pivoting. LED dihitung dengan V_thevenin & R_thevenin lalu `I = (Vth − Vf) / Rth`. Akurat untuk seri/paralel/pembagi tegangan (~1 % pada kasus tipikal). |
+| **Voltmeter** | Ukur beda potensial dua titik, dipasang **paralel**, ideal (impedansi tak hingga → tidak mengubah rangkaian). Angka bacaan tampil di bawah simbol saat RUN. |
+| **Ammeter** | Ukur arus lewat jalur, dipasang **seri**, shunt internal 0.1 Ω. Angka bacaan `A` tampil di bawah simbol saat RUN. |
+| **Probe Osiloskop** | Lihat **bentuk gelombang AC terhadap waktu**. Maksimal 4 kanal, warna merah/hijau/biru/oranye. Panel terpisah via **View → Oscilloscope (F12)**; refresh otomatis 5 Hz. Lihat **§ Osiloskop** di bawah. |
+| **Induktor** | Simbol 4 lengkung. **DC**: short ideal (union seperti saklar-ON). **AC**: reaktansi `XL = 2πfL`. Default 100 µH. |
+| **Bentuk gelombang AC** | Klik-kanan Sumber AC → *Bentuk Gelombang* → Sinus / Kotak / Segitiga. Sumber AC default 220 VAC RMS @ 50 Hz; peak = √2 · Vrms. |
+| **Splash screen** | Split view: brand & judul di kiri, grid 12 simbol komponen di kanan, progress bar di bawah. |
+| Nilai komponen | Edit via dialog: double-klik atau klik-kanan → *Edit Nilai*. Parser mendukung `2.2k`, `100u`, `47uF`, `2.2e3`. Induktor pakai satuan `H`. |
+| **Save / Open JSON** | UTF-8, format stabil. **LDR, Buzzer, Ammeter, Probe Osiloskop, Induktor** kini ikut tersimpan (termasuk `wave` untuk sumber AC dan status Terang/Gelap LDR). |
+| Mode Run | Klik Run → klik saklar ON/OFF → LED menyala + kabel (+) merah + dioda forward (panah hijau) + deteksi korslet + hitung arus loop + bacaan voltmeter/ammeter. |
+| **About dialog** | Menu **Bantu → Tentang Schematic Editor** menampilkan ringkasan fitur & versi. |
+| Shortcut | V/W/B, 0–9, J (Induktor), L (LDR), M (Voltmeter), I (Ammeter), P (OSC probe), R, F5, F12, Ctrl+S/O/A/D, Ctrl+/−/0, Del, Esc. |
+| Status bar | Pesan terakhir + counter komponen & kabel + zoom level. |
 
 ---
 
 ## Tampilan
 
 ```
-[Sel][Blk][Wir][ R ][ SW ][BAT ][AC  ][LED ][GND][ C  ][ Q  ][ D ][ CP ][LDR][BZR][ VM ][Hapus]
+[Sel][Blk][Wir][ R ][ SW ][BAT ][AC ][LED][GND][ C ][ Q ][ D ][ CP][LDR][BZR][ VM][ AM][OSC][ L ][Hapus]
      [Clear][Save][Open][Run]
-tool aktif | F5: run/stop   R: rotate   double-klik: edit nilai
-+--------------------------------------------------+
-|  (+)--[SW ON]--[ D ]--[LED nyala]--(-)           |
-|          (V)  <- voltmeter paralel, bacaan "9 V" |
-|        [ Rangkaian BENAR -- LED MENYALA ]        |
-+--------------------------------------------------+
-| RUN: saklar ON ...                5 komp, 6 kabel|
+tool aktif | F5: run/stop   R: rotate   Ctrl +/-/0: zoom   double-klik: edit nilai
++------------------------------------------------------------+
+|  (+)--[SW ON]--[ R ]--[LED nyala]--(-)                      |
+|         |   (V)  <- voltmeter paralel, bacaan "6.5 V"       |
+|         |   (AMMETER) <- ammeter seri, bacaan "31.8 mA"     |
+|         |   (OSC) <- probe osc di titik node, trace sinus   |
+|   [ Rangkaian BENAR -- LED MENYALA ]                        |
++------------------------------------------------------------+
+| RUN: saklar ON ...               9 komp, 8 kabel | zoom 150%|
 ```
 
-Warna saat Run: saklar ON = hijau (tuas datar), OFF = merah (tuas miring),
-LED menyala = oranye + glow, dioda menghantar = panah arah arus hijau,
-kabel (+) = merah tebal, angka bacaan voltmeter = hijau.
-Banner: hijau benar, kuning belum lengkap, merah korsleting.
+**Warna saat Run:**
+- Saklar ON = hijau (tuas datar), OFF = merah (tuas miring)
+- LED menyala = oranye + glow; **LED meledak** = merah tebal + label nilai merah
+- Dioda menghantar = panah arah arus hijau
+- Kabel (+) = merah tebal
+- Bacaan voltmeter & ammeter = hijau
+- Banner: hijau benar, kuning belum lengkap, merah korslet
+
+**Oscilloscope window** (View → Oscilloscope, F12):
+- Panel gelap dengan grid 10×8 + subdivision, sumbu tengah menyala hijau.
+- Trace tiap probe (maks 4) berwarna merah/hijau/biru/oranye.
+- Skala vertikal otomatis; horizontal 4 periode @ 50 Hz (= 80 ms).
+
+---
+
+## Osiloskop (Probe + Window)
+
+### Cara pakai cepat
+
+1. Klik ikon **OSC** di toolbar (atau tekan `P`), klik canvas untuk menaruh probe.
+2. Sambungkan **pin kiri** probe (sinyal / tip) ke titik yang ingin diukur, dan **pin kanan** (klip referensi) ke titik referensi (biasanya ground / netral).
+3. Tekan **F12** atau **View → Oscilloscope** → jendela oscilloscope terbuka.
+4. Trace muncul & auto-refresh ~5 Hz. Ubah rangkaian di canvas (saklar, waveform, nilai komponen) — trace ikut update.
+
+### Anatomi trace
+
+- Timebase tetap **80 ms** (4 periode @ 50 Hz) → 8 ms per division.
+- Skala vertikal **otomatis** — dipilih sebagai pangkat dua terkecil yang masih memuat semua trace.
+- Nilai yang ditampilkan: `V_probe(t) = V_dc + Σ_k  gain_k · V_ac_k(t)`
+  - `V_dc` = respon saat semua sumber AC dimatikan (hanya sumber DC).
+  - `gain_k` = V_probe saat sumber AC-ke-k diset 1 V (unit), sisanya 0.
+  - `V_ac_k(t)` = gelombang instan sumber AC (sinus / kotak / segitiga).
+- Cara ini murah dan **eksak** untuk rangkaian linear (superposisi), tanpa transient solver.
+
+### Batasan
+
+- Frekuensi tetap **50 Hz** (sama seperti model AC).
+- Hanya resistor & sumber AC yang dimodelkan dalam respon frekuensi. Kapasitor/induktor **ikut** karena diperlakukan sebagai edge reaktif (`Xc`, `XL`).
+- Semua sumber AC diasumsikan **sefasa**. Phase offset per-source belum ada.
 
 ---
 
 ## Build & Jalankan
 
-Struktur proyek memakai folder `include\` dan `src\` (lihat *Struktur Proyek*).
 Butuh **MinGW-w64 gcc** di PATH.
 
 ```bat
@@ -64,11 +107,11 @@ build.bat
 schematic_win.exe
 ```
 
-Isi `build.bat` (ringkas — lihat file untuk komentar lengkap):
+Isi `build.bat` (ringkas):
 
 ```bat
 gcc -O2 -Wall -mwindows -municode -DUNICODE -D_UNICODE -DSCHEMATIC_PRODUCTION=1 -Iinclude ^
-    src\main.c src\model.c src\fileio.c src\sim.c ^
+    src\main.c src\splash.c src\model.c src\fileio.c src\sim.c src\oscilloscope.c ^
     src\ui\draw.c src\ui\events.c ^
     src\ui\toolbar_menubar.c src\ui\toolbar_symbols.c ^
     src\ui\toolbar_actions.c src\ui\toolbar_palette.c ^
@@ -76,14 +119,17 @@ gcc -O2 -Wall -mwindows -municode -DUNICODE -D_UNICODE -DSCHEMATIC_PRODUCTION=1 
     src\komponen\komponen_battery.c src\komponen\komponen_led.c ^
     src\komponen\komponen_ground.c src\komponen\komponen_capacitor.c ^
     src\komponen\transistor.c src\komponen\komponen_diode.c ^
+    src\komponen\komponen_ammeter.c src\komponen\komponen_oscprobe.c ^
+    src\komponen\komponen_inductor.c ^
     src\komponen\komponen_capolar.c src\komponen\komponen_ldr.c ^
     src\komponen\komponen_buzzer.c src\komponen\komponen_acsource.c ^
     src\komponen\komponen_voltmeter.c ^
     -o schematic_win.exe -lgdi32 -luser32 -lcomdlg32 -lm
 ```
 
-Build suite uji dilakukan terpisah oleh `run_tests.sh` (`-DSCHEMATIC_TEST_STUBS`);
-folder `tests\` tidak pernah ikut ke executable produksi.
+> ⚠️ **Toolbar overflow**: dengan 20 tombol palet + 4 aksi (24 total, ~1250 px), pada jendela default 1100 px tombol **Save / Open / Run** mungkin **terpotong** di kanan. Workaround cepat: gunakan shortcut **F5** (Run), **Ctrl+S** (Save), **Ctrl+O** (Open), atau perlebar/maximize jendela.
+
+Build suite uji dibangun terpisah oleh `run_tests.sh` (`-DSCHEMATIC_TEST_STUBS`); folder `tests\` tidak pernah ikut ke executable produksi.
 
 ---
 
@@ -93,18 +139,14 @@ folder `tests\` tidak pernah ikut ke executable produksi.
 
 1. Klik ikon komponen (mis. BAT), lalu klik canvas untuk menaruh.
 2. Klik ikon Wire, tekan-tahan titik merah satu pin, tarik ke pin lain, lepas.
-   Trik cepat: di mode Select langsung tarik pin -> pin.
-3. Geser: mode Select -> tekan badan simbol -> tahan -> geser -> lepas.
-4. Putar: klik simbol sampai kotak biru muncul -> tekan `R`.
-5. Atur nilai: double-klik simbol (atau klik-kanan -> *Edit Nilai*...) —
-   mis. resistor `2.2k`, baterai `9`, sumber AC `220` (VAC RMS), kapasitor `100u`.
-6. Klik-kanan simbol: menu berisi Edit Nilai, Toggle saklar, Putar 90°,
-   Duplikat, Informasi & Hasil Hitung, Hapus. Klik-kanan dua kali = hapus cepat.
-7. Hapus: mode Hapus + klik, atau pilih + `Del`.
+   Trik cepat: di mode Select langsung tarik pin → pin.
+3. Geser: mode Select → tekan badan simbol → tahan → geser → lepas.
+4. Putar: klik simbol sampai kotak putus-putus muncul → tekan `R`.
+5. Atur nilai: double-klik simbol (atau klik-kanan → *Edit Nilai*…)
+6. Klik-kanan simbol: menu konteks (Edit Nilai, Toggle saklar, Putar, Duplikat, **Bentuk Gelombang** untuk AC, **Buka Osiloskop** untuk probe, Info, Hapus).
+7. Zoom / pan: **wheel** = zoom di kursor; **Ctrl++/−** = zoom di tengah; **Ctrl+0** = zoom fit; **mouse tengah + drag** = pan.
 
-### 2. Contoh rangkaian LED menyala
-
-Sambungkan loop tertutup:
+### 2. Rangkaian LED menyala
 
 ```
 BAT pin0 (+) -- kabel -- SW -- kabel -- R -- kabel -- LED pin0 (anoda)
@@ -112,79 +154,102 @@ BAT pin0 (+) -- kabel -- SW -- kabel -- R -- kabel -- LED pin0 (anoda)
 BAT pin1 (-) -- kabel ---------------------------- LED pin1 (katoda)
 ```
 
-Aturan pin: baterai kiri = (+) plat panjang, kanan = (-) plat pendek.
-LED kiri = anoda, kanan = katoda. Ground = 1 pin, dihitung (-).
-Dioda kiri = anoda (A), kanan = katoda (K) — menghantar searah A->K.
-Kapasitor polar kiri = kutub (+), kanan = kutub (-); memblokir DC seperti kapasitor biasa.
+Aturan pin:
+- Baterai: kiri = (+), kanan = (−).
+- Sumber AC: pin0 = Live, pin1 = Netral.
+- LED: kiri = anoda, kanan = katoda.
+- Dioda: kiri = anoda (A), kanan = katoda (K).
+- Kapasitor polar: kiri = (+), kanan = (−).
+- Ground: 1 pin, dihitung (−).
+- **Transistor NPN**: pin0 = Kolektor (kanan-atas), pin1 = Emitor (kanan-bawah), pin2 = Basis (kiri-tengah). **Simbol NPN standar**: base di kiri, C & E di kanan, panah keluar di emitor.
 
-### 2b. Contoh proteksi polaritas dengan dioda
+### 2b. Proteksi polaritas dengan dioda
 
 ```
-BAT (+) -- kabel -- D (A->K) -- kabel -- LED pin0 (anoda)
-BAT (-) -- kabel -------------------------- LED pin1 (katoda)
+BAT (+) -- kabel -- D (A→K) -- kabel -- LED pin0
+BAT (-) -- kabel -------------------------- LED pin1
 ```
 
-Saat RUN, dioda yang menghantar ditandai panah arah arus hijau.
-Jika dioda terbalik (reverse-bias), rangkaian terbuka -> LED tetap mati.
+Saat RUN, dioda yang forward ditandai panah arah arus hijau. Jika reverse-bias, loop terbuka.
 
-### 2c. Contoh sumber AC
+### 2c. Sumber AC + kapasitor
 
 Ganti BAT dengan ikon **AC** (shortcut `0`). Sumber AC: pin0 = Live, pin1 = Netral,
-nilai default 220 VAC RMS @ 50 Hz.
+default 220 VAC RMS @ 50 Hz.
 
 ```
-AC Live -- kabel -- SW -- kabel -- R -- kabel -- LED anoda
+AC Live   -- kabel -- SW -- kabel -- R -- kabel -- LED anoda
 AC Netral -- kabel ----------------------------- LED katoda
 ```
 
-Jika rangkaian hanya disuplai sumber AC (tanpa baterai DC), simulator masuk
-*mode AC*: kapasitor & kapasitor polar dianggap menghantar dengan **reaktansi
-`Xc = 1/(2πfC)`** (bukan short ideal), sehingga arus AC terhitung realistis
-(mis. C = 100 nF @ 50 Hz → Xc ≈ 31.8 kΩ).
+Jika hanya sumber AC (tanpa baterai), simulator masuk **mode AC**:
+- Kapasitor → reaktansi `Xc = 1/(2πfC)` (bukan short).
+- **Induktor → reaktansi `XL = 2πfL`** (bukan short).
 
-### 2d. Contoh resistor paralel
+### 2d. Bentuk gelombang AC (sinus / kotak / segitiga)
 
-Analisis nodal menangani **paralel** dengan benar:
+Klik-kanan Sumber AC → **Bentuk Gelombang** → pilih Sinus / Kotak / Segitiga.
+Bentuk gelombang ini hanya memengaruhi **probe osiloskop** (simulasi DC & LED tetap
+memakai pendekatan RMS).
 
-```
-BAT (+) --+-- R1=220Ω --+-- LED anoda
-          |              |
-          +-- R2=220Ω --+         LED katoda -- BAT (-)
-```
+### 2e. Voltmeter
 
-R_eq = 110 Ω → I ≈ 63.6 mA (MELEDAK). Bukan 31.8 mA seperti bila hanya R1
-yang dihitung — inilah peningkatan presisi dibanding versi path-based lama.
-
-### 2e. Mengukur tegangan dengan Voltmeter
-
-Voltmeter dipasang **paralel** — tidak memotong kabel, cukup tempelkan kedua
-ujungnya ke dua titik yang ingin diukur beda potensialnya:
+Voltmeter dipasang **paralel** — tempelkan kedua ujungnya di dua titik yang
+ingin diukur beda potensialnya:
 
 ```
 BAT (+) --+-- kabel -- R --+-- kabel -- LED anoda
           |                |
-         (V) pin0 (+)   (V) pin1 (-)     <- voltmeter mengukur V pada R
+         (V) pin0 (+)   (V) pin1 (−)     <- voltmeter mengukur V pada R
           |                |
 BAT (-) --+----------------+-- kabel -- LED katoda
 ```
 
-1. Klik ikon **VM** di palet (atau tekan `M`), lalu klik canvas untuk menaruh.
-2. Tarik kabel: pin **(+)** voltmeter ke titik A, pin **(−)** ke titik B.
-3. Tekan **Run** (`F5`) — angka bacaan (mis. `4.5 V`, warna hijau) tampil di bawah
-   simbol. Klik-kanan voltmeter -> *Informasi & Hasil Hitung*
-   juga menampilkan bacaan tersebut.
+- Klik **VM** (`M`), taruh, tarik kabel dari pin (+) ke titik A & pin (−) ke titik B.
+- Tekan **F5** → bacaan (mis. `4.5 V`, hijau) tampil di bawah simbol.
+- Voltmeter ideal (impedansi tak hingga → tidak menghantar arus).
+- Bacaan = `V(pin+) − V(pin−)`. Kutub terbalik → negatif + `(kutub terbalik)` di info.
+- Salah satu ujung mengambang → `-`.
 
-Catatan perilaku:
-- Voltmeter ideal: impedansi tak hingga -> **tidak menghantar arus**, jadi
-  memasangnya tidak mengubah jalannya rangkaian.
-- Bacaan diambil langsung dari **vektor potensial hasil analisis nodal** —
-  akurat untuk pembagi tegangan, drop pada resistor, dan beda potensial antar
-  node apa pun.
-- Bacaan = potensial pin(+) − potensial pin(−). Kutub terbalik -> nilai negatif
-  + keterangan `(kutub terbalik)` di menu info.
-- Salah satu ujung mengambang (tidak terhubung) -> tampilan `-`.
-- Nilai `v` voltmeter tidak dipakai (`comp_has_value(COMP_VOLTMETER) = 0`),
-  sehingga dialog *Edit Nilai* tidak tersedia untuk alat ukur ini.
+### 2f. Ammeter
+
+Ammeter dipasang **seri** — potong jalur dan masukkan ammeter di antaranya:
+
+```
+BAT (+) -- (AM) pin0 (+) -- R -- LED -- BAT (−)
+              └─ pin1 (−) keluar jalur
+```
+
+- Klik **AM** (`I`), taruh di antara dua komponen seri.
+- Tekan **F5** → bacaan (mis. `31.8 mA`, hijau) tampil di bawah simbol.
+- Shunt internal 0.1 Ω — drop kecil (< 5 mV pada 30 mA), tidak mengubah arus
+  secara signifikan tapi cukup untuk menghitung `I = ΔV / 0.1` dengan stabil.
+
+### 2g. Probe osiloskop
+
+```
+AC Live   -- R (220 Ω) --+-- [OSC pin0]
+                         |
+                    node yang ingin diukur
+                         |
+AC Netral --+------------+-- [OSC pin1]
+```
+
+- Klik **OSC** (`P`), taruh, tarik kabel pin kiri ke titik ukur, pin kanan ke
+  referensi (biasanya netral/ground).
+- Tekan **F12** atau **View → Oscilloscope** → jendela oscilloscope terbuka.
+- Trace muncul otomatis (refresh 5 Hz). Klik-kanan AC source → ubah waveform
+  untuk melihat respons yang berbeda.
+
+### 2h. Induktor
+
+- Klik **L** (`J`), taruh di jalur.
+- **DC (baterai)**: induktor short ideal. Arus mengalir seperti tanpa komponen.
+- **AC (sumber AC)**: reaktansi `XL = 2π · 50 · L` Ω.
+  - `L = 100 µH` → `XL ≈ 0.03 Ω` (hampir short).
+  - `L = 100 mH` → `XL ≈ 31 Ω`.
+  - `L = 1 H` → `XL ≈ 314 Ω` (LED meredup/hampir mati).
+- Double-klik untuk edit nilai (`100u`, `10m`, `1`, dst).
 
 ### 3. Run simulasi
 
@@ -193,14 +258,16 @@ Catatan perilaku:
 3. Baca banner tengah + status bar bawah.
 4. Klik **Stop** (atau `F5`) untuk kembali edit.
 
-Saat RUN dikunci: tambah/geser/putar/hapus, tarik kabel baru, ganti tool.
+Saat RUN dikunci: tambah/geser/putar/hapus, tarik kabel baru, ganti tool, dan zoom/pan juga dikunci.
 
 ---
+
 ## Shortcut
 
 | Tombol | Aksi |
 |---|---|
 | `V` | Tool Select / Geser |
+| `B` | Tool Blok / Multi-select |
 | `W` | Tool Kabel / Wire |
 | `1` `2` `3` `4` `5` | Resistor, Switch, Battery, LED, Ground |
 | `6` `7` `8` `9` | Kapasitor, Transistor NPN, Dioda, Kapasitor Polar |
@@ -208,56 +275,75 @@ Saat RUN dikunci: tambah/geser/putar/hapus, tarik kabel baru, ganti tool.
 | `L` | LDR / Fotoresistor |
 | `U` | Buzzer |
 | `M` | Voltmeter |
-| `B` | Blok / Multi-select |
+| `I` | Ammeter |
+| `P` | Probe Osiloskop |
+| `J` | Induktor |
 | `Ctrl+A` | Pilih semua komponen |
 | `Ctrl+D` | Duplikat seleksi/blok |
-| `R` | Rotate 90 CW (dipilih / sedang di-drag) |
-| `F5` / `F9` | Run / Stop simulasi |
+| `R` | Rotate 90° CW (dipilih / sedang di-drag) |
+| `F5` | Run / Stop simulasi |
+| `F9` | Hitung ulang simulasi (Run) |
+| `F12` | Buka / fokus jendela **Oscilloscope** |
+| `Ctrl+` `+` / `Ctrl+` `−` | Zoom in / out di tengah canvas |
+| `Ctrl+0` | Zoom fit (semua komponen muat) |
+| **Mouse wheel** | Zoom di kursor |
+| **Mouse tengah + drag** | Pan canvas |
 | `Ctrl+S` | Save JSON |
 | `Ctrl+O` | Open JSON |
 | `Del` / `Backspace` | Hapus yang dipilih |
 | Double-klik | Edit nilai komponen |
-| Klik-kanan | Menu konteks (nilai, toggle, putar, duplikat, info, hapus) |
-| Esc | Batal seleksi / wiring |
+| Klik-kanan | Menu konteks (nilai, toggle, putar, duplikat, waveform, buka osc, info, hapus) |
+| `Esc` | Batal seleksi / wiring |
 
 ---
 
 ## Format JSON
 
-UTF-8, contoh:
+UTF-8, contoh (rangkaian RC–LED dengan probe):
 
 ```json
 {
   "app": "schematic-c",
   "version": 1,
   "components": [
-    {"id": 1, "type": "battery", "x": 120, "y": 160, "rot": 0, "on": 0, "value": 9},
-    {"id": 2, "type": "switch", "x": 220, "y": 160, "rot": 0, "on": 1, "value": 0},
-    {"id": 3, "type": "led", "x": 340, "y": 160, "rot": 0, "on": 0, "value": 2.0}
+    {"id": 1, "type": "acsource", "x": 120, "y": 160, "rot": 0, "on": 0, "wave": 0, "value": 220},
+    {"id": 2, "type": "resistor", "x": 220, "y": 160, "rot": 0, "on": 0, "wave": 0, "value": 220},
+    {"id": 3, "type": "inductor", "x": 320, "y": 160, "rot": 0, "on": 0, "wave": 0, "value": 0.1},
+    {"id": 4, "type": "led",      "x": 420, "y": 160, "rot": 0, "on": 0, "wave": 0, "value": 2.0},
+    {"id": 5, "type": "oscprobe", "x": 320, "y": 240, "rot": 0, "on": 0, "wave": 0, "value": 0},
+    {"id": 6, "type": "ammeter",  "x": 370, "y": 160, "rot": 0, "on": 0, "wave": 0, "value": 0},
+    {"id": 7, "type": "ldr",      "x": 220, "y": 260, "rot": 0, "on": 1, "wave": 0, "value": 1000000},
+    {"id": 8, "type": "buzzer",   "x": 420, "y": 260, "rot": 0, "on": 0, "wave": 0, "value": 1000}
   ],
   "wires": [
     {"a": {"id": 1, "pin": 0}, "b": {"id": 2, "pin": 0}},
-    {"a": {"id": 2, "pin": 1}, "b": {"id": 3, "pin": 0}}
+    {"a": {"id": 2, "pin": 1}, "b": {"id": 3, "pin": 0}},
+    {"a": {"id": 3, "pin": 1}, "b": {"id": 4, "pin": 0}}
   ]
 }
 ```
 
-- `type`: `resistor | switch | battery | led | ground | capacitor | transistor | diode | capolar | acsource | voltmeter`
-  (alias juga terbaca: `R/SW/BAT/LED/GND/CAP/TR`, `Diode/D`,
-  `Capolar/capacitor_polar/electrolytic/CP`,
-  `ACSource/ac_source/ac/AC/SumberAC`,
-  `Voltmeter/VM`).
-  Catatan: tipe `ldr` & `buzzer` **belum** didukung JSON — komponen bertipe itu
-  dibuang saat save/load (lihat TODO `NOTE(komponen-ldr-buzzer)` di fileio.c).
-- `value`: nilai komponen dalam satuan SI — resistor = Ohm, battery = V,
-  acsource = VAC RMS, LED/dioda = Vf, kapasitor/capolar = Farad.
-  Key lama `"v"` juga terbaca. Voltmeter tidak memakai `value` (selalu 0).
-- `rot`: 0..3 (= 0/90/180/270). `on`: 0/1 khusus switch.
-- `pin`: komponen 2-pin -> 0 kiri, 1 kanan (mengikuti rotasi); ground -> 0;
-  transistor NPN (3-pin) -> 0 kolektor, 1 emitor, 2 basis;
-  acsource -> 0 Live, 1 Netral.
-- Batas: 256 komponen, 512 kabel, file maks 4 MB.
-  Kabel yang id-nya tidak ada dibuang saat load.
+- **`type`**: `resistor | switch | battery | led | ground | capacitor | transistor | diode | capolar | acsource | voltmeter | ammeter | ldr | buzzer | oscprobe | inductor`.
+  - Alias juga diterima: `R/SW/BAT/LED/GND/CAP/TR`, `Diode/D`, `Capolar/capacitor_polar/electrolytic/CP`,
+    `ACSource/ac_source/ac/AC/SumberAC`, `Voltmeter/VM`, `Ammeter/AM`,
+    `LDR/photoresistor`, `Buzzer/BZR`, `OSCProbe/OSC`, `Inductor/IND/L`.
+- **`value`** (satuan SI):
+  - resistor = Ω, battery = V, acsource = VAC RMS, LED/dioda = Vf (V),
+    kapasitor/capolar = F, **ldr = R_gelap (Ω)**, **buzzer = frekuensi (Hz)**,
+    **inductor = H**.
+  - Voltmeter & Ammeter tidak memakai `value` (selalu 0).
+  - Key lama `"v"` juga terbaca.
+- **`wave`** (khusus `acsource`): 0 = sinus (default), 1 = kotak, 2 = segitiga.
+  Diabaikan untuk tipe lain.
+- **`on`**: 0/1.
+  - Switch: 1 = tertutup, 0 = terbuka.
+  - **LDR**: 1 = TERANG (R efektif ~1 % dari nilai gelap), 0 = GELAP.
+  - Tipe lain: diabaikan.
+- **`rot`**: 0..3 (= 0/90/180/270).
+- **`pin`**: 2-pin → 0 = kiri, 1 = kanan (mengikuti rotasi); ground → 0;
+  transistor NPN → 0 = Kolektor, 1 = Emitor, 2 = Basis;
+  acsource → 0 = Live, 1 = Netral.
+- Batas: 256 komponen, 512 kabel, file maks 4 MB. Kabel yang id-nya tidak ada dibuang saat load.
 
 ---
 
@@ -268,58 +354,53 @@ lalu **analisis nodal (MNA-lite)** untuk menyelesaikan tegangan/arus.
 
 ### Tahap 1 — Topologi (union-find)
 1. Kabel menyatukan pin-pin menjadi satu net (root).
-2. **Penghantar IDEAL 0 Ω** yang di-union hanya: saklar-ON, dioda forward,
-   transistor-ON, kapasitor-mode-AC-murni. **Resistor, LDR, buzzer TIDAK
-   di-union** — mereka tetap jadi *edge* berbobot R (kunci presisi).
-3. Net (+): semua pin0 baterai + pin0 (Live) sumber AC.
-   Net (−): pin1 baterai + pin1 (Netral) sumber AC + pin ground.
+2. **Penghantar IDEAL 0 Ω** yang di-union hanya: saklar-ON, **induktor saat mode DC**, dioda forward, transistor-ON.
+   - Resistor, LDR, buzzer, ammeter **tidak** di-union — tetap edge berbobot R.
+   - Kapasitor / induktor dalam mode AC juga tidak di-union — jadi edge reaktif.
+3. Net (+): semua pin0 baterai + pin0 (Live) sumber AC. Net (−): pin1 sumber + pin ground.
 
 ### Tahap 2 — Analisis nodal
-4. Bangun matriks konduktansi `G` dan vektor arus `I` dari semua edge
-   resistif (R, LDR, buzzer, kapasitor-AC dengan `Xc = 1/(2πfC)`).
-5. **Sumber tegangan** → node dengan V **tetap** (baris constraint identitas),
-   bukan MNA penuh. Propagasi rantai sumber seri otomatis.
-6. Solve `G·V = I` dengan **Gauss elimination + partial pivoting**.
-   Regularisasi `G_REG = 1e-12` mencegah matriks singular untuk node
-   mengambang.
+4. Matriks konduktansi `G` dibangun dari semua edge resistif:
+   - Resistor → `R = c->v`
+   - LDR → `R_gelap × 1 %` saat Terang, atau `R_gelap` saat Gelap
+   - Buzzer → `R = 100 Ω` (tipikal)
+   - Ammeter → `R = 0.1 Ω`
+   - Kapasitor (AC) → `Xc = 1/(2πfC)`
+   - Induktor (AC) → `XL = 2πfL`
+5. Sumber tegangan → node dengan V **tetap** (baris constraint identitas).
+6. Solve `G·V = I` dengan **Gauss + partial pivoting**. Regularisasi `1e-12` cegah singular.
 
-### Tahap 3 — Perhitungan LED (per LED, independen)
-7. Untuk tiap LED:
-   - **Vth** = V(anoda) − V(katoda) dari solve global (LED lain dianggap OPEN).
-   - **Rth** = semua sumber di-short, injeksi +1 A di anoda & −1 A di katoda,
-     solve ulang → `Rth = V(anoda) − V(katoda)`.
-   - **I_LED** = `(Vth − Vf) / Rth` (nol bila Vth ≤ Vf).
-8. Nasib LED:
-   - `Rth ≈ 0` dan `Vth > Vf` → **MELEDAK** (short nyata).
-   - `I > 5 × If_max (100 mA)` → **MELEDAK**.
-   - `If_max < I ≤ 5 × If_max` → **overcurrent** (peringatan).
-   - `I ≤ If_max` → **AMAN**.
-   Toleransi relatif 1e-6 menjaga nilai ideal (mis. `(9−2)/350 = 20.000 mA`)
-   selalu dinyatakan AMAN.
+### Tahap 3 — Perhitungan LED
+7. Per LED: hitung `Vth` (V anoda − V katoda dari solve global) dan `Rth` (semua sumber di-short, injeksi 1 A, solve ulang). `I = (Vth − Vf) / Rth`.
+8. Klasifikasi:
+   - `Rth ≈ 0` & `Vth > Vf` → **MELEDAK**.
+   - `I > 100 mA` → **MELEDAK**.
+   - `20 mA < I ≤ 100 mA` → **overcurrent** (peringatan).
+   - `I ≤ 20 mA` → **AMAN**.
 
 ### Tahap 4 — Periferal
-9. Korsleting: (+) dan (−) satu root (termasuk lewat dioda forward).
-10. **Buzzer** ON bila `|V(pin0) − V(pin1)| > 1 V` (langsung dari solve nodal),
-    atau bila seri/paralel dengan LED yang menyala.
-11. **Voltmeter** ideal: kedua pin tidak pernah disatukan. Bacaan diambil
-    langsung dari `V(pin0) − V(pin1)` hasil solve nodal — akurat untuk
-    pembagi tegangan, drop antar node, dsb. Ujung mengambang → `-1` (UI `-`);
-    kutub terbalik → nilai negatif.
-12. Kabel hot: net yang memuat (+) sumber → merah tebal.
+9. Korsleting: (+) & (−) satu root (termasuk lewat dioda forward).
+10. **Buzzer** ON bila `|V(pin0) − V(pin1)| > 1 V`, atau seri/paralel dengan LED yang menyala.
+11. **Voltmeter** ideal → baca `V(pin0) − V(pin1)`. Kedua pin tidak pernah di-union.
+12. **Ammeter** → baca `|V(pin0) − V(pin1)| / 0.1`.
+13. **Probe OSC** → baca `V_dc + Σ gain_k · V_ac_k(t)` via superposisi (dihitung lazy setelah `sim_recompute`).
+14. Kabel hot: net yang memuat (+) sumber → merah tebal.
+
+### Bentuk gelombang AC
+- Peak `Vpk = √2 · Vrms`.
+- `WAVE_SINE` → `Vpk · sin(2πft)`.
+- `WAVE_SQUARE` → `+Vpk` di paruh periode positif, `−Vpk` di negatif.
+- `WAVE_TRIANGLE` → naik linear 0..Vpk..0..−Vpk dalam satu periode.
 
 ### Akurasi
-- **Seri, paralel, campuran seri-paralel, pembagi tegangan**: presisi ~1%
-  (batas praktis dari `%.4g` di pesan).
-- **Model LED**: Vf konstan (bukan `Vf0 + Rs·I`); untuk arus 5–30 mA error
-  Vf ±5% masih bisa terjadi di dunia nyata, namun klasifikasi aman/meledak
-  berbasis datasheet (20 mA) tetap konservatif.
-- **Transistor**: masih biner (ON/OFF berdasarkan bias basis-emitor), belum
-  model β/Ib/Ic.
-- **Dioda**: ideal satu arah, Vf = `c->v` (default 0.7 V) — belum
-  Shockley-lite.
+- **Seri, paralel, campuran, pembagi tegangan**: ~1 % (batas praktis `%.4g`).
+- **Model LED**: Vf konstan.
+- **Transistor**: biner (ON/OFF berdasarkan bias basis-emitor), belum model β.
+- **Dioda**: ideal satu arah, Vf = `c->v` (default 0.7 V).
+- **Induktor**: DC = short ideal, AC = XL linier.
+- **Probe OSC**: eksak via superposisi (linear).
 
 Pesan hasil:
-
 - `Belum ada sumber (baterai/AC) — LED tidak bisa menyala.`
 - `KORSLETING! (+) tersambung langsung ke (-).`
 - `BAHAYA! LED MELEDAK — arus ... melebihi batas 20 mA. Tambah/perbesar resistor seri!`
@@ -337,44 +418,50 @@ schematic-c/
   include/
     schematic.h        konstanta, struct, API semua modul (enum tipe komponen & tool)
   src/
-    main.c             WndProc, toolbar_click, WM_PAINT, wWinMain
-    model.c            state, pin/rotasi/hit-test, add/remove/wire, nilai komponen
-                       (parser/formatter/dialog edit value), palet tombol toolbar
-    fileio.c           save/load JSON + dialog + status
-    sim.c              analisis nodal (MNA-lite, Gauss solver) + union-find untuk
-                       penghantar ideal + perhitungan LED (Vth/Rth) + model Xc
-                       kapasitor AC + voltmeter + buzzer + hot-wire
+    main.c             WndProc, toolbar_click, WM_PAINT (zoom/pan, banner, status), wWinMain
+    splash.c           splash split-view 720×400 (brand kiri, 12 simbol kanan)
+    model.c            state, pin/rotasi/hit-test, add/remove/wire, nilai komponen,
+                       parser/formatter/dialog edit value, zoom & pan API, palet tombol
+    fileio.c           save/load JSON + dialog + status (termasuk ldr/buzzer/oscprobe/inductor/ammeter)
+    sim.c              analisis nodal (MNA + Gauss) + union-find + perhitungan LED (Vth/Rth)
+                       + Xc kapasitor + XL induktor + voltmeter + ammeter + buzzer
+                       + hot-wire + probe osiloskop (sim_ac_voltage, sim_probe_voltage)
+    oscilloscope.c     jendela oscilloscope: 4 kanal, refresh 5 Hz, auto skala
     ui/
-      draw.c           dispatcher simbol + utilitas rotasi (with_rotation), label nilai,
-                       pin, kabel hot/preview, canvas double-buffer
+      draw.c           dispatcher simbol + utilitas rotasi (with_rotation, komposisi zoom)
+                       + label nilai + pin + kabel hot/preview + overlay seleksi + marquee
       events.c         mouse (drag/wiring/toggle/double-klik/klik-kanan) +
-                       keyboard (0-9, R, F5, Ctrl+S/O, Del, Esc) + menu konteks
-      toolbar_menubar.c  menu File/Edit/View/Simulasi/Bantu + popup + aksi
-      toolbar_symbols.c  ikon mini tiap tool + shortname R/SW/BAT/AC/LED/...
+                       keyboard (0-9, J, I, P, L, M, U, R, F5, F12, Ctrl+S/O/A/D,
+                                 Ctrl +/−/0, Del, Esc) + menu konteks + waveform picker
+      toolbar_menubar.c  menu File/Edit/View/Simulasi/Bantu + popup + aksi + About dialog
+      toolbar_symbols.c  ikon mini tiap tool + shortname R/SW/BAT/AC/LED/…/OSC/L
       toolbar_actions.c  gambar tombol aksi Clear/Save/Open/Run
       toolbar_palette.c  hit-test + draw_toolbar strip tombol + status
     komponen/
-      komponen_resistor.c    simbol resistor (draw_k_resistor)
-      komponen_switch.c      simbol saklar + status ON/OFF (draw_k_switch)
-      komponen_battery.c     simbol baterai (draw_k_battery)
-      komponen_led.c         simbol LED + glow saat nyala (draw_k_led)
-      komponen_ground.c      simbol ground (draw_k_ground)
-      komponen_capacitor.c   simbol kapasitor non-polar (draw_k_capacitor)
-      transistor.c           simbol transistor NPN + panah emitor presisi (draw_k_transistor)
-      komponen_diode.c       simbol dioda + panah arah alir (draw_k_diode)
-      komponen_capolar.c     simbol kapasitor polar/elektrolit (draw_k_capolar)
-      komponen_ldr.c         simbol LDR/fotoresistor + panah cahaya (draw_k_ldr)
-      komponen_buzzer.c      simbol buzzer + label frekuensi (draw_k_buzzer)
-      komponen_acsource.c    simbol sumber AC ~ (draw_k_acsource)
+      komponen_resistor.c    simbol resistor
+      komponen_switch.c      simbol saklar + status ON/OFF
+      komponen_battery.c     simbol baterai
+      komponen_led.c         simbol LED + glow saat nyala
+      komponen_ground.c      simbol ground
+      komponen_capacitor.c   simbol kapasitor non-polar
+      transistor.c           simbol transistor NPN (B kiri, C & E kanan) + panah emitor
+      komponen_diode.c       simbol dioda + panah arah alir
+      komponen_capolar.c     simbol kapasitor polar/elektrolit
+      komponen_ldr.c         simbol LDR/fotoresistor + panah cahaya
+      komponen_buzzer.c      simbol buzzer + label frekuensi
+      komponen_acsource.c    simbol sumber AC ~ (gelombang sinus)
       komponen_voltmeter.c   simbol voltmeter (V) + angka bacaan tegangan saat RUN
-                             (draw_k_voltmeter, bacaan via sim_voltmeter_reading)
-  tests/                     suite uji (dibangun terpisah oleh run_tests.sh)
-  build.bat            script build MinGW
-  readme.md            file ini
+      komponen_ammeter.c     simbol ammeter (A) + angka bacaan arus saat RUN
+      komponen_oscprobe.c    simbol probe osiloskop (tip + badan + klip)
+      komponen_inductor.c    simbol induktor (4 lengkung)
+  tests/                 suite uji (dibangun terpisah oleh run_tests.sh)
+  build.bat              script build MinGW
+  readme.md              file ini
 ```
 
-Alur: events/toolbar -> model -> sim_recompute (union-find → analisis nodal → per-LED)
--> draw/main baca sim_wire_hot / sim_comp_lit / sim_message.
+Alur: `events/toolbar` → `model` → `sim_recompute` (union-find → analisis nodal → per-LED → periferal) → `draw/main` baca `sim_wire_hot` / `sim_comp_lit` / `sim_voltmeter_reading` / `sim_ammeter_reading` / `sim_probe_voltage` / `sim_message`.
+
+`oscilloscope.c` meng-query `sim_probe_voltage` tiap 200 ms untuk trace.
 
 ---
 
@@ -384,35 +471,46 @@ Alur: events/toolbar -> model -> sim_recompute (union-find → analisis nodal �
 |---|---|
 | `warning: 'V_UNKNOWN' redefined` | Bentrok dengan `oleauto.h`. Ganti nama jadi `SIM_V_UNKNOWN` di sim.c. |
 | `cannot open output file schematic_win.exe: Permission denied` | Aplikasi masih jalan. `taskkill /f /im schematic_win.exe` lalu rebuild. |
+| `undefined reference to osc_open / osc_refresh` | `oscilloscope.c` belum masuk `build.bat`. |
+| `undefined reference to sim_ammeter_connected` | Definisikan di `sim.c` + deklarasikan di `schematic.h`. |
+| `multiple definition of sim_recompute` | `model.c` dan `sim.c` tertukar isinya. Kembalikan `model.c` ke versi aslinya. |
 | `too few arguments to SetViewportOrgEx` | Pakai 4 argumen: `SetViewportOrgEx(hdc, x, y, NULL)`. |
-| `undefined reference to draw_toolbar` | File `toolbar_*.c` belum ikut compile. Pastikan build.bat memuat semua file. |
-| `invalid storage class for function` | Fungsi tertulis di dalam fungsi lain. Pisahkan ke level file. |
-| `continue/break not within loop` | Sisa parser di luar `while(1)`. Rapikan blok load JSON. |
+| `undefined reference to draw_toolbar` | File `toolbar_*.c` belum ikut compile. |
 | Tombol `R` tidak jalan | Klik canvas dulu agar fokus keyboard ke window. |
-| LED tidak menyala | Cek sumber (baterai/AC), loop tertutup, saklar ON (hijau), polaritas benar. |
-| Dioda tidak menyalakan beban | Cek arah panah segitiga: anoda (A) harus di sisi (+). Balik posisi/rotasi (`R`) jika terpasang reverse-bias. |
-| Pesan "LED MELEDAK" / overcurrent | Arus loop > 20 mA. Perbesar nilai resistor seri (double-klik resistor -> isi mis. `470`). |
-| Sumber AC seperti open circuit | Normal untuk kapasitor pada DC; pastikan tidak ada baterai DC di canvas agar simulator masuk mode AC (kapasitor tembus dengan Xc). |
-| Voltmeter selalu tampil "-" | Saat RUN, kedua pin harus terhubung ke net yang berbeda. Cek kabel: (+) ke titik A dan (-) ke titik B; satu ujung mengambang => bacaan "-". |
-| Bacaan voltmeter 0 V padahal ada sumber | Kedua ujung tersambung ke net yang sama (mis. keduanya di sisi (+)). Pindahkan salah satu ujung melewati komponen (resistor/LED/dioda). |
-| Hasil arus untuk paralel/seri janggal | Cek bahwa resistor tidak di-union sebagai short; hanya saklar-ON/dioda-fwd/transistor-ON/kapasitor-AC yang di-union. |
-| Save lalu Open menghilangkan LDR/Buzzer | Memang belum didukung JSON (lihat Format JSON); simpan rangkaian tanpa LDR/Buzzer dulu. Voltmeter sudah tersimpan dengan benar. |
+| LED tidak menyala | Cek sumber, loop tertutup, saklar ON (hijau), polaritas benar. |
+| Dioda tidak menyalakan beban | Arah panah segitiga: anoda (A) di sisi (+). Balik posisi/rotasi (`R`). |
+| Pesan "LED MELEDAK" / overcurrent | Arus loop > 20 mA. Perbesar resistor seri (double-klik resistor → `470`). |
+| Voltmeter selalu tampil "-" | Saat RUN, kedua pin harus terhubung ke net berbeda. Cek kabel (+)/(−). |
+| Bacaan voltmeter 0 V padahal ada sumber | Kedua ujung tersambung ke net yang sama. Pindahkan satu ujung melewati komponen. |
+| Ammeter selalu tampil "-" | Ammeter harus dipasang **seri** (pin0 → pin1 satu jalur). Kalau dipasang paralel, arus tidak terdefinisi. |
+| Trace osiloskop kosong | Pastikan minimal 1 komponen **OSC probe** ada di canvas, tekan F12, dan probe terkoneksi ke dua net berbeda. |
+| Trace osiloskop datar di angka tertentu | Tidak ada sumber AC → hanya DC. Tambahkan Sumber AC. Atau probe kedua ujungnya di net yang sama (beda = 0). |
+| Bentuk gelombang tidak berubah saat ganti waveform | Ubah waveform **saat RUN** atau ganti sambil oscilloscope terbuka — refresh 5 Hz otomatis. Kalau perlu refresh instan: tutup & buka lagi F12. |
+| Induktor seperti short di AC | `XL = 2πfL`; untuk `L = 100 µH` di 50 Hz memang ~0.03 Ω (mendekati short). Perbesar nilai (`1`, `10m`, dst). |
+| Rotasi simbol "pecah" (simbol keluar dari kotak seleksi / pin lepas) | Fitur zoom + rotasi harus dikomposisi di `with_rotation`. Pastikan `draw.c` memakai versi terbaru (yang menyimpan transform parent via `GetWorldTransform` dan memanggil `SetWorldTransform(&prev)` setelah `RestoreDC`). |
+| Tombol Save/Open/Run di toolbar tidak terlihat | Toolbar overflow. Gunakan `Ctrl+S`, `Ctrl+O`, `F5`, atau maximize jendela. |
+| Save lalu Open menghilangkan LDR/Buzzer | Sudah diperbaiki. Kalau masih hilang, cek versi `fileio.c` — pastikan `comp_type_name`/`comp_type_from_name` sudah mencakup `"ldr"` & `"buzzer"`. |
 
 ---
 
 ## Ide Pengembangan
 
-- **LED Vf = Vf0 + Rs·I** (piecewise-linear) untuk presisi > 1% pada arus besar
-- **Transistor model β/Ib/Ic** dengan Vbe ≈ 0.7 V, arus basis nyata
-- **Dioda Shockley-lite**: `I = Is·(exp(V/nVt) − 1)` untuk Vf yang menyesuaikan arus
-- Multi-select + copy/paste
-- Undo/redo (Ctrl+Z/Y)
-- Zoom & pan canvas
-- Export PNG / netlist SPICE
-- Autosave + contoh `examples/*.json`
-- Komponen baru: push button, saklar SPDT, PNP, amperemeter (ukur arus seri),
-  ohmmeter
-- Dukungan JSON untuk LDR & Buzzer (saat ini masih dibuang saat save/load)
+- **Transient solver** (`dI/dt`, `dV/dt`) — induktor & kapasitor akan punya bentuk gelombang RC/RL yang eksak, bukan hanya steady-state.
+- **Phase offset per-sumber AC** (mis. 0°, 90°, 180°) — memungkinkan simulasi rangkaian 3-fasa sederhana.
+- **Frekuensi per-sumber AC** (bukan hanya 50 Hz global).
+- **Skala timebase & voltase oscilloscope manual** (dropdown 1× / 10× / auto).
+- **Freeze / capture** trace oscilloscope (pause tombol di panel).
+- **Export PNG** dari canvas dan oscilloscope.
+- **Undo / redo** (`Ctrl+Z`/`Ctrl+Y`).
+- **Paste dari clipboard** (Ctrl+C / Ctrl+V) untuk blok terpilih.
+- **Model transistor β/Ib/Ic** dengan Vbe ≈ 0.7 V.
+- **Dioda Shockley-lite** (Vf menyesuaikan arus) untuk presisi > 1 %.
+- **LED Vf dinamis** (Vf0 + Rs·I).
+- **Net label** / port untuk multi-sheet.
+- **Autosave** + folder `examples/*.json`.
+- **Komponen tambahan**: push-button, saklar SPDT, MOSFET, PNP, IC op-amp sederhana, IC 555.
+- **Toolbar scrollable** atau multi-baris untuk mengatasi overflow (>20 tombol).
+- **Mini-map** canvas di pojok kanan-bawah untuk navigasi saat zoom besar.
 
 ---
 
@@ -421,18 +519,19 @@ Alur: events/toolbar -> model -> sim_recompute (union-find → analisis nodal �
 Bebas dipakai untuk belajar / tugas. Sebut sumber jika disebar ulang.
 
 
----
-
-## 📌 Ringkasan perubahan dari readme.md lama
+## Ringkasan perubahan dibanding readme.md lama
 
 | Bagian | Yang berubah |
-|--------|--------------|
-| **Fitur table** | Tambah baris **Analisis nodal (MNA-lite)** dengan penjelasan presisi 1%. |
-| **Analisis arus row** | Masih sama, tapi sekarang didukung solver yang akurat. |
-| **Bagian 2c (AC)** | Menyebut **Xc = 1/(2πfC)** eksplisit, bukan "dianggap tembus". |
-| **Bagian 2d (baru)** | Contoh resistor paralel sebagai showcase presisi. |
-| **Bagian 2e** | Voltmeter sekarang dijelaskan ambil bacaan dari **vektor potensial nodal**, bukan BFS head. |
-| **Aturan Simulasi** | Ditulis ulang total: 4 tahap (union-find → nodal → per-LED → periferal) dengan detail solver, Vth/Rth, dan batas akurasi. |
-| **Struktur Proyek** | Deskripsi `sim.c` diupdate (MNA + Gauss + Xc). |
-| **Troubleshooting** | Tambah 3 baris baru: `V_UNKNOWN`, `Permission denied`, dan "hasil paralel janggal". |
-| **Ide Pengembangan** | Hapus "Analisis AC penuh (reaktansi Xc)" (sudah diimplementasi), ganti dengan LED Vf dinamis, transistor β, dioda Shockley. |
+|---|---|
+| **Intro** | Menyebut probe osiloskop & pengukuran tegangan/arus. |
+| **Fitur table** | Baris baru: **Ammeter** (shunt 0.1 Ω), **Probe Osiloskop**, **Induktor**, **Zoom & Pan**, **Bentuk gelombang AC**, **Save/Open LDR & Buzzer** (kini didukung), **About dialog**, **Multi-select / blok** (dipertegas). Baris `Voltmeter` diperbarui. |
+| **Tampilan (ASCII)** | Baris toolbar 20 tombol; banner simulasi menampilkan bacaan voltmeter + ammeter + OSC probe; status bar `zoom XX%`. |
+| **§ Osiloskop (baru)** | Cara pakai probe, anatomi trace, formula superposisi, batasan. |
+| **Build** | `build.bat` menyertakan `oscilloscope.c` + 3 komponen baru (`komponen_oscprobe.c`, `komponen_inductor.c`, dan `komponen_ammeter.c` yang sebelumnya terlewat di daftar). **Warning toolbar overflow** ditambahkan. |
+| **Cara Pakai** | Bagian **2d/2e/2f/2g/2h** baru: waveform, voltmeter, ammeter, probe osiloskop, induktor. Langkah zoom/pan ditambahkan ke §1. |
+| **Shortcut** | `I`, `P`, `J`, `F12`, `Ctrl +/-/0`, mouse wheel, mouse tengah. |
+| **Format JSON** | `type` baru: `ldr | buzzer | oscprobe | inductor | ammeter` (yang lama sudah ada). Field `wave` (0/1/2) untuk `acsource`. Field `on` untuk LDR (Terang/Gelap). Contoh JSON baru. |
+| **Aturan Simulasi** | `comp_edge_r` menyebut ammeter, induktor (AC), kapasitor (AC). Tahap 4 mencakup ammeter & probe OSC. Subbagian **Bentuk gelombang AC** ditambahkan. |
+| **Struktur Proyek** | `oscilloscope.c`, `komponen_oscprobe.c`, `komponen_inductor.c`, `komponen_ammeter.c`. `with_rotation` menyebut komposisi zoom. |
+| **Troubleshooting** | Hapus "Save lalu Open menghilangkan LDR/Buzzer" (sudah diperbaiki); tambah ammeter/probe/induktor/zoom/toolbar-overflow. |
+| **Ide Pengembangan** | Hapus yang sudah selesai (zoom & pan, JSON LDR/Buzzer, ammeter); tambah transient solver, phase offset AC, capture oscilloscope, mini-map, IC 555, dll. |
