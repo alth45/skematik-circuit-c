@@ -23,21 +23,61 @@ static int comp_in_selection(int id);
 static void draw_selection_boxes(HDC hdc);
 static void draw_marquee(HDC hdc);
 
+/* Bungkus gambar simbol dengan rotasi dunia (GDI World Transform).
+   Komposisi transform: LOCAL -(rot+translate c)-> WORLD -(prev)-> SCREEN.
+
+   PENTING (Win32 GDI):
+   - SetWorldTransform MENIMPA transform, bukan mengomposisi. Jadi harus
+     dikomposisi manual dengan transform parent (zoom/pan).
+   - SaveDC/RestoreDC TIDAK menyimpan/mengembalikan world transform.
+     Jadi transform parent harus disimpan via GetWorldTransform dan
+     dipulihkan via SetWorldTransform setelah selesai. */
 void with_rotation(HDC hdc, Component *c,
                    void (*fn)(HDC, int, int, BOOL)) {
     int r = ((c->rot % 4) + 4) % 4;
     if (r == 0) { fn(hdc, c->x, c->y, c->id == selected_id); return; }
+
+    /* 1) Simpan transform parent (zoom/pan). */
+    int old_mode = GetGraphicsMode(hdc);
+    XFORM prev;
+    prev.eM11 = 1; prev.eM12 = 0; prev.eM21 = 0; prev.eM22 = 1;
+    prev.eDx = 0;  prev.eDy = 0;
+    if (old_mode == GM_ADVANCED) GetWorldTransform(hdc, &prev);
+
     int saved = SaveDC(hdc);
     SetGraphicsMode(hdc, GM_ADVANCED);
+
+    /* 2) Matriks rotasi (screen coords, Y ke bawah):
+       r=1: (x,y)->(-y, x)   -> r11=0,  r12=1,  r21=-1, r22=0
+       r=2: (x,y)->(-x,-y)   -> r11=-1, r12=0,  r21=0,  r22=-1
+       r=3: (x,y)->(y, -x)   -> r11=0,  r12=-1, r21=1,  r22=0 */
+    double r11 = 1, r12 = 0, r21 = 0, r22 = 1;
+    if (r == 1)      { r11 = 0;  r12 = 1;  r21 = -1; r22 = 0; }
+    else if (r == 2) { r11 = -1; r12 = 0;  r21 = 0;  r22 = -1; }
+    else             { r11 = 0;  r12 = -1; r21 = 1;  r22 = 0; }
+
+    /* 3) Komposisi P ∘ (R + translate(c)):
+       screen = (P·R)·local + P·(c) + P.offset */
+    double p11 = prev.eM11, p12 = prev.eM12;
+    double p21 = prev.eM21, p22 = prev.eM22;
+    double pdx = prev.eDx,  pdy = prev.eDy;
+
     XFORM xf;
-    if (r == 1)      { xf.eM11 = 0;  xf.eM12 = 1;  xf.eM21 = -1; xf.eM22 = 0; }
-    else if (r == 2) { xf.eM11 = -1; xf.eM12 = 0;  xf.eM21 = 0;  xf.eM22 = -1; }
-    else             { xf.eM11 = 0;  xf.eM12 = -1; xf.eM21 = 1;  xf.eM22 = 0; }
-    xf.eDx = (FLOAT)c->x;
-    xf.eDy = (FLOAT)c->y;
+    xf.eM11 = (FLOAT)(r11 * p11 + r12 * p21);
+    xf.eM12 = (FLOAT)(r11 * p12 + r12 * p22);
+    xf.eM21 = (FLOAT)(r21 * p11 + r22 * p21);
+    xf.eM22 = (FLOAT)(r21 * p12 + r22 * p22);
+    xf.eDx  = (FLOAT)(c->x * p11 + c->y * p21 + pdx);
+    xf.eDy  = (FLOAT)(c->x * p12 + c->y * p22 + pdy);
+
     SetWorldTransform(hdc, &xf);
     fn(hdc, 0, 0, c->id == selected_id);
+
+    /* 4) RestoreDC mengembalikan graphics mode (dan me-reset transform
+       bila target mode = GM_COMPATIBLE). Tapi bila prev ada di
+       GM_ADVANCED, transform parent tetap perlu dipulihkan manual. */
     RestoreDC(hdc, saved);
+    if (old_mode == GM_ADVANCED) SetWorldTransform(hdc, &prev);
 }
 
 static void draw_pins(HDC hdc, Component *c) {
@@ -116,6 +156,7 @@ void draw_component(HDC hdc, Component *c) {
         case COMP_VOLTMETER:   draw_k_voltmeter(hdc, c);   break;
         case COMP_AMMETER:     draw_k_ammeter(hdc, c);     break;
         case COMP_OSCPROBE:    draw_k_oscprobe(hdc, c);    break;
+        case COMP_INDUCTOR:    draw_k_inductor(hdc, c);    break;
         default: break;
     }
     draw_value_label(hdc, c);
@@ -139,9 +180,12 @@ void draw_component(HDC hdc, Component *c) {
     draw_pins(hdc, c);
 }
 
-void draw_selection_overlay(HDC hdc, HDC hdc_screen) {
+void draw_selection_overlay(HDC hdc) {
     draw_selection_boxes(hdc);
-    if (box_selecting) draw_marquee(hdc_screen);
+}
+
+void draw_marquee_overlay(HDC hdc){
+    if(box_selecting) draw_marquee(hdc);
 }
 
 static int comp_in_selection(int id) {
@@ -192,17 +236,22 @@ static void draw_selection_boxes(HDC hdc) {
 
 static void draw_marquee(HDC hdc) {
     if (!box_selecting) return;
-    int lx = (box_x1 < box_x2) ? box_x1 : box_x2;
-    int rx = (box_x1 < box_x2) ? box_x2 : box_x1;
-    int ty = (box_y1 < box_y2) ? box_y1 : box_y2;
-    int by = (box_y1 < box_y2) ? box_y2 : box_y1;
 
-    if (rx > lx && by > ty) {
+    int cx1 = (box_x1 < box_x2) ? box_x1 : box_x2;
+    int cy1 = (box_y1 < box_y2) ? box_y1 : box_y2;
+    int cx2 = (box_x1 < box_x2) ? box_x2 : box_x1;
+    int cy2 = (box_y1 < box_y2) ? box_y2 : box_y1;
+
+    int slx, sty, srx, sby;
+    canvas_canvas_to_screen(cx1, cy1, &slx, &sty);
+    canvas_canvas_to_screen(cx2, cy2, &srx, &sby);
+
+    if (srx > slx && sby > sty) {
         HDC mdc = CreateCompatibleDC(hdc);
-        HBITMAP mono = CreateBitmap(rx - lx, by - ty, 1, 1, NULL);
+        HBITMAP mono = CreateBitmap(srx - slx, sby - sty, 1, 1, NULL);
         HBITMAP omono = (HBITMAP)SelectObject(mdc, mono);
-        PatBlt(mdc, 0, 0, rx - lx, by - ty, BLACKNESS);
-        BitBlt(hdc, lx, ty, rx - lx, by - ty, mdc, 0, 0, MERGEPAINT);
+        PatBlt(mdc, 0, 0, srx - slx, sby - sty, BLACKNESS);
+        BitBlt(hdc, slx, sty, srx - slx, sby - sty, mdc, 0, 0, MERGEPAINT);
         SelectObject(mdc, omono);
         DeleteObject(mono);
         DeleteDC(mdc);
@@ -211,7 +260,7 @@ static void draw_marquee(HDC hdc) {
     HPEN pen = CreatePen(PS_SOLID, 1, RGB(50, 128, 255));
     HPEN old = (HPEN)SelectObject(hdc, pen);
     HBRUSH ob = (HBRUSH)SelectObject(hdc, GetStockObject(NULL_BRUSH));
-    Rectangle(hdc, lx, ty, rx, by);
+    Rectangle(hdc, slx, sty, srx, sby);
     SelectObject(hdc, ob);
     SelectObject(hdc, old);
     DeleteObject(pen);
@@ -300,8 +349,8 @@ void draw_canvas(HWND hwnd) {
         draw_component(memDC, &comps[i]);
     }
 
-    draw_selection_boxes(memDC);
-    if (box_selecting) draw_marquee(memDC);
+    draw_selection_overlay(memDC);
+    draw_marquee_overlay(memDC);
 
     BitBlt(hdc, 0, 0, W, H, memDC, 0, 0, SRCCOPY);
 

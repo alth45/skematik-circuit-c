@@ -29,6 +29,8 @@ static const wchar_t *comp_type_name(CompType t) {
         case COMP_LDR:        return L"ldr";
         case COMP_BUZZER:     return L"buzzer";
         case COMP_OSCPROBE:  return L"oscprobe";
+        case COMP_INDUCTOR:  return L"inductor";
+
         default: return L"none";
     }
 }
@@ -50,6 +52,7 @@ const char *comp_type_json_name(CompType t) {
         case COMP_LDR:        return "ldr";
         case COMP_BUZZER:     return "buzzer";
         case COMP_OSCPROBE:   return "oscprobe";
+        case COMP_INDUCTOR:   return "inductor";
         default:              return "none";
     }
 }
@@ -87,6 +90,8 @@ static int comp_type_from_name(const char *s) {
         strcmp(s, "BZR") == 0) return COMP_BUZZER;
     if (strcmp(s, "oscprobe") == 0 || strcmp(s, "OSCProbe") == 0 ||
         strcmp(s, "OSC") == 0) return COMP_OSCPROBE;
+    if (strcmp(s, "inductor") == 0 || strcmp(s, "Inductor") == 0 ||
+        strcmp(s, "L") == 0 || strcmp(s, "IND") == 0) return COMP_INDUCTOR;
     return COMP_NONE;
 }
 

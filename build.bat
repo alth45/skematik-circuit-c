@@ -25,6 +25,7 @@ gcc -O2 -Wall -mwindows -municode -DUNICODE -D_UNICODE -DSCHEMATIC_PRODUCTION=1 
     src\komponen\komponen_battery.c src\komponen\komponen_led.c ^
     src\komponen\komponen_ground.c src\komponen\komponen_capacitor.c ^
     src\komponen\transistor.c src\komponen\komponen_diode.c ^
+    src\komponen\komponen_inductor.c ^
     src\komponen\komponen_ammeter.c src\komponen\komponen_oscprobe.c ^
     src\komponen\komponen_capolar.c src\komponen\komponen_ldr.c ^
     src\komponen\komponen_buzzer.c src\komponen\komponen_acsource.c ^

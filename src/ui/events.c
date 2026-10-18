@@ -17,6 +17,7 @@ static CompType tool_to_comp(ToolKind t) {
         case TOOL_VOLTMETER:  return COMP_VOLTMETER;
         case TOOL_AMMETER:    return COMP_AMMETER;
         case TOOL_OSCPROBE:   return COMP_OSCPROBE;
+        case TOOL_INDUCTOR:   return COMP_INDUCTOR;
         default: return COMP_NONE;
     }
 }
@@ -53,6 +54,7 @@ static const wchar_t *comp_kind_name(CompType t) {
         case COMP_VOLTMETER:  return L"Voltmeter";
         case COMP_AMMETER:    return L"Ammeter";
         case COMP_OSCPROBE:   return L"Probe Osiloskop";
+        case COMP_INDUCTOR:   return L"Induktor";
         default:              return L"Komponen";
     }
 }
@@ -229,6 +231,17 @@ void show_context_menu(HWND hwnd, int sx, int sy, Component *c) {
                         L"\nHubungkan pin kiri (sinyal) ke titik ukur dan pin kanan\n"
                         L"ke titik referensi. Buka View > Oscilloscope untuk\n"
                         L"melihat gelombangnya.");
+                    wcscat_s(buf, 512, extra);
+                }
+                                if (c->type == COMP_INDUCTOR) {
+                    wchar_t extra[128];
+                    swprintf(extra, 128,
+                        L"\nInduktansi: %ls\n"
+                        L"DC: short (0 Ω) | AC (%.0f Hz): XL = %.4g Ω",
+                        (c->v > 0.0) ? L"pakai nilai" : L"default 100 uH",
+                        50.0,
+                        2.0 * 3.14159265 * 50.0 *
+                            ((c->v > 0.0) ? c->v : 100e-6));
                     wcscat_s(buf, 512, extra);
                 }
                 if (c->type == COMP_BUZZER) {
@@ -634,6 +647,24 @@ void on_mouse_move(HWND hwnd, int x, int y) {
 void on_key_down(HWND hwnd, WPARAM key) {
     /* Ctrl+S = save JSON, Ctrl+O = open JSON */
     if (GetKeyState(VK_CONTROL) & 0x8000) {
+        /* Ctrl + +/-/0 = zoom canvas */
+        if (key == VK_OEM_PLUS || key == VK_ADD) {
+            canvas_zoom_center(hwnd, 1.25);
+            InvalidateRect(hwnd, NULL, FALSE);
+            return;
+        }
+        if (key == VK_OEM_MINUS || key == VK_SUBTRACT) {
+            canvas_zoom_center(hwnd, 1.0 / 1.25);
+            InvalidateRect(hwnd, NULL, FALSE);
+            return;
+        }
+        if (key == '0' || key == VK_NUMPAD0) {
+            RECT rc; GetClientRect(hwnd, &rc);
+            int canvas_h = rc.bottom - TOOLBAR_H - (g_show_status ? STATUS_H : 0);
+            canvas_zoom_fit(rc.right, canvas_h);
+            InvalidateRect(hwnd, NULL, FALSE);
+            return;
+        }
         if (key == 'S' || key == 's') {
             model_save_dialog(hwnd);
             InvalidateRect(hwnd, NULL, FALSE);
@@ -678,7 +709,8 @@ void on_key_down(HWND hwnd, WPARAM key) {
         if (key == 'B' || key == 'b' || key == 'L' || key == 'l' ||
             key == 'U' || key == 'u' || key == 'V' || key == 'v' ||
             key == 'W' || key == 'w' || key == 'M' || key == 'm' ||
-            key == 'I' || key == 'i' || key == 'P' || key == 'p') return;
+            key == 'I' || key == 'i' || key == 'P' || key == 'p' ||
+            key == 'J' || key == 'j') return;
     }
     if (key == 'R' || key == 'r') {
         if (sim_running) return; /* rotasi dikunci saat RUN */
@@ -725,6 +757,7 @@ void on_key_down(HWND hwnd, WPARAM key) {
     else if (key == 'M' || key == 'm') { current_tool = TOOL_VOLTMETER; }
     else if (key == 'I' || key == 'i') { current_tool = TOOL_AMMETER; }
     else if (key == 'P' || key == 'p') { current_tool = TOOL_OSCPROBE; }
+    else if (key == 'J' || key == 'j') { current_tool = TOOL_INDUCTOR; }
     else if (key == VK_DELETE || key == VK_BACK) {
         if (sim_running) return; /* hapus dikunci saat RUN */
         if (sel_count > 1) {

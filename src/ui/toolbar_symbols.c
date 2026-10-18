@@ -21,6 +21,7 @@ static CompType toolbar_tool_comp(ToolKind t) {
         case TOOL_VOLTMETER:  return COMP_VOLTMETER;
         case TOOL_AMMETER:    return COMP_AMMETER;
         case TOOL_OSCPROBE:   return COMP_OSCPROBE;
+        case TOOL_INDUCTOR:   return COMP_INDUCTOR;
         default: return COMP_NONE;
     }
 }
@@ -196,6 +197,19 @@ static void sym_oscprobe(HDC hdc) {
     DeleteObject(br);
 }
 
+static void sym_inductor(HDC hdc) {
+    MoveToEx(hdc, -40, 0, NULL); LineTo(hdc, -20, 0);
+    MoveToEx(hdc, 20, 0, NULL); LineTo(hdc, 40, 0);
+    int started = 0;
+    for (int px = -20; px <= 20; px++) {
+        double t = (double)(px + 20) / 40.0;
+        double phase = t * 4.0 * 3.14159265358979;
+        int py = (int)(-7.0 * fabs(sin(phase)));
+        if (!started) { MoveToEx(hdc, px, py, NULL); started = 1; }
+        else          LineTo(hdc, px, py);
+    }
+}
+
 void toolbar_draw_symbol(HDC hdc, ToolKind tool, int cx, int cy, BOOL active) {
     int saved = SaveDC(hdc);
     SetGraphicsMode(hdc, GM_ADVANCED);
@@ -224,6 +238,7 @@ void toolbar_draw_symbol(HDC hdc, ToolKind tool, int cx, int cy, BOOL active) {
     else if (ct == COMP_VOLTMETER) sym_voltmeter(hdc);
     else if (ct == COMP_AMMETER) sym_ammeter(hdc);
     else if (ct == COMP_OSCPROBE) sym_oscprobe(hdc);
+    else if (ct == COMP_INDUCTOR) sym_inductor(hdc);
     else if (tool == TOOL_SELECT) {
         POINT cur[7] = { {0,-14},{10,4},{4,4},{4,14},{-2,14},{-2,4},{-8,4} };
         Polygon(hdc, cur, 7);
@@ -331,6 +346,7 @@ const wchar_t *toolbar_tool_shortname(ToolKind tool) {
     if (tool == TOOL_WIRE) return L"Wire";
     if (tool == TOOL_AMMETER) return L"AM";
     if (tool == TOOL_OSCPROBE) return L"OSC";
+    if (tool == TOOL_INDUCTOR) return L"L";
     return L"Hapus";
 }
 
@@ -351,6 +367,7 @@ int toolbar_tool_is_component(ToolKind tool) {
         case TOOL_VOLTMETER:
         case TOOL_AMMETER:
         case TOOL_OSCPROBE:
+        case TOOL_INDUCTOR:
             return 1;
         default:
             return 0;

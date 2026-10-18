@@ -32,6 +32,9 @@ int sim_overcur = 0;
 
 /* ---- Konstanta model listrik ---- */
 #define BUZZER_R_DEFAULT 100.0 /* impedansi buzzer tipikal (Ohm) */
+#define R_AMMETER_OHM 0.1
+#define IND_DEFAULT_H_AC 100e-6  /* fallback L bila c->v <= 0 (AC edge) */
+// #define IND_DEFAULT 100e-6     /* fallback L bila c->v <= 0 (DC edge) */
 #define AC_FREQ_HZ 50.0        /* frekuensi sumber AC (Hz) */
 #define CAP_DEFAULT_F 100e-9   /* kapasitansi default bila v<=0 */
 #define R_SHORT_THRESH 0.01    /* < ini dianggap short (Ohm) */
@@ -245,6 +248,13 @@ static double comp_edge_r(int i) {
     return -1.0; /* blokir DC */
   case COMP_AMMETER:
     return 0.001; /* resistansi sangat kecil */
+  case COMP_INDUCTOR:
+    if (sim_ac_mode) {
+      double lh = (c->v > 0.0) ? c->v : IND_DEFAULT_H_AC;
+      double xl = 2.0 * M_PI * AC_FREQ_HZ * lh;
+      return (xl > 0.0) ? xl : 0.001;
+    }
+    return -1.0; /* DC: ditangani di Pass 1 sebagai short */
   default:
     return -1.0;
   }
@@ -411,6 +421,9 @@ void sim_recompute(void) {
   /* ---- Pass 1: union penghantar IDEAL 0 Ω saja (BUKAN resistor). ---- */
   for (int i = 0; i < comp_count; i++) {
     if (comps[i].type == COMP_SWITCH && comps[i].on) {
+      unite(node_of(i, 0), node_of(i, 1));
+    }
+    if (comps[i].type == COMP_INDUCTOR && !sim_ac_mode) {
       unite(node_of(i, 0), node_of(i, 1));
     }
     /* Kapasitor di mode murni-AC: dianggap short (Xc besar dimodelkan

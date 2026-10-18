@@ -31,6 +31,7 @@
 #define LDR_DARK_DEFAULT 1e6   /* LDR default: 1 MOhm saat gelap */
 #define LDR_LIGHT_RATIO  0.01  /* saat TERANG: R ~ 1% dari nilai gelap (~10 kOhm) */
 #define BUZZER_FREQ_DEFAULT 1000.0 /* buzzer default: 1 kHz; v = frekuensi Hz */
+#define IND_DEFAULT_H 100e-6
 
 typedef enum {
     COMP_NONE = 0,
@@ -64,11 +65,15 @@ typedef enum {
                         arus cabang = arus penghantar ideal yang digantikannya.
                         Hasil bacaan per komponen via sim_ammeter_reading() (ampere);
                         saat mode RUN angka arus tampil di bawah simbol. */
-    COMP_OSCPROBE     /* osiloskop probe: pin0=probe(+) pin1=gnd(-). Tidak menghantar arus
+    COMP_OSCPROBE,     /* osiloskop probe: pin0=probe(+) pin1=gnd(-). Tidak menghantar arus
                         (impedansi tak hingga => kedua pin tidak pernah disatukan
                         menjadi satu net). Hasil bacaan per komponen via
                         sim_oscprobe_reading() (volt); saat mode RUN angka tegangan
                         tampil di bawah simbol. */
+    COMP_INDUCTOR     /* induktor: pin0 = kiri, pin1 = kanan.
+                        DC  : short ideal (0 Ω) — disatukan di Pass 1 sim.c.
+                        AC  : impedansi XL = 2πfL (saat sim_ac_mode).
+                        v = induktansi Henry (default 100e-6 = 100 µH). */
 } CompType;
 
 /* Tool yang dipilih user di palette */
@@ -91,6 +96,7 @@ typedef enum {
     TOOL_VOLTMETER,      /* voltmeter (ukur beda potensial dua titik) */
     TOOL_AMMETER,        /* ammeter (ukur arus pada cabang, dipasang seri) */
     TOOL_OSCPROBE,       /* osiloscope probe (ukur beda potensial dua titik) */
+    TOOL_INDUCTOR,        /* induktor (kumparan) */
     TOOL_DELETE
 } ToolKind;
 
@@ -134,7 +140,7 @@ typedef struct {
 } Wire;
 
 /* Jumlah tombol palette (Select, Blok, Wire + 15 komponen + Hapus). */
-#define BTN_COUNT 19
+#define BTN_COUNT 20
 
 /* Batas seleksi multi (model.c) */
 #define MAX_SEL 256
@@ -326,6 +332,7 @@ void draw_k_buzzer(HDC hdc, Component *c);
 void draw_k_voltmeter(HDC hdc, Component *c);
 void draw_k_ammeter(HDC hdc, Component *c);
 void draw_k_oscprobe(HDC hdc, Component *c);
+void draw_k_inductor(HDC hdc, Component *c);
 
 void draw_component(HDC hdc, Component *c);
 void draw_canvas(HWND hwnd);
@@ -333,7 +340,10 @@ void draw_wires(HDC hdc);
 /* Overlay seleksi: kotak hijau di sekeliling semua anggota blok + kotak
    marquee (klik kiri ditekan & diseret) pada koordinat canvas. Dipanggil
    dari WM_PAINT setelah komponen digambar. */
-void draw_selection_overlay(HDC hdc, HDC hdc_screen);
+// void draw_selection_overlay(HDC hdc, HDC hdc_screen);
+
+void draw_selection_overlay(HDC hdc);   /* kotak blok saja (canvas coords) */
+void draw_marquee_overlay(HDC hdc);     /* marquee (screen coords, konversi internal) */
 
 /* ===================== Event Handler (events.c) ===================== */
 void on_lbutton_down(HWND hwnd, int x, int y);
@@ -392,6 +402,31 @@ extern int    sim_overcur;    /* 1 = ada LED nyala tapi arus > 20 mA (berbahaya)
 int    sim_comp_blown(const Component *c);   /* 1 = LED ini meledak */
 double sim_comp_current(const Component *c); /* arus lewat komponen ini (A), <0 = tak terdefinisi */
 void   sim_format_si(double v, const wchar_t *unit, wchar_t *out, int cap);
+
+
+/* ---- Zoom & Pan Canvas (model.c) ----
+   Transformasi antara koordinat canvas (di mana Component.x/y disimpan)
+   dan koordinat screen (piksel di area canvas, relatif terhadap TOOLBAR_H).
+   Zoom anchor = titik mouse (untuk wheel) atau pusat canvas (keyboard/menu). */
+extern double g_zoom;    /* faktor zoom, default 1.0; clamp [0.25, 8.0] */
+extern int    g_pan_x;   /* offset pan dalam koordinat canvas */
+extern int    g_pan_y;
+
+void canvas_screen_to_canvas(int sx, int sy, int *cx, int *cy);
+void canvas_canvas_to_screen(int cx, int cy, int *sx, int *sy);
+
+/* Zoom di sekitar titik screen (sx, sy) sebesar factor. factor>1 = in. */
+void canvas_zoom_at(int sx, int sy, double factor);
+
+/* Zoom di sekitar pusat area canvas. */
+void canvas_zoom_center(HWND hwnd, double factor);
+
+/* Sesuaikan zoom + pan agar semua komponen terlihat.
+   view_w/view_h = dimensi area canvas (W, H - TOOLBAR_H - STATUS_H). */
+void canvas_zoom_fit(int view_w, int view_h);
+
+/* Reset ke zoom=1, pan=(0,0). */
+void canvas_zoom_reset(void);
 
 /* ---- Probe Osiloskop (bentuk gelombang domain-waktu) ----
    Komponen COMP_OSCPROBE mengukur V(pin0) - V(pin1) terhadap waktu t.

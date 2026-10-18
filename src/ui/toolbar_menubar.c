@@ -88,9 +88,9 @@ static void build_popup(int menu_idx, HMENU m) {
             AppendMenuW(m, MF_STRING, IDM_VIEW_OSC, L"Oscilloscope (Probe)\tF12");
             AppendMenuW(m, MF_SEPARATOR, 0, NULL);
             AppendMenuW(m, MF_SEPARATOR, 0, NULL);
-            AppendMenuW(m, MF_STRING | MF_GRAYED, IDM_VIEW_ZOOMIN,  L"Perbesar\tCtrl++ (segera)");
-            AppendMenuW(m, MF_STRING | MF_GRAYED, IDM_VIEW_ZOOMOUT, L"Perkecil\tCtrl+- (segera)");
-            AppendMenuW(m, MF_STRING | MF_GRAYED, IDM_VIEW_ZOOMFIT, L"Sesuaikan Tampilan\tCtrl+0 (segera)");
+            AppendMenuW(m, MF_STRING, IDM_VIEW_ZOOMIN,  L"Perbesar\tCtrl++");
+            AppendMenuW(m, MF_STRING, IDM_VIEW_ZOOMOUT, L"Perkecil\tCtrl+-");
+            AppendMenuW(m, MF_STRING, IDM_VIEW_ZOOMFIT, L"Sesuaikan Tampilan\tCtrl+0");
             break;
         case 3:
             AppendMenuW(m, MF_STRING | (sim_running ? MF_GRAYED : 0),
@@ -174,6 +174,21 @@ void menubar_command(HWND hwnd, int cmd) {
             g_show_status = !g_show_status;
             set_status(L"Status bar %ls.", g_show_status ? L"ditampilkan" : L"disembunyikan");
             break;
+                case IDM_VIEW_ZOOMIN:
+            canvas_zoom_center(hwnd, 1.25);
+            InvalidateRect(hwnd, NULL, FALSE);
+            break;
+        case IDM_VIEW_ZOOMOUT:
+            canvas_zoom_center(hwnd, 1.0 / 1.25);
+            InvalidateRect(hwnd, NULL, FALSE);
+            break;
+        case IDM_VIEW_ZOOMFIT: {
+            RECT rc; GetClientRect(hwnd, &rc);
+            int canvas_h = rc.bottom - TOOLBAR_H - (g_show_status ? STATUS_H : 0);
+            canvas_zoom_fit(rc.right, canvas_h);
+            InvalidateRect(hwnd, NULL, FALSE);
+            break;
+        }
         case IDM_VIEW_OSC:
             osc_open(hwnd);
             break;
@@ -205,14 +220,31 @@ void menubar_command(HWND hwnd, int cmd) {
                 L"Klik-kanan   : Menu konteks komponen",
                 L"Pintasan Papan Ketik", MB_OK | MB_ICONINFORMATION);
             break;
-        case IDM_HELP_ABOUT:
-            MessageBoxW(hwnd,
-                L"Schematic Editor — Win32 GDI\n"
-                "Editor & simulator rangkaian sederhana.\n"
-                "Toolbar menu (File/Edit/View/Simulasi/Bantu) di baris paling atas,\n"
-                "toolbar komponen di bawahnya.",
-                L"Tentang", MB_OK | MB_ICONINFORMATION);
+            case IDM_HELP_ABOUT: {
+            const wchar_t *msg =
+                L"Schematic Editor\n"
+                L"Version 1.0  (Win32 GDI Edition)\n"
+                L"\n"
+                L"Editor dan simulator rangkaian elektronika berbasis Win32 GDI.\n"
+                L"Dirancang untuk pembelajaran, eksperimen, dan visualisasi\n"
+                L"konsep dasar listrik secara interaktif.\n"
+                L"\n"
+                L"Fitur utama:\n"
+                L"  \x2022  Editor skematik dengan rotasi, multi-select, dan\n"
+                L"     duplikasi blok rangkaian.\n"
+                L"  \x2022  Simulasi DC & AC (analisis nodal) dengan LED, dioda,\n"
+                L"     transistor NPN, kapasitor, dan induktor.\n"
+                L"  \x2022  Alat ukur interaktif: Voltmeter, Ammeter, dan\n"
+                L"     Probe Osiloskop untuk bentuk gelombang.\n"
+                L"  \x2022  Zoom & pan canvas, penyimpanan skematik via JSON.\n"
+                L"\n"
+                L"Menu: File \x2022 Edit \x2022 View \x2022 Simulasi \x2022 Bantu\n"
+                L"\n"
+                L"\xA9 2026 Schematic Editor Project. All rights reserved.";
+            MessageBoxW(hwnd, msg, L"About Schematic Editor",
+                        MB_OK | MB_ICONINFORMATION);
             break;
+        }
         
     }
     InvalidateRect(hwnd, NULL, FALSE);

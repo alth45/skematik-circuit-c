@@ -30,6 +30,90 @@ int group_drag_ox = 0, group_drag_oy = 0;
 int g_show_grid   = 1;
 int g_show_status = 1;
 
+/* ===================== Zoom & Pan Canvas ===================== */
+double g_zoom  = 1.0;
+int    g_pan_x = 0;
+int    g_pan_y = 0;
+
+#define ZOOM_MIN  0.25
+#define ZOOM_MAX  8.0
+
+static double clamp_zoom(double z) {
+    if (z < ZOOM_MIN) return ZOOM_MIN;
+    if (z > ZOOM_MAX) return ZOOM_MAX;
+    return z;
+}
+
+void canvas_screen_to_canvas(int sx, int sy, int *cx, int *cy) {
+    if (cx) *cx = (int)(sx / g_zoom + g_pan_x);
+    if (cy) *cy = (int)(sy / g_zoom + g_pan_y);
+}
+
+void canvas_canvas_to_screen(int cx, int cy, int *sx, int *sy) {
+    if (sx) *sx = (int)((cx - g_pan_x) * g_zoom);
+    if (sy) *sy = (int)((cy - g_pan_y) * g_zoom);
+}
+
+void canvas_zoom_at(int sx, int sy, double factor) {
+    if (factor <= 0.0) return;
+    int cx, cy;
+    canvas_screen_to_canvas(sx, sy, &cx, &cy);
+    double nz = clamp_zoom(g_zoom * factor);
+    if (nz == g_zoom) return;
+    g_zoom = nz;
+    g_pan_x = cx - (int)(sx / g_zoom);
+    g_pan_y = cy - (int)(sy / g_zoom);
+}
+
+void canvas_zoom_center(HWND hwnd, double factor) {
+    if (!hwnd) return;
+    RECT rc; GetClientRect(hwnd, &rc);
+    int W = rc.right;
+    int canvas_h = rc.bottom - TOOLBAR_H - (g_show_status ? STATUS_H : 0);
+    if (canvas_h < 1) canvas_h = 1;
+    canvas_zoom_at(W / 2, canvas_h / 2, factor);
+}
+
+void canvas_zoom_fit(int view_w, int view_h) {
+    if (view_w < 1) view_w = 1;
+    if (view_h < 1) view_h = 1;
+    if (comp_count == 0) { canvas_zoom_reset(); return; }
+
+    int minx = 0, miny = 0, maxx = 0, maxy = 0;
+    for (int i = 0; i < comp_count; i++) {
+        int hw, hh;
+        comp_bounding_half(&comps[i], &hw, &hh);
+        int x0 = comps[i].x - hw, y0 = comps[i].y - hh;
+        int x1 = comps[i].x + hw, y1 = comps[i].y + hh;
+        if (i == 0) { minx = x0; miny = y0; maxx = x1; maxy = y1; }
+        else {
+            if (x0 < minx) minx = x0;
+            if (y0 < miny) miny = y0;
+            if (x1 > maxx) maxx = x1;
+            if (y1 > maxy) maxy = y1;
+        }
+    }
+    int bw = maxx - minx; if (bw < 1) bw = 1;
+    int bh = maxy - miny; if (bh < 1) bh = 1;
+
+    int margin = 40;
+    double zx = (double)(view_w - 2 * margin) / bw;
+    double zy = (double)(view_h - 2 * margin) / bh;
+    double z  = (zx < zy) ? zx : zy;
+    g_zoom = clamp_zoom(z);
+
+    int ccx = (minx + maxx) / 2;
+    int ccy = (miny + maxy) / 2;
+    g_pan_x = ccx - (int)(view_w / 2.0 / g_zoom);
+    g_pan_y = ccy - (int)(view_h / 2.0 / g_zoom);
+}
+
+void canvas_zoom_reset(void) {
+    g_zoom  = 1.0;
+    g_pan_x = 0;
+    g_pan_y = 0;
+}
+
 /* Tombol toolbar (digambar manual di atas, bukan HWND).
    Urutan: Select, Wire, Resistor, Switch, Battery, Sumber AC, LED, Ground,
    Capacitor, Transistor, Diode, Kapasitor Polar, LDR, Buzzer, Voltmeter,
@@ -38,7 +122,7 @@ const ToolKind btnTools[BTN_COUNT] = {
     TOOL_SELECT, TOOL_BOX, TOOL_WIRE,
     TOOL_RESISTOR, TOOL_SWITCH, TOOL_BATTERY, TOOL_ACSOURCE, TOOL_LED, TOOL_GROUND,
     TOOL_CAPACITOR, TOOL_TRANSISTOR, TOOL_DIODE, TOOL_CAPOLAR,
-    TOOL_LDR, TOOL_BUZZER, TOOL_VOLTMETER, TOOL_AMMETER, TOOL_OSCPROBE,
+    TOOL_LDR, TOOL_BUZZER, TOOL_VOLTMETER, TOOL_AMMETER, TOOL_OSCPROBE, TOOL_INDUCTOR,
     TOOL_DELETE
 };
 const wchar_t *btnLabels[BTN_COUNT] = {
@@ -47,7 +131,7 @@ const wchar_t *btnLabels[BTN_COUNT] = {
     L"LED (4)", L"Ground (5)",
     L"Kapasitor (6)", L"Transistor NPN (7)", L"Dioda (8)", L"Kapasitor Polar (9)",
     L"LDR / Sensor Cahaya (L)", L"Buzzer (U)", L"Voltmeter (M)",
-    L"Ammeter (I)", L"OSC Probe (P)",
+    L"Ammeter (I)", L"OSC Probe (P)", L"Induktor (J)",
     L"Hapus / Delete (Del)"
 };
 
@@ -296,6 +380,7 @@ double comp_default_value(CompType t) {
         case COMP_BUZZER:     return BUZZER_FREQ_DEFAULT;
         case COMP_AMMETER:    return 0.0;
         case COMP_OSCPROBE:   return 0.0;
+        case COMP_INDUCTOR:   return IND_DEFAULT_H;
         default:              return 0.0;
     }
 }
@@ -304,7 +389,7 @@ int comp_has_value(CompType t) {
     return t == COMP_RESISTOR || t == COMP_BATTERY || t == COMP_ACSOURCE ||
            t == COMP_LED ||
            t == COMP_DIODE || t == COMP_CAPACITOR || t == COMP_CAPOLAR ||
-           t == COMP_LDR || t == COMP_BUZZER;
+           t == COMP_LDR || t == COMP_BUZZER || t == COMP_INDUCTOR;
 }
 
 const wchar_t *comp_value_unit(CompType t) {
@@ -318,6 +403,7 @@ const wchar_t *comp_value_unit(CompType t) {
         case COMP_CAPOLAR:   return L"F";
         case COMP_LDR:       return L"Rgelap";
         case COMP_BUZZER:    return L"Hz";
+        case COMP_INDUCTOR:  return L"H";
         default:             return NULL;
     }
 }
