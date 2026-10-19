@@ -63,7 +63,7 @@ static void vm_at(HDC hdc, int x, int y, BOOL sel) {
     draw_voltmeter(hdc, x, y, sel, readings);
 
     /* angka bacaan digambar tegak (di luar transformasi rotasi) */
-    if (readings) {
+    if (readings && !g_minimap_mode) {
         int px, py;               /* pusat badan voltmeter pada koordinat dunia */
         px = vm_cur->x; py = vm_cur->y;
         INT obm = SetBkMode(hdc, TRANSPARENT);

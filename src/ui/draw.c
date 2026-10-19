@@ -161,25 +161,27 @@ void draw_component(HDC hdc, Component *c) {
         case COMP_MOSFET:      draw_k_mosfet(hdc, c);      break;
         default: break;
     }
-    draw_value_label(hdc, c);
-    if (sel) {
-        HPEN pen = CreatePen(PS_DOT, 1, RGB(50,128,255));
-        HPEN old = (HPEN)SelectObject(hdc, pen);
-        HBRUSH oldb = (HBRUSH)SelectObject(hdc, GetStockObject(NULL_BRUSH));
-        int hw = (c->rot % 2 == 0) ? 48 : 38;
-        int hh = (c->rot % 2 == 0) ? 38 : 48;
-        if (c->type == COMP_TRANSISTOR || c->type == COMP_MOSFET) { hw = 52; hh = 42; }
-        Rectangle(hdc, c->x - hw, c->y - hh, c->x + hw, c->y + hh);
-        SelectObject(hdc, oldb);
-        SelectObject(hdc, old);
-        DeleteObject(pen);
-        wchar_t buf[16];
-        swprintf(buf, 16, L"%d deg", (c->rot % 4) * 90);
-        SetTextColor(hdc, RGB(50,128,255));
-        SetBkMode(hdc, TRANSPARENT);
-        TextOutW(hdc, c->x - 24, c->y - hh - 18, buf, (int)wcslen(buf));
+        if (!g_minimap_mode) {
+        draw_value_label(hdc, c);
+        if (sel) {
+            HPEN pen = CreatePen(PS_DOT, 1, RGB(50,128,255));
+            HPEN old = (HPEN)SelectObject(hdc, pen);
+            HBRUSH oldb = (HBRUSH)SelectObject(hdc, GetStockObject(NULL_BRUSH));
+            int hw = (c->rot % 2 == 0) ? 48 : 38;
+            int hh = (c->rot % 2 == 0) ? 38 : 48;
+            if (c->type == COMP_TRANSISTOR || c->type == COMP_MOSFET) { hw = 52; hh = 42; }
+            Rectangle(hdc, c->x - hw, c->y - hh, c->x + hw, c->y + hh);
+            SelectObject(hdc, oldb);
+            SelectObject(hdc, old);
+            DeleteObject(pen);
+            wchar_t buf[16];
+            swprintf(buf, 16, L"%d deg", (c->rot % 4) * 90);
+            SetTextColor(hdc, RGB(50,128,255));
+            SetBkMode(hdc, TRANSPARENT);
+            TextOutW(hdc, c->x - 24, c->y - hh - 18, buf, (int)wcslen(buf));
+        }
+        draw_pins(hdc, c);
     }
-    draw_pins(hdc, c);
 }
 
 void draw_selection_overlay(HDC hdc) {

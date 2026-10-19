@@ -45,7 +45,7 @@ void draw_k_ammeter(HDC hdc, Component *c) {
     with_rotation(hdc, c, draw_ammeter_body);
 
     /* 2) Bacaan arus: hanya saat RUN, digambar tegak (world coords). */
-    if (sim_running) {
+    if (sim_running && !g_minimap_mode) {
         double current = sim_ammeter_reading(c);
         int has_val = (current >= 0.0);
         wchar_t val[32];

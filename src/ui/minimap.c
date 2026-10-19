@@ -92,76 +92,63 @@ static void mm_s2w(MinimapGeo *g, int sx, int sy, int *wx, int *wy) {
 void minimap_render(HDC hdc, int canvas_w, int canvas_h) {
     if (!g_show_minimap) return;
 
-    /* Auto-hide bila canvas kosong & view default (tidak ada yang perlu dinavigasi). */
+    /* Auto-hide bila canvas kosong & view default. */
     if (comp_count == 0 && g_zoom == 1.0 && g_pan_x == 0 && g_pan_y == 0) return;
 
     MinimapGeo g;
     mm_geo(canvas_w, canvas_h, &g);
 
-    /* Panel background. */
+    /* 1) Panel background + border. */
     RECT panel = { g.sx, g.sy, g.sx + MM_W, g.sy + MM_H };
-    HBRUSH bg = CreateSolidBrush(RGB(245, 248, 252));
+    HBRUSH bg = CreateSolidBrush(RGB(252, 252, 248));
     FillRect(hdc, &panel, bg);
     DeleteObject(bg);
 
-    /* Border. */
     HPEN border = CreatePen(PS_SOLID, 1, RGB(180, 195, 215));
     HPEN ob = (HPEN)SelectObject(hdc, border);
     HBRUSH obr = (HBRUSH)SelectObject(hdc, GetStockObject(NULL_BRUSH));
     Rectangle(hdc, g.sx, g.sy, g.sx + MM_W, g.sy + MM_H);
     SelectObject(hdc, obr);
 
-    int saved = SaveDC(hdc);
+    /* 2) Clip seluruh isi ke dalam panel (tepi dalam). */
+    int saved_clip = SaveDC(hdc);
     IntersectClipRect(hdc, g.sx + 1, g.sy + 1, g.sx + MM_W - 1, g.sy + MM_H - 1);
 
-    /* World content frame (faint). */
-    int wx0, wy0, wx1, wy1;
-    mm_w2s(&g, g.x0, g.y0, &wx0, &wy0);
-    mm_w2s(&g, g.x1, g.y1, &wx1, &wy1);
-    HPEN frame = CreatePen(PS_SOLID, 1, RGB(220, 225, 235));
-    SelectObject(hdc, frame);
-    Rectangle(hdc, wx0, wy0, wx1, wy1);
-    SelectObject(hdc, border);
+    /* 3) Setup world transform: world -> minimap screen.
+       Sama dengan formula di mm_w2s(), tetapi dikomposisikan lewat
+       SetWorldTransform agar draw_component (dan semua draw_k_*) otomatis
+       di-skala + digeser. with_rotation() sudah mem-parse transform parent
+       lewat GetWorldTransform, jadi komponen berotasi juga benar. */
+    int bw = g.x1 - g.x0;
+    int bh = g.y1 - g.y0;
+    int draw_w = (int)(bw * g.sc);
+    int draw_h = (int)(bh * g.sc);
+    int off_x = (MM_W - draw_w) / 2;
+    int off_y = (MM_H - draw_h) / 2;
 
-    /* Wires: thin gray lines. */
-    HPEN wpen = CreatePen(PS_SOLID, 1, RGB(120, 120, 140));
-    SelectObject(hdc, wpen);
-    for (int i = 0; i < wire_count; i++) {
-        Component *ca = find_comp_by_id(wires[i].a.comp_id);
-        Component *cb = find_comp_by_id(wires[i].b.comp_id);
-        if (!ca || !cb) continue;
-        int ax, ay, bx, by;
-        comp_pin_pos(ca, wires[i].a.pin_idx, &ax, &ay);
-        comp_pin_pos(cb, wires[i].b.pin_idx, &bx, &by);
-        int sax, say, sbx, sby;
-        mm_w2s(&g, ax, ay, &sax, &say);
-        mm_w2s(&g, bx, by, &sbx, &sby);
-        MoveToEx(hdc, sax, say, NULL);
-        LineTo(hdc, sbx, sby);
-    }
-    DeleteObject(wpen);
+    int saved_tf = SaveDC(hdc);
+    SetGraphicsMode(hdc, GM_ADVANCED);
+    XFORM xf = {
+        (FLOAT)g.sc, 0,
+        0, (FLOAT)g.sc,
+        (FLOAT)(g.sx + off_x - g.x0 * g.sc),
+        (FLOAT)(g.sy + off_y - g.y0 * g.sc)
+    };
+    SetWorldTransform(hdc, &xf);
 
-    /* Components: small filled rectangles. */
-    HBRUSH comp_br = CreateSolidBrush(RGB(60, 100, 180));
-    HBRUSH oldbr = (HBRUSH)SelectObject(hdc, comp_br);
-    HPEN comp_pen = CreatePen(PS_SOLID, 1, RGB(40, 70, 130));
-    HPEN oldpen = (HPEN)SelectObject(hdc, comp_pen);
-    for (int i = 0; i < comp_count; i++) {
-        int hw, hh;
-        comp_bounding_half(&comps[i], &hw, &hh);
-        int x0, y0, x1, y1;
-        mm_w2s(&g, comps[i].x - hw, comps[i].y - hh, &x0, &y0);
-        mm_w2s(&g, comps[i].x + hw, comps[i].y + hh, &x1, &y1);
-        if (x1 - x0 < 3) x1 = x0 + 3;
-        if (y1 - y0 < 3) y1 = y0 + 3;
-        Rectangle(hdc, x0, y0, x1, y1);
-    }
-    SelectObject(hdc, oldpen);
-    SelectObject(hdc, oldbr);
-    DeleteObject(comp_pen);
-    DeleteObject(comp_br);
+    /* 4) Render wires + komponen dengan simbol asli.
+       g_minimap_mode = 1 => draw_component melewati label, kotak seleksi,
+       dan titik pin. Panjang pens (2 px) di-scale menjadi ~0.2 px -> GDI
+       render sebagai 1 px, cukup tipis untuk simbol mini. */
+    g_minimap_mode = 1;
+    draw_wires(hdc);
+    for (int i = 0; i < comp_count; i++)
+        draw_component(hdc, &comps[i]);
+    g_minimap_mode = 0;
 
-    /* Viewport rectangle (highlight). */
+    RestoreDC(hdc, saved_tf);
+
+    /* 5) Viewport rectangle (screen coords, DI LUAR world transform). */
     int vx0 = g_pan_x;
     int vy0 = g_pan_y;
     int vx1 = (int)(g_pan_x + canvas_w / g_zoom);
@@ -180,9 +167,8 @@ void minimap_render(HDC hdc, int canvas_w, int canvas_h) {
     SelectObject(hdc, ovp);
     DeleteObject(vpen);
 
-    RestoreDC(hdc, saved);
+    RestoreDC(hdc, saved_clip);
     SelectObject(hdc, ob);
-    DeleteObject(frame);
     DeleteObject(border);
 }
 

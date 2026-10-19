@@ -498,6 +498,10 @@ void canvas_zoom_reset(void);
    Default ON, otomatis tersembunyi bila canvas kosong & view belum di-geser. */
 extern int g_show_minimap;
 
+/* 1 = sedang me-render minimap (suppress label nilai, kotak seleksi,
+   titik pin, dan bacaan alat ukur). Diset internal oleh minimap_render(). */
+extern int g_minimap_mode;
+
 void minimap_render(HDC hdc, int canvas_w, int canvas_h);
 int  minimap_hit(int x, int y, int canvas_w, int canvas_h);
 void minimap_click(int x, int y, int canvas_w, int canvas_h);

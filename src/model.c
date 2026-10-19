@@ -138,6 +138,8 @@ double g_zoom  = 1.0;
 int    g_pan_x = 0;
 int    g_pan_y = 0;
 int    g_show_minimap = 1;
+int    g_minimap_mode = 0;
+
 
 
 #define ZOOM_MIN  0.25
