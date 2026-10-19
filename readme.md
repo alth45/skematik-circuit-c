@@ -97,39 +97,48 @@ tool aktif | F5: run/stop   R: rotate   Ctrl +/-/0: zoom   double-klik: edit nil
 
 ---
 
-## Build & Jalankan
+## Build & Jalankan (Makefile)
 
-Butuh **MinGW-w64 gcc** di PATH.
+Butuh **MinGW-w64 `gcc`** dan **`make`** di PATH.
 
-```bat
-cd c:\Users\User\Downloads\schematic-c
-build.bat
-schematic_win.exe
+```sh
+make
+./schematic_win.exe
 ```
 
-Isi `build.bat` (ringkas):
+Target yang tersedia:
 
-```bat
-gcc -O2 -Wall -mwindows -municode -DUNICODE -D_UNICODE -DSCHEMATIC_PRODUCTION=1 -Iinclude ^
-    src\main.c src\splash.c src\model.c src\fileio.c src\sim.c src\oscilloscope.c ^
-    src\ui\draw.c src\ui\events.c ^
-    src\ui\toolbar_menubar.c src\ui\toolbar_symbols.c ^
-    src\ui\toolbar_actions.c src\ui\toolbar_palette.c ^
-    src\komponen\komponen_resistor.c src\komponen\komponen_switch.c ^
-    src\komponen\komponen_battery.c src\komponen\komponen_led.c ^
-    src\komponen\komponen_ground.c src\komponen\komponen_capacitor.c ^
-    src\komponen\transistor.c src\komponen\komponen_diode.c ^
-    src\komponen\komponen_ammeter.c src\komponen\komponen_oscprobe.c ^
-    src\komponen\komponen_inductor.c ^
-    src\komponen\komponen_capolar.c src\komponen\komponen_ldr.c ^
-    src\komponen\komponen_buzzer.c src\komponen\komponen_acsource.c ^
-    src\komponen\komponen_voltmeter.c ^
-    -o schematic_win.exe -lgdi32 -luser32 -lcomdlg32 -lm
+| Target | Kegunaan |
+|---|---|
+| `make` / `make app` | Build aplikasi produksi (`schematic_win.exe`, `-DSCHEMATIC_PRODUCTION=1`) |
+| `make rebuild` | `clean` + build ulang aplikasi dari nol |
+| `make tests` | Build binary tes (`run_tests.exe`, `-DSCHEMATIC_TEST_STUBS=1`) |
+| `make test` | Build + jalankan binary tes |
+| `make clean` | Hapus `.exe` / `.o` / `build_tmp/` |
+| `make help` | Tampilkan bantuan target |
+
+Komposisi target produksi (`SRC_PROD` di `Makefile`):
+
+```make
+SRC_PROD := src/main.c src/splash.c src/model.c src/fileio.c src/sim.c src/oscilloscope.c \
+	src/ui/draw.c src/ui/events.c \
+	src/ui/toolbar_menubar.c src/ui/toolbar_symbols.c \
+	src/ui/toolbar_actions.c src/ui/toolbar_palette.c \
+	$(wildcard src/komponen/*.c)
+```
+
+Ganti toolchain bila perlu:
+
+```sh
+make CC_PROD=i686-w64-mingw32-gcc
+make CC_TEST=gcc
 ```
 
 > ⚠️ **Toolbar overflow**: dengan 20 tombol palet + 4 aksi (24 total, ~1250 px), pada jendela default 1100 px tombol **Save / Open / Run** mungkin **terpotong** di kanan. Workaround cepat: gunakan shortcut **F5** (Run), **Ctrl+S** (Save), **Ctrl+O** (Open), atau perlebar/maximize jendela.
 
-Build suite uji dibangun terpisah oleh `run_tests.sh` (`-DSCHEMATIC_TEST_STUBS`); folder `tests\` tidak pernah ikut ke executable produksi.
+Suite uji dibangun terpisah oleh target `tests` / `test` (`-DSCHEMATIC_TEST_STUBS`); folder `tests/` tidak pernah ikut ke executable produksi.
+
+Skrip lama `build.bat` / `build.sh` / `run_tests.sh` masih ada sebagai referensi, tapi **cara resmi sekarang adalah `Makefile`**.
 
 ---
 
@@ -454,8 +463,9 @@ schematic-c/
       komponen_ammeter.c     simbol ammeter (A) + angka bacaan arus saat RUN
       komponen_oscprobe.c    simbol probe osiloskop (tip + badan + klip)
       komponen_inductor.c    simbol induktor (4 lengkung)
-  tests/                 suite uji (dibangun terpisah oleh run_tests.sh)
-  build.bat              script build MinGW
+  tests/                 suite uji (target `make tests` / `make test`)
+  Makefile               build resmi: app + tests + clean + rebuild
+  build.bat / build.sh / run_tests.sh   skrip lama, hanya referensi
   readme.md              file ini
 ```
 
@@ -471,7 +481,7 @@ Alur: `events/toolbar` → `model` → `sim_recompute` (union-find → analisis 
 |---|---|
 | `warning: 'V_UNKNOWN' redefined` | Bentrok dengan `oleauto.h`. Ganti nama jadi `SIM_V_UNKNOWN` di sim.c. |
 | `cannot open output file schematic_win.exe: Permission denied` | Aplikasi masih jalan. `taskkill /f /im schematic_win.exe` lalu rebuild. |
-| `undefined reference to osc_open / osc_refresh` | `oscilloscope.c` belum masuk `build.bat`. |
+| `undefined reference to osc_open / osc_refresh` | `oscilloscope.c` belum masuk `SRC_PROD` di `Makefile`. |
 | `undefined reference to sim_ammeter_connected` | Definisikan di `sim.c` + deklarasikan di `schematic.h`. |
 | `multiple definition of sim_recompute` | `model.c` dan `sim.c` tertukar isinya. Kembalikan `model.c` ke versi aslinya. |
 | `too few arguments to SetViewportOrgEx` | Pakai 4 argumen: `SetViewportOrgEx(hdc, x, y, NULL)`. |
@@ -527,7 +537,7 @@ Bebas dipakai untuk belajar / tugas. Sebut sumber jika disebar ulang.
 | **Fitur table** | Baris baru: **Ammeter** (shunt 0.1 Ω), **Probe Osiloskop**, **Induktor**, **Zoom & Pan**, **Bentuk gelombang AC**, **Save/Open LDR & Buzzer** (kini didukung), **About dialog**, **Multi-select / blok** (dipertegas). Baris `Voltmeter` diperbarui. |
 | **Tampilan (ASCII)** | Baris toolbar 20 tombol; banner simulasi menampilkan bacaan voltmeter + ammeter + OSC probe; status bar `zoom XX%`. |
 | **§ Osiloskop (baru)** | Cara pakai probe, anatomi trace, formula superposisi, batasan. |
-| **Build** | `build.bat` menyertakan `oscilloscope.c` + 3 komponen baru (`komponen_oscprobe.c`, `komponen_inductor.c`, dan `komponen_ammeter.c` yang sebelumnya terlewat di daftar). **Warning toolbar overflow** ditambahkan. |
+| **Build** | Cara resmi sekarang `Makefile` (`make`, `make rebuild`, `make tests`, `make test`); `SRC_PROD` memakai `$(wildcard src/komponen/*.c)` sehingga komponen baru otomatis ikut. Skrip lama (`build.bat`/`build.sh`/`run_tests.sh`) hanya referensi. **Warning toolbar overflow** ditambahkan. |
 | **Cara Pakai** | Bagian **2d/2e/2f/2g/2h** baru: waveform, voltmeter, ammeter, probe osiloskop, induktor. Langkah zoom/pan ditambahkan ke §1. |
 | **Shortcut** | `I`, `P`, `J`, `F12`, `Ctrl +/-/0`, mouse wheel, mouse tengah. |
 | **Format JSON** | `type` baru: `ldr | buzzer | oscprobe | inductor | ammeter` (yang lama sudah ada). Field `wave` (0/1/2) untuk `acsource`. Field `on` untuk LDR (Terang/Gelap). Contoh JSON baru. |
