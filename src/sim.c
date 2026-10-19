@@ -515,7 +515,7 @@ void sim_recompute(void) {
       }
   }
 
-  /* ---- Pass 2: transistor ON (union C-E) ---- */
+  /* ---- Pass 2: transistor / MOSFET ON (union D-S atau C-E) ---- */
   {
     int tr_on[MAX_COMP] = {0};
     int plus_root[MAX_COMP * 3], minus_root[MAX_COMP * 3];
@@ -529,17 +529,16 @@ void sim_recompute(void) {
       }
     }
     for (int i = 0; i < comp_count; i++) {
-      if (comps[i].type != COMP_TRANSISTOR)
+      if (comps[i].type != COMP_TRANSISTOR && comps[i].type != COMP_MOSFET)
         continue;
+      /* pin2 = Basis/ Gate; pin1 = Emitor / Source. */
       int rb = find_root(node_of(i, 2));
       int re = find_root(node_of(i, 1));
       int bp = 0, em = 0;
       for (int k = 0; k < n_plus; k++)
-        if (plus_root[k] == rb)
-          bp = 1;
+        if (plus_root[k] == rb) bp = 1;
       for (int k = 0; k < n_minus; k++)
-        if (minus_root[k] == re)
-          em = 1;
+        if (minus_root[k] == re) em = 1;
       if (bp && em)
         tr_on[i] = 1;
     }
@@ -803,6 +802,14 @@ void sim_recompute(void) {
    Bagian 4: API publik (kontrak schematic.h)
 ============================================================================ */
 void sim_set_running(int on) {
+  /* Guard: RUN hanya bisa diaktifkan bila canvas punya komponen.
+     Semua jalur (toolbar Run, F5, menu Simulasi, accelerator) lewat sini
+     sehingga cukup satu guard terpusat. */
+  if (on && comp_count == 0) {
+    set_status(L"Canvas kosong — tambahkan komponen dulu sebelum RUN.");
+    return;
+  }
+  
   sim_running = on ? 1 : 0;
   dragging_id = -1;
   wiring_active = 0;
@@ -843,8 +850,8 @@ int sim_diode_fwd(const Component *c) {
 }
 
 int sim_comp_conducting(const Component *c) {
-  if (!c || c->type != COMP_TRANSISTOR)
-    return 0;
+  if(!c) return 0;
+  if (c->type != COMP_TRANSISTOR && c->type != COMP_MOSFET) return 0;
   int i = (int)(c - comps);
   if (i < 0 || i >= comp_count)
     return 0;

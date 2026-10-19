@@ -158,6 +158,7 @@ void draw_component(HDC hdc, Component *c) {
         case COMP_OSCPROBE:    draw_k_oscprobe(hdc, c);    break;
         case COMP_INDUCTOR:    draw_k_inductor(hdc, c);    break;
         case COMP_ZENER:       draw_k_zener(hdc, c);       break;
+        case COMP_MOSFET:      draw_k_mosfet(hdc, c);      break;
         default: break;
     }
     draw_value_label(hdc, c);
@@ -167,7 +168,7 @@ void draw_component(HDC hdc, Component *c) {
         HBRUSH oldb = (HBRUSH)SelectObject(hdc, GetStockObject(NULL_BRUSH));
         int hw = (c->rot % 2 == 0) ? 48 : 38;
         int hh = (c->rot % 2 == 0) ? 38 : 48;
-        if (c->type == COMP_TRANSISTOR) { hw = 52; hh = 42; }
+        if (c->type == COMP_TRANSISTOR || c->type == COMP_MOSFET) { hw = 52; hh = 42; }
         Rectangle(hdc, c->x - hw, c->y - hh, c->x + hw, c->y + hh);
         SelectObject(hdc, oldb);
         SelectObject(hdc, old);

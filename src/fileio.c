@@ -31,6 +31,7 @@ static const wchar_t *comp_type_name(CompType t) {
         case COMP_OSCPROBE:  return L"oscprobe";
         case COMP_INDUCTOR:  return L"inductor";
         case COMP_ZENER:     return L"zener";
+        case COMP_MOSFET:    return L"mosfet";
 
         default: return L"none";
     }
@@ -55,6 +56,7 @@ const char *comp_type_json_name(CompType t) {
         case COMP_OSCPROBE:   return "oscprobe";
         case COMP_INDUCTOR:   return "inductor";
         case COMP_ZENER:      return "zener";
+        case COMP_MOSFET:     return "mosfet";
         default:              return "none";
     }
 }
@@ -97,6 +99,9 @@ static int comp_type_from_name(const char *s) {
     if (strcmp(s, "zener") == 0 || strcmp(s, "Zener") == 0 ||
         strcmp(s, "Z") == 0 || strcmp(s, "ZD") == 0 ||
         strcmp(s, "zenerdiode") == 0) return COMP_ZENER;
+    if (strcmp(s, "mosfet") == 0 || strcmp(s, "MOSFET") == 0 ||
+        strcmp(s, "nmos") == 0 || strcmp(s, "NMOS") == 0 ||
+        strcmp(s, "FET") == 0) return COMP_MOSFET;
     return COMP_NONE;
 }
 

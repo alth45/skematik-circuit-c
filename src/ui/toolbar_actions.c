@@ -54,7 +54,12 @@ void palette_draw_open(HDC hdc, int bx, int by) {
 
 void palette_draw_run(HDC hdc, int bx, int by) {
     int cx = bx + TOOLBAR_BTN_W / 2, cy = by + 14;
+
+    /* Disabled: canvas kosong & belum RUN. */
+    int disabled = (!sim_running && comp_count == 0);
+
     if (sim_running) {
+        /* Tombol Stop — merah (selalu enabled). */
         HBRUSH sb2 = CreateSolidBrush(RGB(200,40,40));
         HBRUSH osb = (HBRUSH)SelectObject(hdc, sb2);
         HPEN sp3 = CreatePen(PS_SOLID, 1, RGB(200,40,40));
@@ -65,7 +70,22 @@ void palette_draw_run(HDC hdc, int bx, int by) {
         DeleteObject(sp3);
         DeleteObject(sb2);
         SetTextColor(hdc, RGB(200,40,40));
+    } else if (disabled) {
+        /* Tombol Run disabled — abu-abu pucat. */
+        COLORREF col = RGB(190, 190, 190);
+        POINT tri[3] = { {cx - 8, cy - 9}, {cx - 8, cy + 9}, {cx + 9, cy} };
+        HBRUSH rb = CreateSolidBrush(col);
+        HBRUSH orb = (HBRUSH)SelectObject(hdc, rb);
+        HPEN rp = CreatePen(PS_SOLID, 1, col);
+        HPEN orp = (HPEN)SelectObject(hdc, rp);
+        Polygon(hdc, tri, 3);
+        SelectObject(hdc, orp);
+        SelectObject(hdc, orb);
+        DeleteObject(rp);
+        DeleteObject(rb);
+        SetTextColor(hdc, RGB(185, 185, 185));
     } else {
+        /* Tombol Run enabled — hijau. */
         POINT tri[3] = { {cx - 8, cy - 9}, {cx - 8, cy + 9}, {cx + 9, cy} };
         HBRUSH rb = CreateSolidBrush(RGB(20,150,60));
         HBRUSH orb = (HBRUSH)SelectObject(hdc, rb);
@@ -78,6 +98,7 @@ void palette_draw_run(HDC hdc, int bx, int by) {
         DeleteObject(rb);
         SetTextColor(hdc, RGB(20,150,60));
     }
+
     SetBkMode(hdc, TRANSPARENT);
     TextOutW(hdc, bx + (sim_running ? 13 : 16), by + 28,
              sim_running ? L"Stop" : L"Run", sim_running ? 4 : 3);

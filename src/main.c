@@ -18,7 +18,9 @@ void splash_run(HINSTANCE hInst, HWND main_hwnd);
 static void setup_keyboard(HWND hwnd) { SetFocus(hwnd); }
 
 static void toolbar_click(HWND hwnd, int x, int y) {
-  int idx = toolbar_hit(x, y);
+   RECT rc; GetClientRect(hwnd, &rc);
+  int W = rc.right;
+  int idx = toolbar_hit(x, y, W);
   if (idx < 0) return;
   if (idx == CLEAR_BTN_INDEX) {
     menubar_command(hwnd, IDM_EDIT_CLEAR);
@@ -54,7 +56,19 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     int x = (short)LOWORD(lp);
     int y = (short)HIWORD(lp);
     if (y < MENUBAR_H) { menubar_click(hwnd, x, y); return 0; }
-    if (y < TOOLBAR_H) { toolbar_click(hwnd, x, y - MENUBAR_H); return 0; }
+    if (y < TOOLBAR_H) {
+      RECT rc; GetClientRect(hwnd, &rc);
+      int local_y = y - MENUBAR_H;
+      int is_thumb = 0;
+      if (toolbar_scrollbar_hit(x, local_y, rc.right, &is_thumb)) {
+        toolbar_scrollbar_begin_drag(x, local_y, rc.right);
+        SetCapture(hwnd);
+        InvalidateRect(hwnd, NULL, FALSE);
+        return 0;
+      }
+      toolbar_click(hwnd, x, y - MENUBAR_H);
+      return 0;
+    }
     setup_keyboard(hwnd);
     int cx, cy;
     canvas_screen_to_canvas(x, y - TOOLBAR_H, &cx, &cy);
@@ -78,6 +92,26 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
   case WM_MOUSEMOVE: {
     int x = (short)LOWORD(lp);
     int y = (short)HIWORD(lp);
+
+    /* Drag scrollbar toolbar. */
+    if (toolbar_scrollbar_dragging()) {
+      RECT rc; GetClientRect(hwnd, &rc);
+      if (toolbar_scrollbar_drag(x, rc.right))
+        InvalidateRect(hwnd, NULL, FALSE);
+      return 0;
+    }
+
+    /* Cursor feedback saat hover thumb. */
+    if (y >= MENUBAR_H && y < TOOLBAR_H) {
+      RECT rc; GetClientRect(hwnd, &rc);
+      int local_y = y - MENUBAR_H;
+      if (toolbar_scrollbar_hover_thumb(x, local_y, rc.right)) {
+        SetCursor(LoadCursor(NULL, IDC_SIZEWE));
+      }
+      /* Tidak return — biarkan pan/ lainnya berjalan normal. */
+    }
+
+    /* Pan dengan mouse tengah. */
     if (g_pan_active) {
       g_pan_x = g_pan_orig_px - (int)((x - g_pan_start_sx) / g_zoom);
       g_pan_y = g_pan_orig_py - (int)((y - g_pan_start_sy) / g_zoom);
@@ -92,6 +126,12 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
   }
 
   case WM_LBUTTONUP: {
+    if (toolbar_scrollbar_dragging()) {
+      toolbar_scrollbar_end_drag();
+      ReleaseCapture();
+      InvalidateRect(hwnd, NULL, FALSE);
+      return 0;
+    }
     int x = (short)LOWORD(lp);
     int y = (short)HIWORD(lp);
     if (y < TOOLBAR_H) y = TOOLBAR_H;
@@ -129,7 +169,18 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     pt.x = (short)LOWORD(lp);
     pt.y = (short)HIWORD(lp);
     ScreenToClient(hwnd, &pt);
-    if (pt.y < TOOLBAR_H) return 0;
+
+    if (pt.y < MENUBAR_H) return 0;
+
+    if (pt.y < TOOLBAR_H) {
+      RECT rc; GetClientRect(hwnd, &rc);
+      int local_y = pt.y - MENUBAR_H;
+      if (toolbar_scroll_wheel(delta, pt.x, local_y, rc.right))
+        InvalidateRect(hwnd, NULL, FALSE);
+      return 0;
+    }
+
+    /* Canvas zoom */
     int sx = pt.x;
     int sy = pt.y - TOOLBAR_H;
     if (delta > 0)      canvas_zoom_at(sx, sy, 1.25);
@@ -137,6 +188,8 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     InvalidateRect(hwnd, NULL, FALSE);
     return 0;
   }
+
+  
 
   case WM_LBUTTONDBLCLK: {
     int x = (short)LOWORD(lp);
@@ -313,6 +366,12 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     mmi->ptMinTrackSize.y = 600;
     return 0;
   }
+
+  case WM_SIZE:
+    /* clamp g_toolbar_scroll_x otomatis terjadi saat repaint;
+       invalidate untuk refresh toolbar layout. */
+    InvalidateRect(hwnd, NULL, FALSE);
+    return 0;
 
   case WM_DESTROY:
     PostQuitMessage(0);

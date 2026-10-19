@@ -17,7 +17,5 @@ void palette_draw_save(HDC hdc, int bx, int by);
 void palette_draw_open(HDC hdc, int bx, int by);
 void palette_draw_run(HDC hdc, int bx, int by);
 
-/* toolbar_palette.c */
-int toolbar_btn_x(int idx);
 
 #endif /* TOOLBAR_INTERN_H */

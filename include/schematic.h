@@ -17,6 +17,7 @@
 #define PALETTE_H   64   /* tinggi strip tombol komponen di bawah menubar */
 #define TOOLBAR_BTN_W 46
 #define TOOLBAR_BTN_H 46
+#define TOOLBAR_BTN_GAP 3
 #define PIN_R    7
 #define STATUS_H 26
 #define WIRE_HIT 8
@@ -33,6 +34,8 @@
 #define BUZZER_FREQ_DEFAULT 1000.0 /* buzzer default: 1 kHz; v = frekuensi Hz */
 #define IND_DEFAULT_H 100e-6
 #define VZENER_DEFAULT 5.1  /* dioda zener default: Vz = 5.1 V */
+#define MOSFET_VTH_DEFAULT  2.0 /* tegangan ambang MOSFET default: Vth = 2.0 V */
+
 
 typedef enum {
     COMP_NONE = 0,
@@ -75,9 +78,10 @@ typedef enum {
                         DC  : short ideal (0 Ω) — disatukan di Pass 1 sim.c.
                         AC  : impedansi XL = 2πfL (saat sim_ac_mode).
                         v = induktansi Henry (default 100e-6 = 100 µH). */
-    COMP_ZENER         /* dioda zener: pin0=A(anoda kiri) pin1=K(katoda kanan); arah sama dgn LED.
+    COMP_ZENER,         /* dioda zener: pin0=A(anoda kiri) pin1=K(katoda kanan); arah sama dgn LED.
                         Menghantar seperti dioda biasa saat forward bias; saat reverse
                         bias, menghantar bila tegangan balik > Vz (v = Vz dalam Volt). */
+    COMP_MOSFET       /* transistor MOSFET: pin0=gate, pin1=source, pin2=drain */
 } CompType;
 
 /* Tool yang dipilih user di palette */
@@ -102,6 +106,7 @@ typedef enum {
     TOOL_OSCPROBE,       /* osiloscope probe (ukur beda potensial dua titik) */
     TOOL_INDUCTOR,        /* induktor (kumparan) */
     TOOL_ZENER,          /* dioda zener */
+    TOOL_MOSFET,         /* transistor MOSFET */
     TOOL_DELETE
 } ToolKind;
 
@@ -145,7 +150,7 @@ typedef struct {
 } Wire;
 
 /* Jumlah tombol palette (Select, Blok, Wire + 15 komponen + Hapus). */
-#define BTN_COUNT 21
+#define BTN_COUNT 22
 
 /* Batas seleksi multi (model.c) */
 #define MAX_SEL 256
@@ -229,9 +234,38 @@ extern const wchar_t *btnLabels[BTN_COUNT]; /* nama tool = tooltip/status */
 /* Toolbar: hit-test & gambar (toolbar_palette.c + toolbar_actions.c).
    toolbar_hit: -1 = tidak kena; 0..BTN_COUNT-1 = indeks tool;
    CLEAR/SAVE/OPEN_BTN_INDEX = tombol aksi. */
-int toolbar_hit(int x, int y);
-int toolbar_tool_at(int x, int y, int *is_clear);
+int toolbar_hit(int x, int y, int W);
+int toolbar_tool_at(int x, int y, int W, int *is_clear);
 void draw_toolbar(HDC hdc, int W);
+
+/* ---- Layout toolbar (fixed + scrollable + fixed) ----
+   Fixed kiri  : btnTools[0..3] = Select, Blok, Wire, Delete.
+   Scrollable  : btnTools[4..BTN_COUNT-1] = 17 komponen.
+   Fixed kanan : BTN_COUNT..BTN_COUNT+3 = Clear, Save, Open, Run.
+   Scroll hanya berlaku horizontal di area komponen (wheel). */
+#define TOOLBAR_FIXED_LEFT_COUNT  4
+#define TOOLBAR_FIXED_RIGHT_COUNT 4
+#define TOOLBAR_SCROLL_COUNT      (BTN_COUNT - TOOLBAR_FIXED_LEFT_COUNT)
+
+extern int g_toolbar_scroll_x;   /* 0..toolbar_max_scroll(W) */
+
+int toolbar_scroll_start_x(void);
+int toolbar_scroll_end_x(int W);
+int toolbar_max_scroll(int W);
+int toolbar_get_scroll_x(int W);
+int toolbar_action_x(int action_idx, int W);
+
+/* Proses roda mouse di area toolbar. Return 1 bila ditangani (scroll terjadi). */
+int toolbar_scroll_wheel(int delta, int x, int y, int W);
+/* Interaksi scrollbar (click + drag thumb, click track = jump).
+   x, y dalam koordinat toolbar-local (y sudah dikurangi MENUBAR_H).
+   Hit return: 0 = miss, 1 = track, 2 = thumb. */
+int  toolbar_scrollbar_hit(int x, int y, int W, int *is_thumb);
+void toolbar_scrollbar_begin_drag(int x, int y, int W);
+int  toolbar_scrollbar_drag(int mx, int W);
+void toolbar_scrollbar_end_drag(void);
+int  toolbar_scrollbar_dragging(void);
+int  toolbar_scrollbar_hover_thumb(int x, int y, int W);
 
 /* ===================== Menu Bar klasik (File/Edit/View/Simulasi/Bantu) ====
    Digambar manual di strip paling atas window (tinggi MENUBAR_H), DI ATAS
@@ -339,6 +373,7 @@ void draw_k_ammeter(HDC hdc, Component *c);
 void draw_k_oscprobe(HDC hdc, Component *c);
 void draw_k_inductor(HDC hdc, Component *c);
 void draw_k_zener(HDC hdc, Component *c);
+void draw_k_mosfet(HDC hdc, Component *c);
 
 void draw_component(HDC hdc, Component *c);
 void draw_canvas(HWND hwnd);

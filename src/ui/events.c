@@ -19,6 +19,7 @@ static CompType tool_to_comp(ToolKind t) {
         case TOOL_OSCPROBE:   return COMP_OSCPROBE;
         case TOOL_INDUCTOR:   return COMP_INDUCTOR;
         case TOOL_ZENER:      return COMP_ZENER;
+        case TOOL_MOSFET:     return COMP_MOSFET;
         default: return COMP_NONE;
     }
 }
@@ -57,6 +58,7 @@ static const wchar_t *comp_kind_name(CompType t) {
         case COMP_OSCPROBE:   return L"Probe Osiloskop";
         case COMP_INDUCTOR:   return L"Induktor";
         case COMP_ZENER:      return L"Dioda Zener";
+        case COMP_MOSFET:     return L"MOSFET N-Channel";
         default:              return L"Komponen";
     }
 }
@@ -259,6 +261,20 @@ void show_context_menu(HWND hwnd, int sx, int sy, Component *c) {
                         L"Forward: Vf ≈ 0.7 V | Breakdown: V_K = V_A + Vz\n"
                         L"Status RUN: %ls",
                         vz, st);
+                    wcscat_s(buf, 512, extra);
+                }
+                if (c->type == COMP_MOSFET) {
+                    wchar_t extra[160];
+                    double vth = (c->v > 0.0) ? c->v : MOSFET_VTH_DEFAULT;
+                    const wchar_t *st = L"off";
+                    if (sim_running)
+                        st = sim_comp_conducting(c) ? L"ON (D-S menghantar)" : L"OFF";
+                    swprintf(extra, 160,
+                        L"\nTipe: N-Channel Enhancement MOSFET\n"
+                        L"Vth (threshold gate) = %.3g V\n"
+                        L"pin 0 = D (Drain), 1 = S (Source), 2 = G (Gate)\n"
+                        L"Status RUN: %ls",
+                        vth, st);
                     wcscat_s(buf, 512, extra);
                 }
                 if (c->type == COMP_BUZZER) {
@@ -727,7 +743,7 @@ void on_key_down(HWND hwnd, WPARAM key) {
             key == 'U' || key == 'u' || key == 'V' || key == 'v' ||
             key == 'W' || key == 'w' || key == 'M' || key == 'm' ||
             key == 'I' || key == 'i' || key == 'P' || key == 'p' ||
-            key == 'J' || key == 'j' || key == 'Z' || key == 'z') return;
+            key == 'J' || key == 'j' || key == 'Z' || key == 'z' || key == 'F' || key == 'f') return;
     }
     if (key == 'R' || key == 'r') {
         if (sim_running) return; /* rotasi dikunci saat RUN */
@@ -776,6 +792,7 @@ void on_key_down(HWND hwnd, WPARAM key) {
     else if (key == 'P' || key == 'p') { current_tool = TOOL_OSCPROBE; }
     else if (key == 'J' || key == 'j') { current_tool = TOOL_INDUCTOR; }
     else if (key == 'Z' || key == 'z') { current_tool = TOOL_ZENER; }
+    else if (key == 'F' || key == 'f') { current_tool = TOOL_MOSFET; }
     else if (key == VK_DELETE || key == VK_BACK) {
         if (sim_running) return; /* hapus dikunci saat RUN */
         if (sel_count > 1) {

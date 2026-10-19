@@ -93,7 +93,7 @@ static void build_popup(int menu_idx, HMENU m) {
             AppendMenuW(m, MF_STRING, IDM_VIEW_ZOOMFIT, L"Sesuaikan Tampilan\tCtrl+0");
             break;
         case 3:
-            AppendMenuW(m, MF_STRING | (sim_running ? MF_GRAYED : 0),
+            AppendMenuW(m, MF_STRING | ((sim_running || comp_count == 0) ? MF_GRAYED : 0),
                         IDM_SIM_RUN, L"Jalankan Simulasi\tF5");
             AppendMenuW(m, MF_STRING | (sim_running ? 0 : MF_GRAYED),
                         IDM_SIM_STOP, L"Hentikan Simulasi\tF5");

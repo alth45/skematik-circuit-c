@@ -119,20 +119,22 @@ void canvas_zoom_reset(void) {
    Capacitor, Transistor, Diode, Kapasitor Polar, LDR, Buzzer, Voltmeter,
    Delete. + 4 tombol aksi. */
 const ToolKind btnTools[BTN_COUNT] = {
-    TOOL_SELECT, TOOL_BOX, TOOL_WIRE,
+    /* Fixed-left group (indices 0..3): */
+    TOOL_SELECT, TOOL_BOX, TOOL_WIRE, TOOL_DELETE,
+    /* Scrollable components (indices 4..20): */
     TOOL_RESISTOR, TOOL_SWITCH, TOOL_BATTERY, TOOL_ACSOURCE, TOOL_LED, TOOL_GROUND,
     TOOL_CAPACITOR, TOOL_TRANSISTOR, TOOL_DIODE, TOOL_CAPOLAR,
-    TOOL_LDR, TOOL_BUZZER, TOOL_VOLTMETER, TOOL_AMMETER, TOOL_OSCPROBE, TOOL_INDUCTOR, TOOL_ZENER,
-    TOOL_DELETE
+    TOOL_LDR, TOOL_BUZZER, TOOL_VOLTMETER, TOOL_AMMETER,
+    TOOL_OSCPROBE, TOOL_INDUCTOR, TOOL_ZENER, TOOL_MOSFET
 };
 const wchar_t *btnLabels[BTN_COUNT] = {
     L"Select / Geser (V)", L"Blok / Multi-Select (B)", L"Kabel / Wire (W)",
+    L"Hapus / Delete (Del)",
     L"Resistor (1)", L"Saklar / Switch (2)", L"Baterai (3)", L"Sumber AC (0)",
     L"LED (4)", L"Ground (5)",
     L"Kapasitor (6)", L"Transistor NPN (7)", L"Dioda (8)", L"Kapasitor Polar (9)",
-    L"LDR / Sensor Cahaya (L)", L"Buzzer (U)", L"Voltmeter (M)",
-    L"Ammeter (I)", L"OSC Probe (P)", L"Induktor (J)", L"Dioda Zener (Z)",
-    L"Hapus / Delete (Del)"
+    L"LDR / Sensor Cahaya (L)", L"Buzzer (U)", L"Voltmeter (M)", L"Ammeter (I)",
+    L"Probe Osiloskop (P)", L"Induktor (J)", L"Dioda Zener (Z)", L"MOSFET N-Channel (F)"
 };
 
 /* ===================== Utilitas ===================== */
@@ -160,7 +162,7 @@ Component *find_comp_at(int x, int y) {
 
 void comp_bounding_half(const Component *c, int *hw, int *hh) {
     int w = 48, h = 38;
-    if (c->type == COMP_TRANSISTOR) { w = 52; h = 42; }
+    if (c->type == COMP_TRANSISTOR || c->type == COMP_MOSFET) { w = 52; h = 42; }
     if (c->rot % 2 != 0) { int t = w; w = h; h = t; }
     *hw = w; *hh = h;
 }
@@ -168,7 +170,7 @@ void comp_bounding_half(const Component *c, int *hw, int *hh) {
 int comp_pin_count(const Component *c) {
     if (!c) return 0;
     if (c->type == COMP_GROUND) return 1;
-    if (c->type == COMP_TRANSISTOR) return 3;
+    if (c->type == COMP_TRANSISTOR || c->type == COMP_MOSFET) return 3;
     if (c->type == COMP_NONE) return 0;
     return 2;
 }
@@ -193,7 +195,7 @@ void comp_pin_pos(const Component *c, int pin_idx, int *px, int *py) {
     if (!c || !px || !py) return;
     if (c->type == COMP_GROUND) {
         comp_local_to_world(c, 0, -30, px, py);
-    }else if (c->type == COMP_TRANSISTOR) {
+    }else if (c->type == COMP_TRANSISTOR || c->type == COMP_MOSFET) {
         /* NPN standar (B di kiri, C & E di kanan):
            pin0 = Kolektor -> kanan-atas  (+40, -30)
            pin1 = Emitor   -> kanan-bawah (+40, +30)  (panah keluar)
@@ -382,6 +384,7 @@ double comp_default_value(CompType t) {
         case COMP_OSCPROBE:   return 0.0;
         case COMP_INDUCTOR:   return IND_DEFAULT_H;
         case COMP_ZENER:      return VZENER_DEFAULT;
+        case COMP_MOSFET:     return MOSFET_VTH_DEFAULT;
         default:              return 0.0;
     }
 }
@@ -391,7 +394,7 @@ int comp_has_value(CompType t) {
            t == COMP_LED ||
            t == COMP_DIODE || t == COMP_CAPACITOR || t == COMP_CAPOLAR ||
            t == COMP_LDR || t == COMP_BUZZER || t == COMP_INDUCTOR ||
-           t == COMP_ZENER;
+           t == COMP_ZENER || t == COMP_MOSFET;
 }
 
 const wchar_t *comp_value_unit(CompType t) {
@@ -407,6 +410,7 @@ const wchar_t *comp_value_unit(CompType t) {
         case COMP_BUZZER:    return L"Hz";
         case COMP_INDUCTOR:  return L"H";
         case COMP_ZENER:     return L"Vz";
+        case COMP_MOSFET:    return L"Vth";
         default:             return NULL;
     }
 }
