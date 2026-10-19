@@ -18,7 +18,7 @@ void splash_run(HINSTANCE hInst, HWND main_hwnd);
 static void setup_keyboard(HWND hwnd) { SetFocus(hwnd); }
 
 static void toolbar_click(HWND hwnd, int x, int y) {
-   RECT rc; GetClientRect(hwnd, &rc);
+  RECT rc; GetClientRect(hwnd, &rc);
   int W = rc.right;
   int idx = toolbar_hit(x, y, W);
   if (idx < 0) return;
@@ -46,6 +46,92 @@ static int g_pan_active   = 0;
 static int g_pan_start_sx = 0, g_pan_start_sy = 0;
 static int g_pan_orig_px  = 0, g_pan_orig_py  = 0;
 
+/* Render seluruh scene canvas (grid + kabel + komponen + [overlay] +
+   banner) ke DC dengan origin (0,0) di pojok kiri-atas canvas. Dipakai
+   oleh WM_PAINT (dengan viewport offset) dan export_png.c (tanpa offset). */
+void render_canvas_scene(HDC hdc, int W, int H, int include_ui_overlay) {
+    /* 1) Grid (screen coords, sebelum world transform → tetap tajam) */
+    if (g_show_grid) {
+        HPEN gp = CreatePen(PS_SOLID, 1, RGB(235, 235, 235));
+        HPEN oldp = (HPEN)SelectObject(hdc, gp);
+        int first_gx = (int)(ceil((double)g_pan_x / GRID) * GRID);
+        int first_gy = (int)(ceil((double)g_pan_y / GRID) * GRID);
+        for (int gx = first_gx; ; gx += GRID) {
+            int sx = (int)((gx - g_pan_x) * g_zoom);
+            if (sx >= W) break;
+            if (sx >= 0) { MoveToEx(hdc, sx, 0, NULL); LineTo(hdc, sx, H); }
+        }
+        for (int gy = first_gy; ; gy += GRID) {
+            int sy = (int)((gy - g_pan_y) * g_zoom);
+            if (sy >= H) break;
+            if (sy >= 0) { MoveToEx(hdc, 0, sy, NULL); LineTo(hdc, W, sy); }
+        }
+        SelectObject(hdc, oldp);
+        DeleteObject(gp);
+    }
+
+    /* 2) Konten dengan world transform (zoom + pan) */
+    int saved2 = SaveDC(hdc);
+    SetGraphicsMode(hdc, GM_ADVANCED);
+    XFORM xf = {
+        (FLOAT)g_zoom, 0,
+        0, (FLOAT)g_zoom,
+        (FLOAT)(-g_pan_x * g_zoom),
+        (FLOAT)(-g_pan_y * g_zoom)
+    };
+    SetWorldTransform(hdc, &xf);
+
+    draw_wires(hdc);
+    for (int i = 0; i < comp_count; i++)
+        draw_component(hdc, &comps[i]);
+    if (include_ui_overlay)
+        draw_selection_overlay(hdc);
+
+    RestoreDC(hdc, saved2);
+
+    /* 3) Marquee overlay (screen coords; hanya live) */
+    if (include_ui_overlay)
+        draw_marquee_overlay(hdc);
+
+    /* 4) Banner simulasi (kalau RUN) */
+    if (sim_running) {
+        const wchar_t *msg = sim_message();
+        COLORREF fg, bgc;
+        if (sim_short) {
+            fg = RGB(255, 255, 255);
+            bgc = RGB(200, 40, 40);
+        } else if (sim_led_count > 0) {
+            fg = RGB(255, 255, 255);
+            bgc = RGB(20, 150, 60);
+        } else {
+            fg = RGB(60, 60, 60);
+            bgc = RGB(255, 235, 160);
+        }
+        HFONT hB = font_banner();
+        HFONT oB = (HFONT)SelectObject(hdc, hB);
+        SIZE bsz;
+        GetTextExtentPoint32W(hdc, msg, (int)wcslen(msg), &bsz);
+        int bw = bsz.cx + 28, bh = bsz.cy + 14;
+        int bx = (W - bw) / 2, by = 10;
+        HBRUSH bb2 = CreateSolidBrush(bgc);
+        HBRUSH obb2 = (HBRUSH)SelectObject(hdc, bb2);
+        HPEN bp2 = CreatePen(PS_SOLID, 1, fg);
+        HPEN obp2 = (HPEN)SelectObject(hdc, bp2);
+        RoundRect(hdc, bx, by, bx + bw, by + bh, 10, 10);
+        SelectObject(hdc, obp2);
+        SelectObject(hdc, obb2);
+        DeleteObject(bp2);
+        DeleteObject(bb2);
+        SetTextColor(hdc, fg);
+        SetBkMode(hdc, TRANSPARENT);
+        TextOutW(hdc, bx + 14, by + 7, msg, (int)wcslen(msg));
+        SelectObject(hdc, oB);
+    }
+     /* Minimap: hanya di live paint (include_ui_overlay), tidak ikut export PNG. */
+    if (include_ui_overlay)
+        minimap_render(hdc, W, H);
+}
+
 LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
   switch (msg) {
   case WM_CREATE:
@@ -70,6 +156,20 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
       return 0;
     }
     setup_keyboard(hwnd);
+    {
+      RECT rc; GetClientRect(hwnd, &rc);
+      int canvas_w = rc.right;
+      int canvas_h = rc.bottom - TOOLBAR_H - (g_show_status ? STATUS_H : 0);
+      int cx_screen = x;
+      int cy_screen = y - TOOLBAR_H;
+      if (minimap_hit(cx_screen, cy_screen, canvas_w, canvas_h)) {
+        minimap_begin_drag(cx_screen, cy_screen, canvas_w, canvas_h);
+        minimap_drag(cx_screen, cy_screen, canvas_w, canvas_h);
+        SetCapture(hwnd);
+        InvalidateRect(hwnd, NULL, FALSE);
+        return 0;
+      }
+    }
     int cx, cy;
     canvas_screen_to_canvas(x, y - TOOLBAR_H, &cx, &cy);
     on_lbutton_down(hwnd, cx, cy);
@@ -93,7 +193,6 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     int x = (short)LOWORD(lp);
     int y = (short)HIWORD(lp);
 
-    /* Drag scrollbar toolbar. */
     if (toolbar_scrollbar_dragging()) {
       RECT rc; GetClientRect(hwnd, &rc);
       if (toolbar_scrollbar_drag(x, rc.right))
@@ -101,17 +200,23 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
       return 0;
     }
 
-    /* Cursor feedback saat hover thumb. */
+    if (minimap_dragging()) {
+      RECT rc; GetClientRect(hwnd, &rc);
+      int canvas_w = rc.right;
+      int canvas_h = rc.bottom - TOOLBAR_H - (g_show_status ? STATUS_H : 0);
+      minimap_drag(x, y - TOOLBAR_H, canvas_w, canvas_h);
+      InvalidateRect(hwnd, NULL, FALSE);
+      return 0;
+    }
+
     if (y >= MENUBAR_H && y < TOOLBAR_H) {
       RECT rc; GetClientRect(hwnd, &rc);
       int local_y = y - MENUBAR_H;
       if (toolbar_scrollbar_hover_thumb(x, local_y, rc.right)) {
         SetCursor(LoadCursor(NULL, IDC_SIZEWE));
       }
-      /* Tidak return — biarkan pan/ lainnya berjalan normal. */
     }
 
-    /* Pan dengan mouse tengah. */
     if (g_pan_active) {
       g_pan_x = g_pan_orig_px - (int)((x - g_pan_start_sx) / g_zoom);
       g_pan_y = g_pan_orig_py - (int)((y - g_pan_start_sy) / g_zoom);
@@ -128,6 +233,12 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
   case WM_LBUTTONUP: {
     if (toolbar_scrollbar_dragging()) {
       toolbar_scrollbar_end_drag();
+      ReleaseCapture();
+      InvalidateRect(hwnd, NULL, FALSE);
+      return 0;
+    }
+    if (minimap_dragging()) {
+      minimap_end_drag();
       ReleaseCapture();
       InvalidateRect(hwnd, NULL, FALSE);
       return 0;
@@ -180,7 +291,6 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
       return 0;
     }
 
-    /* Canvas zoom */
     int sx = pt.x;
     int sy = pt.y - TOOLBAR_H;
     if (delta > 0)      canvas_zoom_at(sx, sy, 1.25);
@@ -188,8 +298,6 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     InvalidateRect(hwnd, NULL, FALSE);
     return 0;
   }
-
-  
 
   case WM_LBUTTONDBLCLK: {
     int x = (short)LOWORD(lp);
@@ -240,86 +348,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     SetViewportOrgEx(memDC, 0, TOOLBAR_H, NULL);
     IntersectClipRect(memDC, 0, 0, W, canvas_h);
 
-    /* Grid: screen coords (sebelum world transform, supaya tajam). */
-    if (g_show_grid) {
-      HPEN gp = CreatePen(PS_SOLID, 1, RGB(235, 235, 235));
-      HPEN oldp = (HPEN)SelectObject(memDC, gp);
-      int first_gx = (int)(ceil((double)g_pan_x / GRID) * GRID);
-      int first_gy = (int)(ceil((double)g_pan_y / GRID) * GRID);
-      for (int gx = first_gx; ; gx += GRID) {
-        int sx = (int)((gx - g_pan_x) * g_zoom);
-        if (sx >= W) break;
-        if (sx >= 0) {
-          MoveToEx(memDC, sx, 0, NULL);
-          LineTo(memDC, sx, canvas_h);
-        }
-      }
-      for (int gy = first_gy; ; gy += GRID) {
-        int sy = (int)((gy - g_pan_y) * g_zoom);
-        if (sy >= canvas_h) break;
-        if (sy >= 0) {
-          MoveToEx(memDC, 0, sy, NULL);
-          LineTo(memDC, W, sy);
-        }
-      }
-      SelectObject(memDC, oldp);
-      DeleteObject(gp);
-    }
-
-    /* Konten: world transform (zoom + pan). */
-    int saved2 = SaveDC(memDC);
-    SetGraphicsMode(memDC, GM_ADVANCED);
-    XFORM xf = {
-        (FLOAT)g_zoom, 0,
-        0, (FLOAT)g_zoom,
-        (FLOAT)(-g_pan_x * g_zoom),
-        (FLOAT)(-g_pan_y * g_zoom)
-    };
-    SetWorldTransform(memDC, &xf);
-
-    draw_wires(memDC);
-    for (int i = 0; i < comp_count; i++)
-      draw_component(memDC, &comps[i]);
-    draw_selection_overlay(memDC);
-
-    RestoreDC(memDC, saved2);
-
-    /* Overlay: screen coords (masih ter-clip ke canvas). */
-    draw_marquee_overlay(memDC);
-
-    if (sim_running) {
-      const wchar_t *msg = sim_message();
-      COLORREF fg, bgc;
-      if (sim_short) {
-        fg = RGB(255, 255, 255);
-        bgc = RGB(200, 40, 40);
-      } else if (sim_led_count > 0) {
-        fg = RGB(255, 255, 255);
-        bgc = RGB(20, 150, 60);
-      } else {
-        fg = RGB(60, 60, 60);
-        bgc = RGB(255, 235, 160);
-      }
-      HFONT hB = font_banner();
-      HFONT oB = (HFONT)SelectObject(memDC, hB);
-      SIZE bsz;
-      GetTextExtentPoint32W(memDC, msg, (int)wcslen(msg), &bsz);
-      int bw = bsz.cx + 28, bh = bsz.cy + 14;
-      int bx = (W - bw) / 2, by = 10;
-      HBRUSH bb2 = CreateSolidBrush(bgc);
-      HBRUSH obb2 = (HBRUSH)SelectObject(memDC, bb2);
-      HPEN bp2 = CreatePen(PS_SOLID, 1, fg);
-      HPEN obp2 = (HPEN)SelectObject(memDC, bp2);
-      RoundRect(memDC, bx, by, bx + bw, by + bh, 10, 10);
-      SelectObject(memDC, obp2);
-      SelectObject(memDC, obb2);
-      DeleteObject(bp2);
-      DeleteObject(bb2);
-      SetTextColor(memDC, fg);
-      SetBkMode(memDC, TRANSPARENT);
-      TextOutW(memDC, bx + 14, by + 7, msg, (int)wcslen(msg));
-      SelectObject(memDC, oB);
-    }
+    render_canvas_scene(memDC, W, canvas_h, 1);
 
     RestoreDC(memDC, -1);
 
@@ -360,18 +389,16 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
   case WM_ERASEBKGND:
     return 1;
 
+  case WM_SIZE:
+    InvalidateRect(hwnd, NULL, FALSE);
+    return 0;
+
   case WM_GETMINMAXINFO: {
     MINMAXINFO *mmi = (MINMAXINFO *)lp;
     mmi->ptMinTrackSize.x = 1120;
     mmi->ptMinTrackSize.y = 600;
     return 0;
   }
-
-  case WM_SIZE:
-    /* clamp g_toolbar_scroll_x otomatis terjadi saat repaint;
-       invalidate untuk refresh toolbar layout. */
-    InvalidateRect(hwnd, NULL, FALSE);
-    return 0;
 
   case WM_DESTROY:
     PostQuitMessage(0);
@@ -410,8 +437,7 @@ int WINAPI wWinMain(HINSTANCE hInst, HINSTANCE hPrev, PWSTR cmd, int show) {
       {FCONTROL | FVIRTKEY, 'N', IDM_FILE_NEW},
       {FCONTROL | FVIRTKEY, 'O', IDM_FILE_OPEN},
       {FCONTROL | FVIRTKEY, 'S', IDM_FILE_SAVE},
-      {FCONTROL | FVIRTKEY, 'Z', IDM_EDIT_UNDO},
-      {FCONTROL | FVIRTKEY, 'Y', IDM_EDIT_REDO},
+      {FCONTROL | FVIRTKEY, 'E', IDM_FILE_EXPORT_PNG},
       {FVIRTKEY, VK_F5, IDM_SIM_RUN_TOGGLE},
       {FVIRTKEY, VK_F9, IDM_SIM_RECOMPUTE},
       {FVIRTKEY, VK_F12, IDM_VIEW_OSC},

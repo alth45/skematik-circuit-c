@@ -276,6 +276,7 @@ int  toolbar_scrollbar_hover_thumb(int x, int y, int W);
 #define IDM_FILE_SAVE     0x1103
 #define IDM_FILE_SAVEAS   0x1104
 #define IDM_FILE_EXIT     0x1105
+#define IDM_FILE_EXPORT_PNG 0x1106
 #define IDM_EDIT_UNDO     0x1110
 #define IDM_EDIT_REDO     0x1116  /* Edit > Redo (Ctrl+Y) */
 #define IDM_EDIT_DUPL     0x1111
@@ -288,6 +289,7 @@ int  toolbar_scrollbar_hover_thumb(int x, int y, int W);
 #define IDM_VIEW_ZOOMIN   0x1122
 #define IDM_VIEW_ZOOMOUT  0x1123
 #define IDM_VIEW_ZOOMFIT  0x1124
+#define IDM_VIEW_MINIMAP  0x1125  /* View > Minimap (toggle) */
 #define IDM_SIM_RUN       0x1130
 #define IDM_SIM_STOP      0x1131
 #define IDM_SIM_RECOMPUTE 0x1132
@@ -490,6 +492,20 @@ void canvas_zoom_fit(int view_w, int view_h);
 /* Reset ke zoom=1, pan=(0,0). */
 void canvas_zoom_reset(void);
 
+/* ---- Minimap (ui/minimap.c) ----
+   Overview seluruh canvas di pojok kanan-bawah. Viewport ditandai kotak merah.
+   Klik atau drag pada minimap → pan canvas supaya titik itu jadi pusat.
+   Default ON, otomatis tersembunyi bila canvas kosong & view belum di-geser. */
+extern int g_show_minimap;
+
+void minimap_render(HDC hdc, int canvas_w, int canvas_h);
+int  minimap_hit(int x, int y, int canvas_w, int canvas_h);
+void minimap_click(int x, int y, int canvas_w, int canvas_h);
+void minimap_begin_drag(int x, int y, int canvas_w, int canvas_h);
+void minimap_drag(int x, int y, int canvas_w, int canvas_h);
+void minimap_end_drag(void);
+int  minimap_dragging(void);
+
 /* ---- Probe Osiloskop (bentuk gelombang domain-waktu) ----
    Komponen COMP_OSCPROBE mengukur V(pin0) - V(pin1) terhadap waktu t.
    Untuk simulasi domain-waktu, dipakai SUPERPOSISI:
@@ -526,6 +542,23 @@ int  osc_is_open(void);
 
 /* ===================== Window Procedure (main.c) ===================== */
 LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp);
+
+/* Render seluruh scene canvas ke DC berukuran (W × H). Dipakai WM_PAINT
+   dan export_png.c. include_ui_overlay = 1 untuk live (kotak seleksi +
+   marquee); 0 untuk ekspor bersih. Banner simulasi tetap ikut bila RUN. */
+void render_canvas_scene(HDC hdc, int W, int H, int include_ui_overlay);
+
+/* ---- PNG Export (png_writer.c + export_png.c) ----
+   png_write_rgb  : tulis buffer RGB 24-bit top-down ke file PNG.
+   export_canvas_png : ambil area canvas dari hwnd, render (tanpa UI
+                        transient), lalu tulis ke path. Return 1 sukses. */
+int  png_write_rgb(const wchar_t *path, int width, int height,
+                   const unsigned char *rgb);
+int  export_canvas_png(HWND hwnd, const wchar_t *path,
+                       wchar_t *err, int err_cap);
+
+/* Dialog Export as PNG (fileio.c). */
+void model_export_png_dialog(HWND hwnd);
 
 /* ===================== Splash Screen (splash.c) =====================
    Tampil dulu saat .exe dijalankan; fungsi ini mem-blok sampai splash

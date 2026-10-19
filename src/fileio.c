@@ -501,3 +501,31 @@ void model_load_dialog(HWND hwnd) {
         show_err(hwnd, L"Open JSON", err[0] ? err : L"Gagal membuka.");
     }
 }
+
+
+void model_export_png_dialog(HWND hwnd) {
+    wchar_t file[MAX_PATH] = L"schematic.png";
+    OPENFILENAMEW ofn;
+    ZeroMemory(&ofn, sizeof ofn);
+    ofn.lStructSize = sizeof ofn;
+    ofn.hwndOwner   = hwnd;
+    ofn.lpstrFile   = file;
+    ofn.nMaxFile    = MAX_PATH;
+    ofn.lpstrFilter = L"PNG Image (*.png)\0*.png\0All Files (*.*)\0*.*\0";
+    ofn.nFilterIndex = 1;
+    ofn.lpstrDefExt  = L"png";
+    ofn.Flags = OFN_OVERWRITEPROMPT | OFN_PATHMUSTEXIST;
+    if (!GetSaveFileNameW(&ofn)) return;
+
+    wchar_t err[256] = L"";
+    if (export_canvas_png(hwnd, file, err, 256)) {
+        const wchar_t *base = wcsrchr(file, L'\\');
+        set_status(L"PNG tersimpan: %ls", base ? base + 1 : file);
+        MessageBoxW(hwnd,
+            L"Canvas berhasil diekspor ke PNG.",
+            L"Export PNG", MB_OK | MB_ICONINFORMATION);
+    } else {
+        MessageBoxW(hwnd, err[0] ? err : L"Gagal menyimpan PNG.",
+                    L"Export PNG", MB_OK | MB_ICONERROR);
+    }
+}

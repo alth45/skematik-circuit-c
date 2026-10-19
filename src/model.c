@@ -137,6 +137,8 @@ void undo_reset(void) { undo_top = 0; redo_top = 0; }
 double g_zoom  = 1.0;
 int    g_pan_x = 0;
 int    g_pan_y = 0;
+int    g_show_minimap = 1;
+
 
 #define ZOOM_MIN  0.25
 #define ZOOM_MAX  8.0

@@ -69,6 +69,9 @@ static void build_popup(int menu_idx, HMENU m) {
             AppendMenuW(m, MF_STRING, IDM_FILE_SAVE,   L"Save\tCtrl+S");
             AppendMenuW(m, MF_STRING, IDM_FILE_SAVEAS, L"Save As...\tCtrl+Shift+S");
             AppendMenuW(m, MF_SEPARATOR, 0, NULL);
+            AppendMenuW(m, MF_STRING, IDM_FILE_EXPORT_PNG, L"Export as PNG...\tCtrl+E");
+            AppendMenuW(m, MF_SEPARATOR, 0, NULL);
+
             AppendMenuW(m, MF_STRING, IDM_FILE_EXIT,   L"Exit\tAlt+F4");
             break;
         case 1:
@@ -85,6 +88,8 @@ static void build_popup(int menu_idx, HMENU m) {
                         IDM_VIEW_GRID, L"Tampilkan Grid");
             AppendMenuW(m, MF_STRING | (g_show_status ? MF_CHECKED : 0),
                         IDM_VIEW_STATUS, L"Tampilkan Status Bar");
+             AppendMenuW(m, MF_STRING | (g_show_minimap ? MF_CHECKED : 0),
+                       IDM_VIEW_MINIMAP, L"Minimap");
             AppendMenuW(m, MF_SEPARATOR, 0, NULL);
             AppendMenuW(m, MF_STRING, IDM_VIEW_OSC, L"Oscilloscope (Probe)\tF12");
             AppendMenuW(m, MF_SEPARATOR, 0, NULL);
@@ -126,6 +131,9 @@ void menubar_command(HWND hwnd, int cmd) {
         case IDM_FILE_SAVE:
         case IDM_FILE_SAVEAS:
             model_save_dialog(hwnd);
+            break;
+        case IDM_FILE_EXPORT_PNG:
+            model_export_png_dialog(hwnd);
             break;
         case IDM_FILE_EXIT:
             DestroyWindow(hwnd);
@@ -187,7 +195,11 @@ void menubar_command(HWND hwnd, int cmd) {
             g_show_status = !g_show_status;
             set_status(L"Status bar %ls.", g_show_status ? L"ditampilkan" : L"disembunyikan");
             break;
-                case IDM_VIEW_ZOOMIN:
+        case IDM_VIEW_MINIMAP:
+            g_show_minimap = !g_show_minimap;
+            set_status(L"Minimap %ls.", g_show_minimap ? L"ditampilkan" : L"disembunyikan");
+            break;
+        case IDM_VIEW_ZOOMIN:
             canvas_zoom_center(hwnd, 1.25);
             InvalidateRect(hwnd, NULL, FALSE);
             break;

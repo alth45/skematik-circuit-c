@@ -39,8 +39,10 @@ LDFLAGS_TEST := -lgdi32 -lm
 # Pakai wildcard untuk src/komponen/*.c supaya komponen baru otomatis ikut.
 SRC_PROD := src/main.c src/splash.c src/model.c src/fileio.c src/sim.c src/oscilloscope.c \
 	src/ui/draw.c src/ui/events.c \
+	src\png_writer.c src\ui\export_png.c \
 	src/ui/toolbar_menubar.c src/ui/toolbar_symbols.c \
 	src/ui/toolbar_actions.c src/ui/toolbar_palette.c \
+	src\ui\minimap.c\
 	$(wildcard src/komponen/*.c)
 
 # --- Sumber TES (disamakan dengan run_tests.sh) ---
