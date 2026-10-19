@@ -30,6 +30,109 @@ int group_drag_ox = 0, group_drag_oy = 0;
 int g_show_grid   = 1;
 int g_show_status = 1;
 
+/* ===================== Undo / Redo (snapshot stack) =====================
+   Snapshot = comps + wires + next_id + selection. Bounded UNDO_DEPTH=64;
+   setiap push baru menghapus stack redo. Semua restore diikuti clear
+   status drag/box/wiring + sim_recompute agar tampilan & simulasi konsisten. */
+#define UNDO_DEPTH 64
+typedef struct {
+    Component comps[MAX_COMP];
+    int comp_count;
+    Wire wires[MAX_WIRES];
+    int wire_count;
+    int next_id;
+    int selection[MAX_SEL];
+    int sel_count;
+    int selected_id;
+} UndoSnap;
+static UndoSnap undo_stack[UNDO_DEPTH];
+static int undo_top = 0;   /* jumlah snapshot tersimpan */
+static UndoSnap redo_stack[UNDO_DEPTH];
+static int redo_top = 0;
+static int undo_batch = 0; /* >0 = kumpulkan mutasi jadi 1 langkah */
+static int undo_batch_pushed = 0;
+
+static void undo_capture(UndoSnap *s) {
+    for (int i = 0; i < comp_count; i++) s->comps[i] = comps[i];
+    s->comp_count = comp_count;
+    for (int i = 0; i < wire_count; i++) s->wires[i] = wires[i];
+    s->wire_count = wire_count;
+    s->next_id = next_id;
+    for (int i = 0; i < sel_count && i < MAX_SEL; i++) s->selection[i] = selection[i];
+    s->sel_count = sel_count;
+    s->selected_id = selected_id;
+}
+
+static void undo_restore(const UndoSnap *s) {
+    for (int i = 0; i < s->comp_count && i < MAX_COMP; i++) comps[i] = s->comps[i];
+    comp_count = s->comp_count;
+    for (int i = 0; i < s->wire_count && i < MAX_WIRES; i++) wires[i] = s->wires[i];
+    wire_count = s->wire_count;
+    next_id = s->next_id;
+    for (int i = 0; i < s->sel_count && i < MAX_SEL; i++) selection[i] = s->selection[i];
+    sel_count = s->sel_count;
+    selected_id = s->selected_id;
+    dragging_id = -1;
+    drag_dx = drag_dy = 0;
+    box_selecting = 0;
+    group_dragging = 0;
+    group_drag_n = 0;
+    wiring_active = 0;
+    sim_recompute();
+}
+
+void undo_push(void) {
+    if (sim_running) return;
+    if (undo_batch > 0) {
+        /* Di dalam batch: cukup 1 snapshot untuk seluruh batch. */
+        if (undo_batch_pushed) return;
+        undo_batch_pushed = 1;
+    }
+    if (undo_top >= UNDO_DEPTH) {
+        for (int i = 1; i < UNDO_DEPTH; i++) undo_stack[i - 1] = undo_stack[i];
+        undo_top = UNDO_DEPTH - 1;
+    }
+    undo_capture(&undo_stack[undo_top++]);
+    redo_top = 0;
+}
+
+void undo_begin_batch(void) {
+    undo_batch++;
+    undo_batch_pushed = 0;
+}
+
+void undo_end_batch(void) {
+    if (undo_batch > 0) undo_batch--;
+    if (undo_batch == 0) undo_batch_pushed = 0;
+}
+
+int undo_can_undo(void) { return undo_top > 0; }
+int undo_can_redo(void) { return redo_top > 0; }
+
+int undo_undo(void) {
+    if (undo_top <= 0 || sim_running) return 0;
+    if (redo_top >= UNDO_DEPTH) {
+        for (int i = 1; i < UNDO_DEPTH; i++) redo_stack[i - 1] = redo_stack[i];
+        redo_top = UNDO_DEPTH - 1;
+    }
+    undo_capture(&redo_stack[redo_top++]);
+    undo_restore(&undo_stack[--undo_top]);
+    return 1;
+}
+
+int undo_redo(void) {
+    if (redo_top <= 0 || sim_running) return 0;
+    if (undo_top >= UNDO_DEPTH) {
+        for (int i = 1; i < UNDO_DEPTH; i++) undo_stack[i - 1] = undo_stack[i];
+        undo_top = UNDO_DEPTH - 1;
+    }
+    undo_capture(&undo_stack[undo_top++]);
+    undo_restore(&redo_stack[--redo_top]);
+    return 1;
+}
+
+void undo_reset(void) { undo_top = 0; redo_top = 0; }
+
 /* ===================== Zoom & Pan Canvas ===================== */
 double g_zoom  = 1.0;
 int    g_pan_x = 0;
@@ -293,6 +396,7 @@ int model_select_rect(int x1, int y1, int x2, int y2, int add) {
 
 void model_translate_selection(int dx, int dy) {
     if (dx == 0 && dy == 0) return;
+    undo_push();
     for (int i = 0; i < sel_count; i++) {
         Component *c = find_comp_by_id(selection[i]);
         if (c) { c->x += dx; c->y += dy; }
@@ -301,6 +405,9 @@ void model_translate_selection(int dx, int dy) {
 
 int model_delete_selection(void) {
     if (sim_running) return 0;
+    if (sel_count == 0) return 0;
+    undo_begin_batch();
+    undo_push();
     int removed = 0;
     while (sel_count > 0) {
         Component *c = find_comp_by_id(selection[0]);
@@ -322,6 +429,7 @@ int model_delete_selection(void) {
     sel_count = 0;
     selected_id = -1;
     sim_recompute();
+    undo_end_batch();
     return removed;
 }
 
@@ -329,6 +437,8 @@ int model_duplicate_selection(int dx, int dy) {
     if (sim_running) return 0;
     if (sel_count == 0) return 0;
     if (comp_count + sel_count > MAX_COMP) return 0;
+    undo_begin_batch();
+    undo_push();
 
     int old_ids[MAX_SEL], new_ids[MAX_SEL];
     int n = sel_count;
@@ -364,6 +474,7 @@ int model_duplicate_selection(int dx, int dy) {
     for (int i = 0; i < n; i++)
         if (new_ids[i] > 0) add_to_selection(new_ids[i]);
     sim_recompute();
+    undo_end_batch();
     return n;
 }
 
@@ -496,6 +607,8 @@ void format_value(double v, const wchar_t *unit, wchar_t *out, int cap) {
 void model_add_component(CompType type, int x, int y) {
     if (type == COMP_NONE) return;
     if (comp_count >= MAX_COMP) return;
+    if (sim_running) return;
+    undo_push();
     Component c;
     c.type = type;
     c.x = snap(x);
@@ -510,9 +623,13 @@ void model_add_component(CompType type, int x, int y) {
 }
 
 void model_remove_at(int x, int y) {
-    if (model_remove_wire_at(x, y)) return;
+    if (sim_running) return;
+    undo_begin_batch();
+    undo_push();
+    if (model_remove_wire_at(x, y)) { undo_end_batch(); return; }
     Component *hit = find_comp_at(x, y);
-    if (!hit) return;
+    if (!hit) { undo_end_batch(); return; }
+    undo_push();
     int dead_id = hit->id;
     int idx = (int)(hit - comps);
     for (int i = idx; i < comp_count - 1; i++) comps[i] = comps[i + 1];
@@ -533,9 +650,13 @@ void model_remove_at(int x, int y) {
         } else i++;
     }
     if (sel_count > 0 && selected_id < 0) selected_id = selection[sel_count - 1];
+    sim_recompute();
+    undo_end_batch();
 }
 
 void model_clear_all(void) {
+    if (comp_count == 0 && wire_count == 0) return;
+    undo_push();
     comp_count = 0;
     wire_count = 0;
     selected_id = -1;
@@ -552,7 +673,18 @@ void model_clear_all(void) {
 void model_rotate_selected(void) {
     Component *c = find_comp_by_id(selected_id);
     if (!c) return;
+    if (sim_running) return;
+    undo_push();
     c->rot = (c->rot + 1) % 4;
+    sim_recompute();
+}
+
+void model_set_component_value(int comp_id, double v) {
+    Component *c = find_comp_by_id(comp_id);
+    if (!c || sim_running) return;
+    if (c->v == v) return;
+    undo_push();
+    c->v = v;
     sim_recompute();
 }
 
@@ -569,6 +701,7 @@ int model_add_wire(PinRef a, PinRef b) {
             return 0;
     }
     if (wire_count >= MAX_WIRES) return 0;
+    undo_push();
     wires[wire_count].a = a;
     wires[wire_count].b = b;
     wire_count++;
@@ -597,10 +730,12 @@ static int wire_hit(int x, int y, int x1, int y1, int x2, int y2) {
 }
 
 int model_remove_wire_at(int x, int y) {
+    int removed_orphan = 0;
     for (int i = wire_count - 1; i >= 0; i--) {
         Component *ca = find_comp_by_id(wires[i].a.comp_id);
         Component *cb = find_comp_by_id(wires[i].b.comp_id);
         if (!ca || !cb) {
+            if (!removed_orphan) { undo_push(); removed_orphan = 1; }
             for (int j = i; j < wire_count - 1; j++) wires[j] = wires[j + 1];
             wire_count--;
             continue;
@@ -609,12 +744,15 @@ int model_remove_wire_at(int x, int y) {
         comp_pin_pos(ca, wires[i].a.pin_idx, &ax, &ay);
         comp_pin_pos(cb, wires[i].b.pin_idx, &bx, &by);
         if (wire_hit(x, y, ax, ay, bx, by)) {
+            undo_push();
             for (int j = i; j < wire_count - 1; j++) wires[j] = wires[j + 1];
             wire_count--;
+            sim_recompute();
             return 1;
         }
     }
-    return 0;
+    if (removed_orphan) sim_recompute();
+    return removed_orphan ? 1 : 0;
 }
 
 /* ===================== Dialog Edit Nilai (Value) Komponen =====================
@@ -737,7 +875,7 @@ static LRESULT CALLBACK ValEditProc(HWND hDlg, UINT msg, WPARAM wp, LPARAM lp) {
                         L"Edit Nilai", MB_OK | MB_ICONWARNING);
                     return 0;
                 }
-                ctx->c->v = v;
+                model_set_component_value(ctx->c ? ctx->c->id : -1, v);
                 ctx->ok = 1;
                 ve_do_close(ctx, hDlg);
                 return 0;

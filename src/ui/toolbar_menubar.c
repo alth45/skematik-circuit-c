@@ -72,7 +72,8 @@ static void build_popup(int menu_idx, HMENU m) {
             AppendMenuW(m, MF_STRING, IDM_FILE_EXIT,   L"Exit\tAlt+F4");
             break;
         case 1:
-            AppendMenuW(m, MF_STRING | MF_GRAYED, IDM_EDIT_UNDO, L"Undo\tCtrl+Z (belum tersedia)");
+            AppendMenuW(m, MF_STRING | (undo_can_undo() ? 0 : MF_GRAYED), IDM_EDIT_UNDO, L"Undo\tCtrl+Z");
+            AppendMenuW(m, MF_STRING | (undo_can_redo() ? 0 : MF_GRAYED), IDM_EDIT_REDO, L"Redo\tCtrl+Y");
             AppendMenuW(m, MF_STRING, IDM_EDIT_DUPL,   L"Duplikat Komponen Terpilih");
             AppendMenuW(m, MF_STRING, IDM_EDIT_DELSEL, L"Hapus Komponen Terpilih\tDel");
             AppendMenuW(m, MF_STRING, IDM_EDIT_ROTATE, L"Putar 90\xB0\tR");
@@ -114,11 +115,13 @@ void menubar_command(HWND hwnd, int cmd) {
             if (sim_running) { set_status(L"STOP dulu sebelum New/Clear."); break; }
             model_clear_all();
             sim_recompute();
+            undo_reset();
             set_status(L"Canvas dikosongkan (File > New).");
             break;
         case IDM_FILE_OPEN:
             model_load_dialog(hwnd);
             sim_recompute();
+            undo_reset();
             break;
         case IDM_FILE_SAVE:
         case IDM_FILE_SAVEAS:
@@ -126,6 +129,16 @@ void menubar_command(HWND hwnd, int cmd) {
             break;
         case IDM_FILE_EXIT:
             DestroyWindow(hwnd);
+            break;
+        case IDM_EDIT_UNDO:
+            if (sim_running) break;
+            if (undo_undo()) set_status(L"Undo.");
+            else set_status(L"Tidak ada lagi yang bisa di-undo.");
+            break;
+        case IDM_EDIT_REDO:
+            if (sim_running) break;
+            if (undo_redo()) set_status(L"Redo.");
+            else set_status(L"Tidak ada lagi yang bisa di-redo.");
             break;
         case IDM_EDIT_DUPL: {
             Component *c = find_comp_by_id(selected_id);
@@ -210,6 +223,7 @@ void menubar_command(HWND hwnd, int cmd) {
                 L"F5 / F9      : Run / Stop simulasi\n"
                 L"Ctrl+S       : Save JSON\n"
                 L"Ctrl+O       : Open JSON\n"
+                L"Ctrl+Z / Ctrl+Y : Undo / Redo\n"
                 L"V / W        : tool Select / Wire\n"
                 L"1..9, 0      : Resistor, Saklar, Baterai, LED, Ground,\n"
                 L"               Kapasitor, Transistor, Dioda, Kap. Polar, Sumber AC\n"
@@ -230,8 +244,8 @@ void menubar_command(HWND hwnd, int cmd) {
                 L"konsep dasar listrik secara interaktif.\n"
                 L"\n"
                 L"Fitur utama:\n"
-                L"  \x2022  Editor skematik dengan rotasi, multi-select, dan\n"
-                L"     duplikasi blok rangkaian.\n"
+                L"  \x2022  Editor skematik dengan rotasi, multi-select,\n"
+                L"     duplikasi blok rangkaian, dan undo/redo.\n"
                 L"  \x2022  Simulasi DC & AC (analisis nodal) dengan LED, dioda,\n"
                 L"     transistor NPN, kapasitor, dan induktor.\n"
                 L"  \x2022  Alat ukur interaktif: Voltmeter, Ammeter, dan\n"

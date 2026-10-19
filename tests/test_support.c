@@ -35,6 +35,7 @@ void test_reset_model(void) {
     sim_running = 0;
     g_show_grid = 1;
     g_show_status = 1;
+    undo_reset();
 }
 
 /* ---- Stub set_status/g_status (realisasi di src/fileio.c tidak ditautkan

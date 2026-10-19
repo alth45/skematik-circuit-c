@@ -114,14 +114,16 @@ void show_context_menu(HWND hwnd, int sx, int sy, Component *c) {
             edit_value_dialog(hwnd, c);
             break;
         case IDM_V_TOGGLE_SW:
-            if (c) {
+            if (c && !sim_running) {
+                undo_push();
                 c->on = !c->on;
                 sim_recompute();
                 set_status(L"Saklar %ls.", c->on ? L"ON (tertutup)" : L"OFF (terbuka)");
             }
             break;
         case IDM_V_LDR_LIGHT:
-            if (c && c->type == COMP_LDR) {
+            if (c && c->type == COMP_LDR && !sim_running) {
+                undo_push();
                 c->on = !c->on;   /* on = 1 => TERANG (R rendah), 0 => GELAP */
                 sim_recompute();
                 double reff = sim_ldr_effective_r(c);
@@ -138,7 +140,8 @@ void show_context_menu(HWND hwnd, int sx, int sy, Component *c) {
             }
             break;
         case IDM_V_DUPLICATE:
-            if (c) {
+            if (c && !sim_running) {
+                undo_begin_batch();
                 CompType t = c->type;
                 double v = c->v;
                 int rot = c->rot, on = c->on;
@@ -146,6 +149,7 @@ void show_context_menu(HWND hwnd, int sx, int sy, Component *c) {
                 model_add_component(t, nx, ny);
                 Component *n = find_comp_by_id(selected_id);
                 if (n) { n->v = v; n->rot = rot; n->on = on; sim_recompute(); }
+                undo_end_batch();
                 set_status(L"Komponen diduplikat (nilai ikut tersalin).");
             }
             break;
@@ -303,10 +307,12 @@ void show_context_menu(HWND hwnd, int sx, int sy, Component *c) {
                 case IDM_V_WAVE_SINE:
         case IDM_V_WAVE_SQUARE:
         case IDM_V_WAVE_TRIANGLE:
-            if (c && c->type == COMP_ACSOURCE) {
-                c->wave = (cmd == IDM_V_WAVE_SQUARE)   ? WAVE_SQUARE :
-                          (cmd == IDM_V_WAVE_TRIANGLE) ? WAVE_TRIANGLE :
-                                                         WAVE_SINE;
+            if (c && c->type == COMP_ACSOURCE && !sim_running) {
+                int nw = (cmd == IDM_V_WAVE_SQUARE)   ? WAVE_SQUARE :
+                         (cmd == IDM_V_WAVE_TRIANGLE) ? WAVE_TRIANGLE :
+                                                        WAVE_SINE;
+                if (nw != c->wave) undo_push();
+                c->wave = nw;
                 sim_recompute();
                 osc_refresh();
                 const wchar_t *nm =
@@ -377,6 +383,13 @@ static void apply_box_select(HWND hwnd, BOOL add) {
    tetapi kotak blok baru dianggap dimulai setelah kursor bergeser lebih dari
    BOX_DRAG_MIN piksel. Dengan begitu klik biasa (tanpa geser) tetap berfungsi
    membatalkan seleksi, sementara tekan + seret langsung memblok rangkaian. */
+/* Undo-once per sesi drag: snapshot diambil saat drag pertama bergerak,
+   sehingga 1x drag = 1 langkah undo (bukan N langkah per mouse-move). */
+static int drag_undo_armed = 0;   /* 1 = drag tunggal butuh snapshot */
+static int group_undo_armed = 0;  /* 1 = group drag butuh snapshot */
+
+static void drag_undo_reset(void) { drag_undo_armed = 0; group_undo_armed = 0; }
+
 static int box_pending = 0;
 static int box_pending_x = 0, box_pending_y = 0;
 
@@ -488,10 +501,12 @@ void on_lbutton_down(HWND hwnd, int x, int y) {
                 if (selection[i] == hit->id) { already = 1; break; }
             if (already && sel_count > 1) {
                 begin_group_drag(hwnd, hit, x, y);  /* drag seluruh blok */
+                group_undo_armed = 1;
             } else {
                 clear_selection();                  /* seleksi tunggal baru */
                 add_to_selection(hit->id);
                 dragging_id = hit->id;              /* drag satu komponen */
+                drag_undo_armed = 1;
                 drag_dx = hit->x - x;
                 drag_dy = hit->y - y;
                 SetCapture(hwnd);
@@ -548,6 +563,7 @@ void on_lbutton_up(HWND hwnd, int x, int y) {
     if (group_dragging) {
         group_dragging = 0;
         group_drag_n = 0;
+        drag_undo_reset();
         ReleaseCapture();
         sim_recompute();
         InvalidateRect(hwnd, NULL, FALSE);
@@ -555,7 +571,9 @@ void on_lbutton_up(HWND hwnd, int x, int y) {
     }
     if (dragging_id >= 0) {
         dragging_id = -1;
+        drag_undo_reset();
         ReleaseCapture();
+        sim_recompute();
         InvalidateRect(hwnd, NULL, FALSE);
     }
 }
@@ -659,6 +677,7 @@ void on_mouse_move(HWND hwnd, int x, int y) {
         int ny = snap(y + group_drag_oy);
         int dx = nx - group_drag_items[0].x0;
         int dy = ny - group_drag_items[0].y0;
+        if ((dx != 0 || dy != 0) && group_undo_armed) { undo_push(); group_undo_armed = 0; }
         for (int i = 0; i < group_drag_n; i++) {
             Component *c = &comps[group_drag_items[i].idx];
             c->x = group_drag_items[i].x0 + dx;
@@ -670,8 +689,10 @@ void on_mouse_move(HWND hwnd, int x, int y) {
     if (dragging_id >= 0) {
         Component *c = find_comp_by_id(dragging_id);
         if (c) {
-            c->x = snap(x + drag_dx);
-            c->y = snap(y + drag_dy);
+            int nx = snap(x + drag_dx), ny = snap(y + drag_dy);
+            if ((nx != c->x || ny != c->y) && drag_undo_armed) { undo_push(); drag_undo_armed = 0; }
+            c->x = nx;
+            c->y = ny;
             InvalidateRect(hwnd, NULL, FALSE);
         }
     }
@@ -716,6 +737,20 @@ void on_key_down(HWND hwnd, WPARAM key) {
             InvalidateRect(hwnd, NULL, FALSE);
             return;
         }
+        if (key == 'Z' || key == 'z') {          /* Ctrl+Z: undo */
+            if (sim_running) return;
+            if (undo_undo()) set_status(L"Undo.");
+            else set_status(L"Tidak ada lagi yang bisa di-undo.");
+            InvalidateRect(hwnd, NULL, FALSE);
+            return;
+        }
+        if (key == 'Y' || key == 'y') {          /* Ctrl+Y: redo */
+            if (sim_running) return;
+            if (undo_redo()) set_status(L"Redo.");
+            else set_status(L"Tidak ada lagi yang bisa di-redo.");
+            InvalidateRect(hwnd, NULL, FALSE);
+            return;
+        }
         if (key == 'D' || key == 'd') {          /* Ctrl+D: duplikat blok */
             if (sim_running) return;
             if (sel_count > 1) {
@@ -738,12 +773,15 @@ void on_key_down(HWND hwnd, WPARAM key) {
         }
         /* Ctrl + tool shortcut (mis. Ctrl+B untuk Blok) jangan dianggap B/LDR.
            Tambahan 'M' (Voltmeter) & 'I' (Ammeter) diblok di sini agar
-           Ctrl+M / Ctrl+I tidak memicu pemilihan tool. */
+           Ctrl+M / Ctrl+I tidak memicu pemilihan tool.
+           'Z'/'Y' sudah ditangani sebagai Undo/Redo di atas — blok di sini
+           agar tidak jatuh menjadi tool Zener (Z) saat Ctrl ditekan. */
         if (key == 'B' || key == 'b' || key == 'L' || key == 'l' ||
             key == 'U' || key == 'u' || key == 'V' || key == 'v' ||
             key == 'W' || key == 'w' || key == 'M' || key == 'm' ||
             key == 'I' || key == 'i' || key == 'P' || key == 'p' ||
-            key == 'J' || key == 'j' || key == 'Z' || key == 'z' || key == 'F' || key == 'f') return;
+            key == 'J' || key == 'j' || key == 'Z' || key == 'z' ||
+            key == 'Y' || key == 'y' || key == 'F' || key == 'f') return;
     }
     if (key == 'R' || key == 'r') {
         if (sim_running) return; /* rotasi dikunci saat RUN */
@@ -753,14 +791,16 @@ void on_key_down(HWND hwnd, WPARAM key) {
         Component *c = find_comp_by_id(id);
         if (!c) return;
         if (sel_count > 1) {
+            undo_push();
             for (int i = 0; i < sel_count; i++) {
                 Component *g = find_comp_by_id(selection[i]);
                 if (g) g->rot = (g->rot + 1) % 4;
             }
             set_status(L"Blok %d komponen diputar 90\xB0.", sel_count);
+            sim_recompute();
         } else {
             selected_id = c->id;
-            c->rot = (c->rot + 1) % 4;
+            model_rotate_selected();
         }
         InvalidateRect(hwnd, NULL, FALSE);
         return;

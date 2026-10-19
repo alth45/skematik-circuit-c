@@ -277,6 +277,7 @@ int  toolbar_scrollbar_hover_thumb(int x, int y, int W);
 #define IDM_FILE_SAVEAS   0x1104
 #define IDM_FILE_EXIT     0x1105
 #define IDM_EDIT_UNDO     0x1110
+#define IDM_EDIT_REDO     0x1116  /* Edit > Redo (Ctrl+Y) */
 #define IDM_EDIT_DUPL     0x1111
 #define IDM_EDIT_DELSEL   0x1112
 #define IDM_EDIT_ROTATE   0x1113
@@ -328,6 +329,26 @@ void model_clear_all(void);
 void model_rotate_selected(void);
 int model_add_wire(PinRef a, PinRef b);
 int model_remove_wire_at(int x, int y);
+
+/* ---- Undo / Redo (model.c, snapshot stack bounded) ----
+   undo_push() menyimpan snapshot SEBELUM mutasi; semua fungsi mutasi model
+   (add/remove/rotate/wire/translate/delete/duplicate/move/clear/toggle/value)
+   memanggilnya otomatis. undo_undo()/undo_redo() mengembalikan 1 bila berhasil.
+   undo_reset() mengosongkan kedua stack (dipakai New/Open/test_reset_model). */
+void undo_push(void);
+int  undo_undo(void);
+int  undo_redo(void);
+int  undo_can_undo(void);
+int  undo_can_redo(void);
+void undo_reset(void);
+/* Batch: gabungkan beberapa mutasi menjadi SATU langkah undo (dipakai
+   operasi komposit seperti delete/duplicate/remove yang memanggil
+   fungsi mutasi lain di dalamnya). */
+void undo_begin_batch(void);
+void undo_end_batch(void);
+/* Set nilai komponen by id (push undo otomatis bila berubah). Dipakai
+   dialog edit nilai agar perubahan value bisa di-undo. */
+void model_set_component_value(int comp_id, double v);
 
 /* Nilai komponen: default per tipe, parser teks ("2.2k", "100u", "4.7"),
    formatter human-readable, dan dialog edit value (klik-kanan / double-klik). */

@@ -45,7 +45,7 @@ SRC_PROD := src/main.c src/splash.c src/model.c src/fileio.c src/sim.c src/oscil
 
 # --- Sumber TES (disamakan dengan run_tests.sh) ---
 SRC_TEST := tests/test_main.c tests/test_model.c tests/test_sim.c \
-	tests/test_selection.c tests/test_support.c \
+	tests/test_selection.c tests/test_undo.c tests/test_support.c \
 	src/model.c src/sim.c
 
 # ============================================================

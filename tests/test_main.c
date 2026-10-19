@@ -11,10 +11,12 @@
 void suite_model(void);
 void suite_sim(void);
 void suite_selection(void);
+void suite_undo(void);
 
 int wmain(void) {
     suite_model();
     suite_sim();
     suite_selection();
+    suite_undo();
     return TEST_SUMMARY();
 }

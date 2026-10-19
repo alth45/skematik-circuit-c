@@ -22,6 +22,7 @@ SRC_TEST=(
     tests/test_model.c
     tests/test_sim.c
     tests/test_selection.c
+    tests/test_undo.c
     tests/test_support.c
     src/model.c
     src/sim.c

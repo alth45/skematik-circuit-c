@@ -20,6 +20,7 @@ dan **visualisasikan bentuk gelombang AC** lewat probe osiloskop.
 | Wiring antar pin | Tarik titik merah pin ke pin lain. Kabel siku + preview + highlight target. |
 | Rotate (R) | Pilih simbol lalu tekan `R`. 0 → 90 → 180 → 270. Pin & kabel ikut sudut. |
 | **Multi-select / blok** | Drag di area kosong untuk memblok banyak komponen; drag grup terpilih untuk memindahkan satu kesatuan; `Ctrl+D` menduplikat blok + kabel internalnya. |
+| **Undo / Redo** | `Ctrl+Z` / `Ctrl+Y` atau Edit > Undo/Redo (depth 64). Mencakup tambah, geser/drag, putar, hapus, kabel, edit nilai, toggle saklar/LDR, waveform AC, duplikat & clear. Klik saklar saat RUN tidak di-undo. |
 | **Zoom & Pan canvas** | Wheel = zoom di kursor, `Ctrl++`/`Ctrl+-` = zoom di tengah, `Ctrl+0` = zoom-fit, **mouse tengah + drag** = pan. Rentang 25 %–800 %. Status bar menampilkan `zoom XX%`. |
 | Toolbar ikon | **20 tombol palet** + 4 tombol aksi: Select, Blok, Wire, R, SW, BAT, AC, LED, GND, C, Q, D, CP, LDR, BZR, VM, AM, OSC, L, Hapus — lalu Clear, Save, Open, Run/Stop. |
 | Komponen | Resistor, Saklar, Baterai, Sumber AC, LED, Ground, Kapasitor, Transistor NPN, Dioda, Kapasitor Polar, LDR, Buzzer, Voltmeter, Ammeter, **Probe Osiloskop**, **Induktor**. |
@@ -511,7 +512,6 @@ Alur: `events/toolbar` → `model` → `sim_recompute` (union-find → analisis 
 - **Skala timebase & voltase oscilloscope manual** (dropdown 1× / 10× / auto).
 - **Freeze / capture** trace oscilloscope (pause tombol di panel).
 - **Export PNG** dari canvas dan oscilloscope.
-- **Undo / redo** (`Ctrl+Z`/`Ctrl+Y`).
 - **Paste dari clipboard** (Ctrl+C / Ctrl+V) untuk blok terpilih.
 - **Model transistor β/Ib/Ic** dengan Vbe ≈ 0.7 V.
 - **Dioda Shockley-lite** (Vf menyesuaikan arus) untuk presisi > 1 %.

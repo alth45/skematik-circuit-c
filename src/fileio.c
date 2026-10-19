@@ -428,6 +428,7 @@ int model_load_json(const wchar_t *path, wchar_t *err, int err_cap) {
         selected_id = -1;
         dragging_id = -1;
         wiring_active = 0;
+        undo_reset();
         sim_recompute();
     }
     return 1;
