@@ -528,6 +528,8 @@ Alur: `events/toolbar` → `model` → `sim_recompute` (union-find → analisis 
 
 Bebas dipakai untuk belajar / tugas. Sebut sumber jika disebar ulang.
 
+Lihat [LICENCE](LICENCE) (MIT).
+
 
 ## Ringkasan perubahan dibanding readme.md lama
 

@@ -159,12 +159,42 @@ static void sym_ldr(HDC hdc) {
 }
 
 static void sym_buzzer(HDC hdc) {
+    /* Plat datar */
+    MoveToEx(hdc, -14, -14, NULL); LineTo(hdc, -14, 14);
+
+    /* Dome: setengah-elips via polyline */
+    {
+        int cx = -14, cy = 0, rx = 26, ry = 14;
+        int started = 0;
+        for (int deg = 90; deg >= -90; deg -= 10) {
+            double rad = deg * 3.14159265358979 / 180.0;
+            int px = cx + (int)lround(rx * cos(rad));
+            int py = cy + (int)lround(ry * sin(rad));
+            if (!started) { MoveToEx(hdc, px, py, NULL); started = 1; }
+            else          LineTo(hdc, px, py);
+        }
+    }
+
+    /* Leads */
     MoveToEx(hdc, -40, 0, NULL); LineTo(hdc, -14, 0);
-    MoveToEx(hdc, 14, 0, NULL); LineTo(hdc, 40, 0);
-    Arc(hdc, -14, -20, 26, 20, -14, -20, -14, 20);   /* dome */
-    MoveToEx(hdc, -14, -20, NULL); LineTo(hdc, -14, 20);
-    MoveToEx(hdc, 20, -8, NULL); LineTo(hdc, 26, 0); LineTo(hdc, 20, 8); /* bunyi > */
-    MoveToEx(hdc, 28, -12, NULL); LineTo(hdc, 36, 0); LineTo(hdc, 28, 12);
+    MoveToEx(hdc, 12, 0, NULL); LineTo(hdc, 40, 0);
+
+    /* Sound waves: 2 arcs (konsisten dengan simbol canvas) */
+    {
+        int cx = 12, cy = -4;
+        static const int radii[2] = { 8, 13 };
+        for (int i = 0; i < 2; i++) {
+            int r = radii[i];
+            int started = 0;
+            for (int deg = -75; deg <= -15; deg += 10) {
+                double rad = deg * 3.14159265358979 / 180.0;
+                int px = cx + (int)lround(r * cos(rad));
+                int py = cy + (int)lround(r * sin(rad));
+                if (!started) { MoveToEx(hdc, px, py, NULL); started = 1; }
+                else          LineTo(hdc, px, py);
+            }
+        }
+    }
 }
 
 static void sym_voltmeter(HDC hdc) {
