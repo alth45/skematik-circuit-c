@@ -20,6 +20,7 @@ static CompType tool_to_comp(ToolKind t) {
         case TOOL_INDUCTOR:   return COMP_INDUCTOR;
         case TOOL_ZENER:      return COMP_ZENER;
         case TOOL_MOSFET:     return COMP_MOSFET;
+        case TOOL_POT:        return COMP_POT;
         default: return COMP_NONE;
     }
 }
@@ -38,6 +39,7 @@ static CompType tool_to_comp(ToolKind t) {
 #define IDM_V_WAVE_SQUARE   0x0409
 #define IDM_V_WAVE_TRIANGLE 0x040A
 #define IDM_V_OPEN_OSC      0x040B
+#define IDM_V_POT_WIPER_BASE 0x0420   /* +0..6 untuk preset persen */
 
 static const wchar_t *comp_kind_name(CompType t) {
     switch (t) {
@@ -59,6 +61,7 @@ static const wchar_t *comp_kind_name(CompType t) {
         case COMP_INDUCTOR:   return L"Induktor";
         case COMP_ZENER:      return L"Dioda Zener";
         case COMP_MOSFET:     return L"MOSFET N-Channel";
+        case COMP_POT:        return L"Potensiometer";
         default:              return L"Komponen";
     }
 }
@@ -73,6 +76,8 @@ void show_context_menu(HWND hwnd, int sx, int sy, Component *c) {
     BOOL is_ldr  = c && c->type == COMP_LDR;
     BOOL is_ac   = c && c->type == COMP_ACSOURCE;
     BOOL is_osc  = c && c->type == COMP_OSCPROBE;
+    BOOL is_pot  = c && c->type == COMP_POT;
+
 
     AppendMenuW(m, MF_STRING | (has_val ? 0 : MF_GRAYED),
         IDM_V_EDIT_VALUE, L"Edit Nilai (Value)...");
@@ -93,13 +98,26 @@ void show_context_menu(HWND hwnd, int sx, int sy, Component *c) {
                     IDM_V_WAVE_TRIANGLE, L"Segitiga (Triangle)");
         AppendMenuW(m, MF_POPUP, (UINT_PTR)wm, L"Bentuk Gelombang");
     }
-    if (is_osc)
+    if (is_osc){
         AppendMenuW(m, MF_STRING, IDM_V_OPEN_OSC, L"Buka Osiloskop...");
-    AppendMenuW(m, MF_STRING, IDM_V_ROTATE, L"Putar 90\xB0");
-    AppendMenuW(m, MF_STRING, IDM_V_DUPLICATE, L"Duplikat");
-    AppendMenuW(m, MF_SEPARATOR, 0, NULL);
-    AppendMenuW(m, MF_STRING, IDM_V_INFO, L"Informasi & Hasil Hitung");
-    AppendMenuW(m, MF_STRING, IDM_V_DELETE, L"Hapus Komponen");
+        AppendMenuW(m, MF_STRING, IDM_V_ROTATE, L"Putar 90\xB0");
+        AppendMenuW(m, MF_STRING, IDM_V_DUPLICATE, L"Duplikat");
+        AppendMenuW(m, MF_SEPARATOR, 0, NULL);
+        AppendMenuW(m, MF_STRING, IDM_V_INFO, L"Informasi & Hasil Hitung");
+        AppendMenuW(m, MF_STRING, IDM_V_DELETE, L"Hapus Komponen");
+    }
+    if (is_pot) {
+        static const int pcts[] = { 0, 10, 25, 50, 75, 90, 100 };
+        HMENU wm = CreatePopupMenu();
+        wchar_t lbl[48];
+        for (int k = 0; k < 7; k++) {
+            swprintf(lbl, 48, L"Wiper: %d%%", pcts[k]);
+            AppendMenuW(wm,
+                MF_STRING | (c->on == pcts[k] ? MF_CHECKED : 0),
+                IDM_V_POT_WIPER_BASE + k, lbl);
+        }
+        AppendMenuW(m, MF_POPUP, (UINT_PTR)wm, L"Posisi Wiper");
+    }
 
     SetForegroundWindow(hwnd);
     int cmd = TrackPopupMenu(m,
@@ -281,6 +299,25 @@ void show_context_menu(HWND hwnd, int sx, int sy, Component *c) {
                         vth, st);
                     wcscat_s(buf, 512, extra);
                 }
+                if (c->type == COMP_POT) {
+                    double rtot = (c->v > 0.0) ? c->v : POT_R_DEFAULT;
+                    int pos = c->on;
+                    double ra = rtot * pos / 100.0;
+                    double rb = rtot * (100 - pos) / 100.0;
+                    wchar_t vrA[32], vrB[32];
+                    format_value(ra, L"\x03A9", vrA, 32);
+                    format_value(rb, L"\x03A9", vrB, 32);
+                    wchar_t extra[220];
+                    swprintf(extra, 220,
+                        L"\nR total = %ls\n"
+                        L"Wiper = %d%%\n"
+                        L"R_A (A-W) = %ls\n"
+                        L"R_B (W-B) = %ls\n"
+                        L"pin 0 = A, 1 = B, 2 = W (wiper)",
+                        (c->v > 0.0) ? L"pakai nilai" : L"default 10 kΩ",
+                        pos, vrA, vrB);
+                    wcscat_s(buf, 512, extra);
+                }
                 if (c->type == COMP_BUZZER) {
                     wchar_t extra[96];
                     if (sim_running) {
@@ -296,6 +333,24 @@ void show_context_menu(HWND hwnd, int sx, int sy, Component *c) {
                 MessageBoxW(hwnd, buf, L"Informasi Komponen", MB_OK | MB_ICONINFORMATION);
             }
             break;
+        case IDM_V_POT_WIPER_BASE + 0:
+        case IDM_V_POT_WIPER_BASE + 1:
+        case IDM_V_POT_WIPER_BASE + 2:
+        case IDM_V_POT_WIPER_BASE + 3:
+        case IDM_V_POT_WIPER_BASE + 4:
+        case IDM_V_POT_WIPER_BASE + 5:
+        case IDM_V_POT_WIPER_BASE + 6: {
+            static const int pcts[] = { 0, 10, 25, 50, 75, 90, 100 };
+            int k = cmd - IDM_V_POT_WIPER_BASE;
+            if (c && c->type == COMP_POT && k >= 0 && k < 7) {
+                c->on = pcts[k];
+                sim_recompute();
+                osc_refresh();
+                set_status(L"Potensiometer #%d: wiper %d%% (R_A=%d%%, R_B=%d%%).",
+                    c->id, c->on, c->on, 100 - c->on);
+            }
+            break;
+        }
         case IDM_V_DELETE:
             if (c) {
                 int idx = (int)(c - comps);
@@ -781,7 +836,8 @@ void on_key_down(HWND hwnd, WPARAM key) {
             key == 'W' || key == 'w' || key == 'M' || key == 'm' ||
             key == 'I' || key == 'i' || key == 'P' || key == 'p' ||
             key == 'J' || key == 'j' || key == 'Z' || key == 'z' ||
-            key == 'Y' || key == 'y' || key == 'F' || key == 'f') return;
+            key == 'Y' || key == 'y' || key == 'F' || key == 'f' ||
+            key == 'T' || key == 't') return;
     }
     if (key == 'R' || key == 'r') {
         if (sim_running) return; /* rotasi dikunci saat RUN */
@@ -833,6 +889,7 @@ void on_key_down(HWND hwnd, WPARAM key) {
     else if (key == 'J' || key == 'j') { current_tool = TOOL_INDUCTOR; }
     else if (key == 'Z' || key == 'z') { current_tool = TOOL_ZENER; }
     else if (key == 'F' || key == 'f') { current_tool = TOOL_MOSFET; }
+    else if (key == 'T' || key == 't') { current_tool = TOOL_POT; }
     else if (key == VK_DELETE || key == VK_BACK) {
         if (sim_running) return; /* hapus dikunci saat RUN */
         if (sel_count > 1) {

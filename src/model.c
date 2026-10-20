@@ -232,7 +232,7 @@ const ToolKind btnTools[BTN_COUNT] = {
     TOOL_RESISTOR, TOOL_SWITCH, TOOL_BATTERY, TOOL_ACSOURCE, TOOL_LED, TOOL_GROUND,
     TOOL_CAPACITOR, TOOL_TRANSISTOR, TOOL_DIODE, TOOL_CAPOLAR,
     TOOL_LDR, TOOL_BUZZER, TOOL_VOLTMETER, TOOL_AMMETER,
-    TOOL_OSCPROBE, TOOL_INDUCTOR, TOOL_ZENER, TOOL_MOSFET
+    TOOL_OSCPROBE, TOOL_INDUCTOR, TOOL_ZENER, TOOL_MOSFET, TOOL_POT
 };
 const wchar_t *btnLabels[BTN_COUNT] = {
     L"Select / Geser (V)", L"Blok / Multi-Select (B)", L"Kabel / Wire (W)",
@@ -241,7 +241,7 @@ const wchar_t *btnLabels[BTN_COUNT] = {
     L"LED (4)", L"Ground (5)",
     L"Kapasitor (6)", L"Transistor NPN (7)", L"Dioda (8)", L"Kapasitor Polar (9)",
     L"LDR / Sensor Cahaya (L)", L"Buzzer (U)", L"Voltmeter (M)", L"Ammeter (I)",
-    L"Probe Osiloskop (P)", L"Induktor (J)", L"Dioda Zener (Z)", L"MOSFET N-Channel (F)"
+    L"Probe Osiloskop (P)", L"Induktor (J)", L"Dioda Zener (Z)", L"MOSFET N-Channel (F)", L"Potensiometer (T)"
 };
 
 /* ===================== Utilitas ===================== */
@@ -277,7 +277,7 @@ void comp_bounding_half(const Component *c, int *hw, int *hh) {
 int comp_pin_count(const Component *c) {
     if (!c) return 0;
     if (c->type == COMP_GROUND) return 1;
-    if (c->type == COMP_TRANSISTOR || c->type == COMP_MOSFET) return 3;
+    if (c->type == COMP_TRANSISTOR || c->type == COMP_MOSFET || c->type == COMP_POT) return 3;
     if (c->type == COMP_NONE) return 0;
     return 2;
 }
@@ -310,6 +310,10 @@ void comp_pin_pos(const Component *c, int pin_idx, int *px, int *py) {
         if (pin_idx == 2)      comp_local_to_world(c, -40,  0, px, py);
         else if (pin_idx == 1) comp_local_to_world(c,  40, 30, px, py);
         else                   comp_local_to_world(c,  40, -30, px, py);
+    }else if (c->type == COMP_POT) {
+        if (pin_idx == 2)      comp_local_to_world(c,   0, -35, px, py);  /* W (top center) */
+        else if (pin_idx == 0) comp_local_to_world(c, -40,   0, px, py);  /* A (left) */
+        else                   comp_local_to_world(c,  40,   0, px, py);  /* B (right) */
     }else {
         comp_local_to_world(c, (pin_idx == 0) ? -40 : 40, 0, px, py);
     }
@@ -500,6 +504,7 @@ double comp_default_value(CompType t) {
         case COMP_INDUCTOR:   return IND_DEFAULT_H;
         case COMP_ZENER:      return VZENER_DEFAULT;
         case COMP_MOSFET:     return MOSFET_VTH_DEFAULT;
+        case COMP_POT:        return POT_R_DEFAULT;
         default:              return 0.0;
     }
 }
@@ -509,7 +514,7 @@ int comp_has_value(CompType t) {
            t == COMP_LED ||
            t == COMP_DIODE || t == COMP_CAPACITOR || t == COMP_CAPOLAR ||
            t == COMP_LDR || t == COMP_BUZZER || t == COMP_INDUCTOR ||
-           t == COMP_ZENER || t == COMP_MOSFET;
+           t == COMP_ZENER || t == COMP_MOSFET || t == COMP_POT;
 }
 
 const wchar_t *comp_value_unit(CompType t) {
@@ -526,6 +531,7 @@ const wchar_t *comp_value_unit(CompType t) {
         case COMP_INDUCTOR:  return L"H";
         case COMP_ZENER:     return L"Vz";
         case COMP_MOSFET:    return L"Vth";
+        case COMP_POT:       return L"\x03A9";
         default:             return NULL;
     }
 }
@@ -619,7 +625,7 @@ void model_add_component(CompType type, int x, int y) {
     c.y = snap(y);
     c.id = next_id++;
     c.rot = 0;
-    c.on = 0;
+    c.on = (type == COMP_POT) ? POT_WIPER_DEFAULT : 0;
     c.v = comp_default_value(type);
     comps[comp_count++] = c;
     selected_id = c.id;

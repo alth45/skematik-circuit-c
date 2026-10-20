@@ -32,6 +32,7 @@ static const wchar_t *comp_type_name(CompType t) {
         case COMP_INDUCTOR:  return L"inductor";
         case COMP_ZENER:     return L"zener";
         case COMP_MOSFET:    return L"mosfet";
+        case COMP_POT:       return L"potentiometer";
 
         default: return L"none";
     }
@@ -57,6 +58,7 @@ const char *comp_type_json_name(CompType t) {
         case COMP_INDUCTOR:   return "inductor";
         case COMP_ZENER:      return "zener";
         case COMP_MOSFET:     return "mosfet";
+        case COMP_POT:        return "potentiometer";
         default:              return "none";
     }
 }
@@ -102,6 +104,9 @@ static int comp_type_from_name(const char *s) {
     if (strcmp(s, "mosfet") == 0 || strcmp(s, "MOSFET") == 0 ||
         strcmp(s, "nmos") == 0 || strcmp(s, "NMOS") == 0 ||
         strcmp(s, "FET") == 0) return COMP_MOSFET;
+    if (strcmp(s, "potentiometer") == 0 || strcmp(s, "Potentiometer") == 0 ||
+        strcmp(s, "pot") == 0 || strcmp(s, "POT") == 0 ||
+        strcmp(s, "trimmer") == 0 || strcmp(s, "rheostat") == 0) return COMP_POT;
     return COMP_NONE;
 }
 
@@ -124,7 +129,7 @@ int model_save_json(const wchar_t *path, wchar_t *err, int err_cap) {
         swprintf(vnum, 40, L"%.6g", comps[i].v);
         fwprintf(f, L"    {\"id\": %d, \"type\": \"%ls\", \"x\": %d, \"y\": %d, \"rot\": %d, \"on\": %d, \"wave\": %d, \"value\": %ls}%ls\n",
             comps[i].id, comp_type_name(comps[i].type),
-            comps[i].x, comps[i].y, comps[i].rot % 4, comps[i].on ? 1 : 0,
+            comps[i].x, comps[i].y, comps[i].rot % 4, comps[i].on,
             (int)comps[i].wave, vnum,
             (i + 1 < comp_count) ? L"," : L"");
     }
@@ -331,8 +336,16 @@ int model_load_json(const wchar_t *path, wchar_t *err, int err_cap) {
                     tmp_comps[tmp_n].y = y;
                     tmp_comps[tmp_n].id = id;
                     tmp_comps[tmp_n].rot = ((rot % 4) + 4) % 4;
-                    tmp_comps[tmp_n].on =
-                        ((tp == COMP_SWITCH || tp == COMP_LDR) && on) ? 1 : 0;
+                    if (tp == COMP_POT) {
+                        if (on < 0) on = 0;
+                        if (on > 100) on = 100;
+                        tmp_comps[tmp_n].on = on;
+                    } else {
+                        tmp_comps[tmp_n].on =
+                            ((tp == COMP_SWITCH || tp == COMP_LDR) && on) ? 1 : 0;
+                    }
+                    // tmp_comps[tmp_n].on =
+                    //     ((tp == COMP_SWITCH || tp == COMP_LDR) && on) ? 1 : 0;
                     if (v > 0.0) tmp_comps[tmp_n].v = v;
                     else         tmp_comps[tmp_n].v = comp_default_value((CompType)tp);
                     tmp_n++;

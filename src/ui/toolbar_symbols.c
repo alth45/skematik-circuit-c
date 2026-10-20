@@ -24,6 +24,7 @@ static CompType toolbar_tool_comp(ToolKind t) {
         case TOOL_INDUCTOR:   return COMP_INDUCTOR;
         case TOOL_ZENER:      return COMP_ZENER;
         case TOOL_MOSFET:     return COMP_MOSFET;
+        case TOOL_POT:        return COMP_POT;
         default: return COMP_NONE;
     }
 }
@@ -269,6 +270,18 @@ static void sym_mosfet(HDC hdc) {
     LineTo(hdc, 3, 24);
 }
 
+static void sym_pot(HDC hdc) {
+    MoveToEx(hdc, -40, 0, NULL); LineTo(hdc, -20, 0);
+    MoveToEx(hdc, 20, 0, NULL); LineTo(hdc, 40, 0);
+    Rectangle(hdc, -20, -8, 20, 8);
+    /* Wire wiper dari pin2 (0,-30) ke (0,-16) */
+    MoveToEx(hdc, 0, -30, NULL); LineTo(hdc, 0, -16);
+    /* Panah wiper ke bawah */
+    MoveToEx(hdc, 0, -16, NULL); LineTo(hdc, 0, -8);
+    POINT tip[3] = { { 0, -8 }, { -4, -13 }, { 4, -13 } };
+    Polygon(hdc, tip, 3);
+}
+
 void toolbar_draw_symbol(HDC hdc, ToolKind tool, int cx, int cy, BOOL active) {
     int saved = SaveDC(hdc);
     SetGraphicsMode(hdc, GM_ADVANCED);
@@ -300,6 +313,7 @@ void toolbar_draw_symbol(HDC hdc, ToolKind tool, int cx, int cy, BOOL active) {
     else if (ct == COMP_INDUCTOR) sym_inductor(hdc);
     else if (ct == COMP_ZENER) sym_zener(hdc);
     else if (ct == COMP_MOSFET) sym_mosfet(hdc);
+    else if (ct == COMP_POT) sym_pot(hdc);
     else if (tool == TOOL_SELECT) {
         POINT cur[7] = { {0,-14},{10,4},{4,4},{4,14},{-2,14},{-2,4},{-8,4} };
         Polygon(hdc, cur, 7);
@@ -410,6 +424,7 @@ const wchar_t *toolbar_tool_shortname(ToolKind tool) {
     if (tool == TOOL_INDUCTOR) return L"L";
     if (tool == TOOL_ZENER) return L"Zener";
     if (tool == TOOL_MOSFET) return L"MOSFET";
+    if (tool == TOOL_POT) return L"POT";
     return L"Hapus";
 }
 
@@ -433,6 +448,7 @@ int toolbar_tool_is_component(ToolKind tool) {
         case TOOL_INDUCTOR:
         case TOOL_ZENER:
         case TOOL_MOSFET:
+        case TOOL_POT:
             return 1;
         default:
             return 0;

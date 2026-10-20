@@ -289,6 +289,8 @@ static double comp_edge_r(int i) {
     return -1.0; /* blokir DC */
   case COMP_AMMETER:
     return 0.001; /* resistansi sangat kecil */
+  case COMP_POT:
+    return -1.0;
   case COMP_INDUCTOR:
     if (sim_ac_mode) {
       double lh = (c->v > 0.0) ? c->v : IND_DEFAULT_H_AC;
@@ -299,6 +301,22 @@ static double comp_edge_r(int i) {
   default:
     return -1.0;
   }
+}
+
+/* Tambah satu edge konduktansi 1/R antara node index u dan v.
+   Handle kasus fixed secara benar (matriks & vektor kanan). */
+static void na_add_edge(int u, int v, double R,
+                        const char *is_fixed, const double *vfix) {
+    if (u < 0 || v < 0 || u == v) return;
+    double g = 1.0 / R;
+    if (!is_fixed[u] && !is_fixed[v]) {
+        na_A[u][u] += g; na_A[v][v] += g;
+        na_A[u][v] -= g; na_A[v][u] -= g;
+    } else if (!is_fixed[u]) {
+        na_A[u][u] += g; na_b[u] += g * vfix[v];
+    } else if (!is_fixed[v]) {
+        na_A[v][v] += g; na_b[v] += g * vfix[u];
+    }
 }
 
 /* Bangun matriks G & vektor b untuk solve KCL.
@@ -315,28 +333,34 @@ static void na_build(const double *vfix, int inject, int extract) {
   for (int i = 0; i < na_n; i++)
     is_fixed[i] = (vfix[i] != V_UNKNOWN);
 
-  /* Edge resistif (R / LDR / buzzer / cap-AC). */
+  /* Edge resistif biasa (pot di-skip karena diproses khusus di bawah). */
   for (int c = 0; c < comp_count; c++) {
+    if (comps[c].type == COMP_POT) continue;
     double R = comp_edge_r(c);
-    if (R < 0.0)
-      continue;
+    if (R < 0.0) continue;
     int u = root_to_idx_[find_root(node_of(c, 0))];
     int v = root_to_idx_[find_root(node_of(c, 1))];
-    if (u < 0 || v < 0 || u == v)
-      continue;
-    double g = 1.0 / R;
-    if (!is_fixed[u] && !is_fixed[v]) {
-      na_A[u][u] += g;
-      na_A[v][v] += g;
-      na_A[u][v] -= g;
-      na_A[v][u] -= g;
-    } else if (!is_fixed[u]) {
-      na_A[u][u] += g;
-      na_b[u] += g * vfix[v];
-    } else if (!is_fixed[v]) {
-      na_A[v][v] += g;
-      na_b[v] += g * vfix[u];
-    }
+    na_add_edge(u, v, R, is_fixed, vfix);
+  }
+
+  /* Potensiometer: dua edge seri (pin0-pin2 dengan R_A, pin2-pin1 dengan R_B).
++     R_A = v·pos%, R_B = v·(100-pos)%; clamp minimum 1 mΩ supaya matriks
++     tidak singular saat pos = 0 atau 100 (sisi yang "short"). */
+  for (int c = 0; c < comp_count; c++) {
+    if (comps[c].type != COMP_POT) continue;
+    double rtot = (comps[c].v > 0.0) ? comps[c].v : POT_R_DEFAULT;
+    int pos = comps[c].on;
+    if (pos < 0) pos = 0;
+    if (pos > 100) pos = 100;
+    double ra = rtot * pos / 100.0;
+    double rb = rtot * (100 - pos) / 100.0;
+    if (ra < 0.001) ra = 0.001;
+    if (rb < 0.001) rb = 0.001;
+    int u0 = root_to_idx_[find_root(node_of(c, 0))];   /* A */
+    int u1 = root_to_idx_[find_root(node_of(c, 1))];   /* B */
+    int u2 = root_to_idx_[find_root(node_of(c, 2))];   /* W */
+    na_add_edge(u0, u2, ra, is_fixed, vfix);   /* A <-> W */
+    na_add_edge(u2, u1, rb, is_fixed, vfix);   /* W <-> B */
   }
 
   /* Regularisasi: konduktansi kecil ke ground untuk node mengambang. */

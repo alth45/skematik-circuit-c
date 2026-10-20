@@ -35,6 +35,9 @@
 #define IND_DEFAULT_H 100e-6
 #define VZENER_DEFAULT 5.1  /* dioda zener default: Vz = 5.1 V */
 #define MOSFET_VTH_DEFAULT  2.0 /* tegangan ambang MOSFET default: Vth = 2.0 V */
+#define POT_R_DEFAULT       10000.0 /* potensiometer: R total default 10 kΩ */
+#define POT_WIPER_DEFAULT   50      /* posisi wiper default 50% */
+
 
 
 typedef enum {
@@ -81,7 +84,12 @@ typedef enum {
     COMP_ZENER,         /* dioda zener: pin0=A(anoda kiri) pin1=K(katoda kanan); arah sama dgn LED.
                         Menghantar seperti dioda biasa saat forward bias; saat reverse
                         bias, menghantar bila tegangan balik > Vz (v = Vz dalam Volt). */
-    COMP_MOSFET       /* transistor MOSFET: pin0=gate, pin1=source, pin2=drain */
+    COMP_MOSFET,       /* transistor MOSFET: pin0=gate, pin1=source, pin2=drain */
+    COMP_POT           /* potensiometer 3-pin: pin0 = A (kiri), pin1 = B (kanan),
+                        pin2 = W (wiper, atas-tengah).
+                        Model: dua resistor seri — R_A = v·pos% (pin0-pin2),
+                        R_B = v·(100-pos)% (pin2-pin1).
+                        v = R total (default 10kΩ); on = posisi wiper 0..100 (default 50). */
 } CompType;
 
 /* Tool yang dipilih user di palette */
@@ -107,6 +115,7 @@ typedef enum {
     TOOL_INDUCTOR,        /* induktor (kumparan) */
     TOOL_ZENER,          /* dioda zener */
     TOOL_MOSFET,         /* transistor MOSFET */
+    TOOL_POT,            /* potensiometer */
     TOOL_DELETE
 } ToolKind;
 
@@ -150,7 +159,7 @@ typedef struct {
 } Wire;
 
 /* Jumlah tombol palette (Select, Blok, Wire + 15 komponen + Hapus). */
-#define BTN_COUNT 22
+#define BTN_COUNT 23
 
 /* Batas seleksi multi (model.c) */
 #define MAX_SEL 256
@@ -397,6 +406,7 @@ void draw_k_oscprobe(HDC hdc, Component *c);
 void draw_k_inductor(HDC hdc, Component *c);
 void draw_k_zener(HDC hdc, Component *c);
 void draw_k_mosfet(HDC hdc, Component *c);
+void draw_k_pot(HDC hdc, Component *c);
 
 void draw_component(HDC hdc, Component *c);
 void draw_canvas(HWND hwnd);

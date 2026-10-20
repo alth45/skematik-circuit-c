@@ -104,7 +104,13 @@ static void draw_value_label(HDC hdc, Component *c) {
 
     const wchar_t *unit = comp_value_unit(c->type);
     wchar_t vs[VALUE_STR_CAP];
-    format_value(c->v, unit, vs, VALUE_STR_CAP);
+    if (c->type == COMP_POT) {
+        wchar_t base[32];
+        format_value(c->v, L"\x03A9", base, 32);
+        swprintf(vs, VALUE_STR_CAP, L"%ls @%d%%", base, c->on);
+    } else {
+        format_value(c->v, unit, vs, VALUE_STR_CAP);
+    }
 
     HFONT hf = font_value_label();
     HFONT of = (HFONT)SelectObject(hdc, hf);
@@ -159,6 +165,7 @@ void draw_component(HDC hdc, Component *c) {
         case COMP_INDUCTOR:    draw_k_inductor(hdc, c);    break;
         case COMP_ZENER:       draw_k_zener(hdc, c);       break;
         case COMP_MOSFET:      draw_k_mosfet(hdc, c);      break;
+        case COMP_POT:         draw_k_pot(hdc, c);         break;
         default: break;
     }
         if (!g_minimap_mode) {
@@ -169,7 +176,7 @@ void draw_component(HDC hdc, Component *c) {
             HBRUSH oldb = (HBRUSH)SelectObject(hdc, GetStockObject(NULL_BRUSH));
             int hw = (c->rot % 2 == 0) ? 48 : 38;
             int hh = (c->rot % 2 == 0) ? 38 : 48;
-            if (c->type == COMP_TRANSISTOR || c->type == COMP_MOSFET) { hw = 52; hh = 42; }
+            if (c->type == COMP_TRANSISTOR || c->type == COMP_MOSFET || c->type == COMP_POT) { hw = 52; hh = 42; }
             Rectangle(hdc, c->x - hw, c->y - hh, c->x + hw, c->y + hh);
             SelectObject(hdc, oldb);
             SelectObject(hdc, old);
