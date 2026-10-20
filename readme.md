@@ -22,10 +22,11 @@ dan **visualisasikan bentuk gelombang AC** lewat probe osiloskop.
 | **Multi-select / blok** | Drag di area kosong untuk memblok banyak komponen; drag grup terpilih untuk memindahkan satu kesatuan; `Ctrl+D` menduplikat blok + kabel internalnya. |
 | **Undo / Redo** | `Ctrl+Z` / `Ctrl+Y` atau Edit > Undo/Redo (depth 64). Mencakup tambah, geser/drag, putar, hapus, kabel, edit nilai, toggle saklar/LDR, waveform AC, duplikat & clear. Klik saklar saat RUN tidak di-undo. |
 | **Zoom & Pan canvas** | Wheel = zoom di kursor, `Ctrl++`/`Ctrl+-` = zoom di tengah, `Ctrl+0` = zoom-fit, **mouse tengah + drag** = pan. Rentang 25 %–800 %. Status bar menampilkan `zoom XX%`. |
-| Toolbar ikon | **22 tombol palet** (Select, Blok, Wire, Hapus + 18 komponen: R, SW, BAT, AC, LED, GND, C, Q, D, CP, LDR, BZR, VM, AM, OSC, L, Zener, MOSFET — area komponen bisa di-scroll) + 4 tombol aksi: Clear, Save, Open, Run/Stop. |
-| Komponen | Resistor, Saklar, Baterai, Sumber AC, LED, Ground, Kapasitor, Transistor NPN, Dioda, Kapasitor Polar, LDR, Buzzer, Voltmeter, Ammeter, **Probe Osiloskop**, **Induktor**, **Dioda Zener**, **MOSFET N-Channel**. |
+| Toolbar ikon | **23 tombol palet** (Select, Blok, Wire, Hapus + 19 komponen: R, SW, BAT, AC, LED, GND, C, Q, D, CP, LDR, BZR, VM, AM, OSC, L, Zener, MOSFET, POT — area komponen bisa di-scroll) + 4 tombol aksi: Clear, Save, Open, Run/Stop. |
+| Komponen | Resistor, Saklar, Baterai, Sumber AC, LED, Ground, Kapasitor, Transistor NPN, Dioda, Kapasitor Polar, LDR, Buzzer, Voltmeter, Ammeter, **Probe Osiloskop**, **Induktor**, **Dioda Zener**, **MOSFET N-Channel**, **Potensiometer**. |
 | **Dioda Zener** | Pin A–K, arah sama dengan dioda biasa. **Forward**: menghantar seperti dioda. **Reverse**: breakdown bila `V_K − V_A > Vz` (default 5,1 V, edit via *Edit Nilai*, satuan `Vz`). Status forward/breakdown tampil saat RUN. |
 | **MOSFET N-Channel** | 3 pin (gate, source, drain), model biner seperti transistor: **ON** (D–S di-union 0 Ω) bila gate tersambung ke net (+) dan source ke net (−). Nilai = `Vth` (default 2 V). Saat RUN simbol hijau + label ON/OFF. |
+| **Potensiometer** | 3 pin: A (kiri), B (kanan), W/wiper (atas-tengah). Dimodelkan sebagai **dua resistor seri**: `R_A = R·pos%` (A–W) dan `R_B = R·(100−pos)%` (W–B), clamp minimum 1 mΩ. Nilai = R total (default **10 kΩ**); posisi wiper 0–100 % (default 50 %) via klik-kanan → *Posisi Wiper* (preset 0/10/25/50/75/90/100 %). |
 | **Analisis nodal (MNA-lite)** | Mesin simulasi menyelesaikan **KCL** (`G·V = I`) dengan Gauss elimination + partial pivoting. LED dihitung dengan V_thevenin & R_thevenin lalu `I = (Vth − Vf) / Rth`. Akurat untuk seri/paralel/pembagi tegangan (~1 % pada kasus tipikal). |
 | **Voltmeter** | Ukur beda potensial dua titik, dipasang **paralel**, ideal (impedansi tak hingga → tidak mengubah rangkaian). Angka bacaan tampil di bawah simbol saat RUN. |
 | **Ammeter** | Ukur arus lewat jalur, dipasang **seri**, shunt internal 0.1 Ω. Angka bacaan `A` tampil di bawah simbol saat RUN. |
@@ -33,13 +34,13 @@ dan **visualisasikan bentuk gelombang AC** lewat probe osiloskop.
 | **Induktor** | Simbol 4 lengkung. **DC**: short ideal (union seperti saklar-ON). **AC**: reaktansi `XL = 2πfL`. Default 100 µH. |
 | **Bentuk gelombang AC** | Klik-kanan Sumber AC → *Bentuk Gelombang* → Sinus / Kotak / Segitiga. Sumber AC default 220 VAC RMS @ 50 Hz; peak = √2 · Vrms. |
 | **Splash screen** | Split view: brand & judul di kiri, grid 12 simbol komponen di kanan, progress bar di bawah. |
-| Nilai komponen | Edit via dialog: double-klik atau klik-kanan → *Edit Nilai*. Parser mendukung `2.2k`, `100u`, `47uF`, `2.2e3`. Induktor pakai satuan `H`, Zener `Vz`, MOSFET `Vth`. |
-| **Save / Open JSON** | UTF-8, format stabil. Semua komponen ikut tersimpan (termasuk `wave` sumber AC, status Terang/Gelap LDR, `zener`, `mosfet`). |
+| Nilai komponen | Edit via dialog: double-klik atau klik-kanan → *Edit Nilai*. Parser mendukung `2.2k`, `100u`, `47uF`, `2.2e3`. Induktor pakai satuan `H`, Zener `Vz`, MOSFET `Vth`, Potensiometer `Ω` (R total). |
+| **Save / Open JSON** | UTF-8, format stabil. Semua komponen ikut tersimpan (termasuk `wave` sumber AC, status Terang/Gelap LDR, `zener`, `mosfet`, `potentiometer` dengan posisi wiper di field `on`). |
 | **Export PNG** | **File → Export as PNG (`Ctrl+E`)**: render ulang canvas (grid + kabel + simbol + banner RUN) ke PNG 24-bit lewat dialog Save-As. Overlay UI (kotak seleksi, marquee, minimap) tidak ikut. |
 | **Minimap** | Overview seluruh canvas di pojok kanan-bawah (**View → Minimap**, default ON). Kotak merah = viewport saat ini; klik/drag di minimap = pan canvas ke titik itu. Otomatis tersembunyi bila canvas kosong. |
 | Mode Run | Klik Run → klik saklar ON/OFF → LED menyala + kabel (+) merah + dioda forward (panah hijau) + deteksi korslet + hitung arus loop + bacaan voltmeter/ammeter. |
 | **About dialog** | Menu **Bantu → Tentang Schematic Editor** menampilkan ringkasan fitur & versi. |
-| Shortcut | V/W/B, 0–9, J (Induktor), L (LDR), M (Voltmeter), I (Ammeter), P (OSC probe), Z (Zener), F (MOSFET), R, F5, F12, Ctrl+S/O/A/D/E, Ctrl+Z/Y, Ctrl+/−/0, Del, Esc. |
+| Shortcut | V/W/B, 0–9, J (Induktor), L (LDR), M (Voltmeter), I (Ammeter), P (OSC probe), Z (Zener), F (MOSFET), T (Potensiometer), R, F5, F12, Ctrl+S/O/A/D/E, Ctrl+Z/Y, Ctrl+/−/0, Del, Esc. |
 | Status bar | Pesan terakhir + counter komponen & kabel + zoom level. |
 
 ---
@@ -47,7 +48,7 @@ dan **visualisasikan bentuk gelombang AC** lewat probe osiloskop.
 ## Tampilan
 
 ```
-[Sel][Blk][Wir][ R ][ SW ][BAT ][AC ][LED][GND][ C ][ Q ][ D ][ CP][LDR][BZR][ VM][ AM][OSC][ L ][ZEN][FET][Hapus]
+[Sel][Blk][Wir][ R ][ SW ][BAT ][AC ][LED][GND][ C ][ Q ][ D ][ CP][LDR][BZR][ VM][ AM][OSC][ L ][ZEN][FET][POT][Hapus]
      [Clear][Save][Open][Run]
 tool aktif | F5: run/stop   R: rotate   Ctrl +/-/0: zoom   Ctrl+Z/Y: undo/redo   double-klik: edit nilai
 +------------------------------------------------------------+
@@ -141,7 +142,7 @@ make CC_PROD=i686-w64-mingw32-gcc
 make CC_TEST=gcc
 ```
 
-> ⚠️ **Toolbar overflow**: dengan 22 tombol palet + 4 aksi (26 total), pada jendela sempit tombol **Save / Open / Run** mungkin **terpotong** di kanan. Area komponen bisa di-scroll (wheel di toolbar); juga tersedia shortcut **F5** (Run), **Ctrl+S** (Save), **Ctrl+O** (Open), atau perlebar/maximize jendela.
+> ⚠️ **Toolbar overflow**: dengan 23 tombol palet + 4 aksi (27 total), pada jendela sempit tombol **Save / Open / Run** mungkin **terpotong** di kanan. Area komponen bisa di-scroll (wheel di toolbar); juga tersedia shortcut **F5** (Run), **Ctrl+S** (Save), **Ctrl+O** (Open), atau perlebar/maximize jendela.
 
 Suite uji dibangun terpisah oleh target `tests` / `test` (`-DSCHEMATIC_TEST_STUBS`); folder `tests/` tidak pernah ikut ke executable produksi.
 
@@ -296,6 +297,7 @@ Saat RUN dikunci: tambah/geser/putar/hapus, tarik kabel baru, ganti tool, dan zo
 | `J` | Induktor |
 | `Z` | Dioda Zener |
 | `F` | MOSFET N-Channel |
+| `T` | Potensiometer |
 | `Ctrl+A` | Pilih semua komponen |
 | `Ctrl+D` | Duplikat seleksi/blok |
 | `Ctrl+Z` | Undo |
@@ -344,26 +346,29 @@ UTF-8, contoh (rangkaian RC–LED dengan probe):
 }
 ```
 
-- **`type`**: `resistor | switch | battery | led | ground | capacitor | transistor | diode | capolar | acsource | voltmeter | ammeter | ldr | buzzer | oscprobe | inductor | zener | mosfet`.
+- **`type`**: `resistor | switch | battery | led | ground | capacitor | transistor | diode | capolar | acsource | voltmeter | ammeter | ldr | buzzer | oscprobe | inductor | zener | mosfet | potentiometer`.
   - Alias juga diterima: `R/SW/BAT/LED/GND/CAP/TR`, `Diode/D`, `Capolar/capacitor_polar/electrolytic/CP`,
     `ACSource/ac_source/ac/AC/SumberAC`, `Voltmeter/VM`, `Ammeter/AM`,
     `LDR/photoresistor`, `Buzzer/BZR`, `OSCProbe/OSC`, `Inductor/IND/L`,
-    `Zener/Z/ZD/zenerdiode`, `MOSFET/nmos/NMOS/FET`.
+    `Zener/Z/ZD/zenerdiode`, `MOSFET/nmos/NMOS/FET`, `POT/trimmer/rheostat`.
 - **`value`** (satuan SI):
   - resistor = Ω, battery = V, acsource = VAC RMS, LED/dioda = Vf (V),
     kapasitor/capolar = F, **ldr = R_gelap (Ω)**, **buzzer = frekuensi (Hz)**,
-    **inductor = H**, **zener = Vz (V)**, **mosfet = Vth (V)**.
+    **inductor = H**, **zener = Vz (V)**, **mosfet = Vth (V)**, **potentiometer = R total (Ω)**.
+  - **Potentiometer**: posisi wiper 0–100 disimpan di field **`on`** (bukan `value`).
   - Voltmeter & Ammeter tidak memakai `value` (selalu 0).
   - Key lama `"v"` juga terbaca.
 - **`wave`** (khusus `acsource`): 0 = sinus (default), 1 = kotak, 2 = segitiga.
   Diabaikan untuk tipe lain.
-- **`on`**: 0/1.
+- **`on`**: umumnya 0/1.
   - Switch: 1 = tertutup, 0 = terbuka.
   - **LDR**: 1 = TERANG (R efektif ~1 % dari nilai gelap), 0 = GELAP.
+  - **Potentiometer**: posisi wiper **0–100** (persen; di-load di-clamp ke rentang ini).
   - Tipe lain: diabaikan.
 - **`rot`**: 0..3 (= 0/90/180/270).
 - **`pin`**: 2-pin → 0 = kiri, 1 = kanan (mengikuti rotasi); ground → 0;
-  transistor NPN → 0 = Kolektor, 1 = Emitor, 2 = Basis;
+  transistor NPN → 0 = Kolektor, 1 = Emitor, 2 = Basis; MOSFET → 3 pin (gate/source/drain);
+  potensiometer → 0 = A, 1 = B, 2 = W (wiper);
   acsource → 0 = Live, 1 = Netral.
 - Batas: 256 komponen, 512 kabel, file maks 4 MB. Kabel yang id-nya tidak ada dibuang saat load.
 
@@ -390,6 +395,7 @@ lalu **analisis nodal (MNA-lite)** untuk menyelesaikan tegangan/arus.
    - Ammeter → `R = 0.1 Ω`
    - Kapasitor (AC) → `Xc = 1/(2πfC)`
    - Induktor (AC) → `XL = 2πfL`
+   - **Potensiometer** → dua edge seri: A–W `R·pos%`, W–B `R·(100−pos)%` (clamp min 1 mΩ)
 5. Sumber tegangan → node dengan V **tetap** (baris constraint identitas).
 6. Solve `G·V = I` dengan **Gauss + partial pivoting**. Regularisasi `1e-12` cegah singular.
 
@@ -422,6 +428,7 @@ lalu **analisis nodal (MNA-lite)** untuk menyelesaikan tegangan/arus.
 - **MOSFET**: biner seperti transistor — ON bila gate di net (+) & source di net (−), D–S short 0 Ω; belum model linier/ohmic.
 - **Dioda**: ideal satu arah, Vf = `c->v` (default 0.7 V).
 - **Zener**: forward ideal; reverse breakdown dikunci di tepat `Vz` (default 5.1 V), tanpa resistansi dinamis.
+- **Potensiometer**: model resistif linear murni (dua edge seri, tanpa clamp non-linear); akurat sesuai pembagian `pos%`.
 - **Induktor**: DC = short ideal, AC = XL linier.
 - **Probe OSC**: eksak via superposisi (linear).
 
@@ -450,7 +457,7 @@ schematic-c/
                        parser/formatter/dialog edit value, zoom & pan API, palet tombol,
                        undo/redo stack (snapshot bounded, batch)
     fileio.c           save/load JSON + dialog + export PNG dialog + status
-                       (termasuk ldr/buzzer/oscprobe/inductor/ammeter/zener/mosfet)
+                       (termasuk ldr/buzzer/oscprobe/inductor/ammeter/zener/mosfet/potentiometer)
     sim.c              analisis nodal (MNA + Gauss) + union-find + perhitungan LED (Vth/Rth)
                        + Xc kapasitor + XL induktor + voltmeter + ammeter + buzzer
                        + hot-wire + probe osiloskop (sim_ac_voltage, sim_probe_voltage)
@@ -461,12 +468,13 @@ schematic-c/
       draw.c           dispatcher simbol + utilitas rotasi (with_rotation, komposisi zoom)
                        + label nilai + pin + kabel hot/preview + overlay seleksi + marquee
       events.c         mouse (drag/wiring/toggle/double-klik/klik-kanan/minimap) +
-                       keyboard (0-9, J, I, P, L, M, U, R, Z, F, F5, F12, Ctrl+S/O/A/D/E/Z/Y,
+                       keyboard (0-9, J, I, P, L, M, U, R, Z, F, T, F5, F12, Ctrl+S/O/A/D/E/Z/Y,
                                  Ctrl +/−/0, Del, Esc) + menu konteks + waveform picker
+                       + preset wiper potensiometer
       minimap.c        overview canvas + viewport merah + klik/drag pan (View > Minimap)
       export_png.c     render canvas bersih (tanpa overlay) ke RGB buffer → png_writer
       toolbar_menubar.c  menu File/Edit/View/Simulasi/Bantu + popup + aksi + About dialog
-      toolbar_symbols.c  ikon mini tiap tool + shortname R/SW/BAT/AC/LED/…/OSC/L/Zener/MOSFET
+      toolbar_symbols.c  ikon mini tiap tool + shortname R/SW/BAT/AC/LED/…/OSC/L/Zener/MOSFET/POT
       toolbar_actions.c  gambar tombol aksi Clear/Save/Open/Run
       toolbar_palette.c  hit-test + draw_toolbar strip tombol + status
     komponen/
@@ -488,6 +496,7 @@ schematic-c/
       komponen_inductor.c    simbol induktor (4 lengkung)
       komponen_zener.c       simbol dioda zener (balik + Z) + status fwd/breakdown
       komponen_mosfet.c      simbol MOSFET N-channel enhancement + label ON/OFF
+      komponen_pot.c         simbol potensiometer IEC + panah wiper posisi %
   tests/                 suite uji (target `make tests` / `make test`): model, sim,
                          selection, undo
   docs/                  dokumentasi HTML API (index per modul + halaman per fungsi;
@@ -561,12 +570,12 @@ Lihat [LICENCE](LICENCE) (MIT).
 
 | Bagian | Yang berubah |
 |---|---|
-| **Fitur table** | Baris **Undo/Redo** (Ctrl+Z/Y, depth 64), **Dioda Zener**, **MOSFET N-Channel**, **Export PNG**, **Minimap** ditambahkan. Toolbar kini **22 tombol palet**; daftar komponen & nilai (Zener `Vz`, MOSFET `Vth`) diperbarui. |
-| **Tampilan (ASCII)** | Baris toolbar 22 tombol (termasuk ZEN/FET); status bar `zoom XX%`. |
-| **Shortcut** | `Z` (Zener), `F` (MOSFET), `Ctrl+Z/Y` (undo/redo), `Ctrl+E` (export PNG), `I`, `P`, `J`, `F12`, `Ctrl +/-/0`, mouse wheel, mouse tengah. |
-| **Format JSON** | `type` baru: `zener | mosfet` (+ alias `Z/ZD/zenerdiode`, `nmos/FET`). `value` = Vz (V) / Vth (V). |
-| **Aturan Simulasi** | Tahap 1 menyebut dioda/**Zener forward** + **MOSFET-ON**; Zener reverse = sumber `Vz` iteratif. Akurasi mencantumkan batas model Zener & MOSFET biner. |
-| **Struktur Proyek** | `png_writer.c`, `ui/export_png.c`, `ui/minimap.c`, `komponen_zener.c`, `komponen_mosfet.c`; `model.c` (undo stack), `sim.c` (zener/MOSFET); `docs/` + `upd_docs.py`; suite tes `selection` & `undo`. |
+| **Fitur table** | Baris **Undo/Redo** (Ctrl+Z/Y, depth 64), **Dioda Zener**, **MOSFET N-Channel**, **Potensiometer**, **Export PNG**, **Minimap** ditambahkan. Toolbar kini **23 tombol palet**; daftar komponen & nilai (Zener `Vz`, MOSFET `Vth`, Pot `Ω` + wiper) diperbarui. |
+| **Tampilan (ASCII)** | Baris toolbar 23 tombol (termasuk ZEN/FET/POT); status bar `zoom XX%`. |
+| **Shortcut** | `Z` (Zener), `F` (MOSFET), `T` (Potensiometer), `Ctrl+Z/Y` (undo/redo), `Ctrl+E` (export PNG), `I`, `P`, `J`, `F12`, `Ctrl +/-/0`, mouse wheel, mouse tengah. |
+| **Format JSON** | `type` baru: `zener | mosfet | potentiometer` (+ alias `Z/ZD/zenerdiode`, `nmos/FET`, `pot/trimmer/rheostat`). `value` = Vz (V) / Vth (V) / R total (Ω); wiper pot di field `on`. |
+| **Aturan Simulasi** | Tahap 1 menyebut dioda/**Zener forward** + **MOSFET-ON**; Zener reverse = sumber `Vz` iteratif. Tahap 2: edge **potensiometer** (A–W / W–B). Akurasi mencantumkan batas model Zener, MOSFET biner & POT linear. |
+| **Struktur Proyek** | `png_writer.c`, `ui/export_png.c`, `ui/minimap.c`, `komponen_zener.c`, `komponen_mosfet.c`, `komponen_pot.c`; `model.c` (undo stack), `sim.c` (zener/MOSFET/pot); `docs/` + `upd_docs.py`; suite tes `selection` & `undo`. |
 | **Ide Pengembangan** | Hapus yang sudah selesai (export PNG canvas, mini-map, toolbar scrollable, MOSFET); tambah model MOSFET linier. |
 | *(baris lama — dipertahankan)* | |
 | **Intro** | Menyebut probe osiloskop & pengukuran tegangan/arus. |
