@@ -85,11 +85,17 @@ typedef enum {
                         Menghantar seperti dioda biasa saat forward bias; saat reverse
                         bias, menghantar bila tegangan balik > Vz (v = Vz dalam Volt). */
     COMP_MOSFET,       /* transistor MOSFET: pin0=gate, pin1=source, pin2=drain */
-    COMP_POT           /* potensiometer 3-pin: pin0 = A (kiri), pin1 = B (kanan),
+    COMP_POT,           /* potensiometer 3-pin: pin0 = A (kiri), pin1 = B (kanan),
                         pin2 = W (wiper, atas-tengah).
                         Model: dua resistor seri — R_A = v·pos% (pin0-pin2),
                         R_B = v·(100-pos)% (pin2-pin1).
                         v = R total (default 10kΩ); on = posisi wiper 0..100 (default 50). */
+     COMP_AND,       /* gerbang AND: pin0=A, pin1=B, pin2=OUT. HIGH jika A=B=HIGH. */
+     COMP_OR,        /* gerbang OR : pin0=A, pin1=B, pin2=OUT. HIGH jika A atau B HIGH. */
+     COMP_NOT,       /* gerbang NOT: pin0=IN, pin1=OUT. HIGH jika IN LOW. */
+     COMP_NAND,     /* gerbang NAND: kebalikan AND. */
+     COMP_NOR,       /* gerbang NOR : kebalikan OR. */
+     COMP_XOR       /* gerbang XOR : HIGH jika A != B. */
 } CompType;
 
 /* Tool yang dipilih user di palette */
@@ -116,6 +122,7 @@ typedef enum {
     TOOL_ZENER,          /* dioda zener */
     TOOL_MOSFET,         /* transistor MOSFET */
     TOOL_POT,            /* potensiometer */
+    TOOL_AND, TOOL_OR, TOOL_NOT, TOOL_NAND, TOOL_NOR, TOOL_XOR,
     TOOL_DELETE
 } ToolKind;
 
@@ -159,7 +166,7 @@ typedef struct {
 } Wire;
 
 /* Jumlah tombol palette (Select, Blok, Wire + 15 komponen + Hapus). */
-#define BTN_COUNT 23
+#define BTN_COUNT 29
 
 /* Batas seleksi multi (model.c) */
 #define MAX_SEL 256
@@ -407,6 +414,12 @@ void draw_k_inductor(HDC hdc, Component *c);
 void draw_k_zener(HDC hdc, Component *c);
 void draw_k_mosfet(HDC hdc, Component *c);
 void draw_k_pot(HDC hdc, Component *c);
+void draw_k_and(HDC hdc, Component *c);
+void draw_k_or(HDC hdc, Component *c);
+void draw_k_not(HDC hdc, Component *c);
+void draw_k_nand(HDC hdc, Component *c);
+void draw_k_nor(HDC hdc, Component *c);
+void draw_k_xor(HDC hdc, Component *c);
 
 void draw_component(HDC hdc, Component *c);
 void draw_canvas(HWND hwnd);
@@ -626,6 +639,8 @@ int    sim_voltmeter_connected(const Component *c);
    sim_ammeter_connected() = 1 bila kedua pin tergabung ke net aktif (ada sumber). */
 double sim_ammeter_reading(const Component *c);    /* >=0 ampere; -1 = bukan ammeter/tak terhubung */
 int    sim_ammeter_connected(const Component *c);
+/* Gerbang logika: 1 bila output sedang HIGH (untuk pewarnaan simbol). */
+int sim_gate_out_high(const Component *c);
 
 /* Dioda Zener: status forward (1 = menghantar seperti dioda biasa). */
 int sim_zener_fwd(const Component *c);

@@ -21,6 +21,12 @@ static CompType tool_to_comp(ToolKind t) {
         case TOOL_ZENER:      return COMP_ZENER;
         case TOOL_MOSFET:     return COMP_MOSFET;
         case TOOL_POT:        return COMP_POT;
+        case TOOL_AND:        return COMP_AND;
+        case TOOL_OR:         return COMP_OR;
+        case TOOL_NOT:        return COMP_NOT;
+        case TOOL_NAND:       return COMP_NAND;
+        case TOOL_NOR:        return COMP_NOR;
+        case TOOL_XOR:        return COMP_XOR;
         default: return COMP_NONE;
     }
 }
@@ -62,6 +68,13 @@ static const wchar_t *comp_kind_name(CompType t) {
         case COMP_ZENER:      return L"Dioda Zener";
         case COMP_MOSFET:     return L"MOSFET N-Channel";
         case COMP_POT:        return L"Potensiometer";
+        case COMP_AND:        return L"AND Gate";
+        case COMP_OR:         return L"OR Gate";
+        case COMP_NOT:        return L"NOT Gate";
+        case COMP_NAND:       return L"NAND Gate";
+        case COMP_NOR:        return L"NOR Gate";
+        case COMP_XOR:        return L"XOR Gate";
+
         default:              return L"Komponen";
     }
 }
@@ -316,6 +329,18 @@ void show_context_menu(HWND hwnd, int sx, int sy, Component *c) {
                         L"pin 0 = A, 1 = B, 2 = W (wiper)",
                         (c->v > 0.0) ? L"pakai nilai" : L"default 10 kΩ",
                         pos, vrA, vrB);
+                    wcscat_s(buf, 512, extra);
+                }
+                if (c->type == COMP_AND || c->type == COMP_OR ||
+                    c->type == COMP_NOT || c->type == COMP_NAND ||
+                    c->type == COMP_NOR || c->type == COMP_XOR) {
+                    wchar_t extra[160];
+                    const wchar_t *st = L"-";
+                    if (sim_running)
+                        st = sim_gate_out_high(c) ? L"HIGH (1)" : L"LOW (0)";
+                    swprintf(extra, 160,
+                        L"\nGate logika. HIGH = net terhubung ke (+).\n"
+                        L"Output RUN: %ls", st);
                     wcscat_s(buf, 512, extra);
                 }
                 if (c->type == COMP_BUZZER) {
@@ -837,7 +862,9 @@ void on_key_down(HWND hwnd, WPARAM key) {
             key == 'I' || key == 'i' || key == 'P' || key == 'p' ||
             key == 'J' || key == 'j' || key == 'Z' || key == 'z' ||
             key == 'Y' || key == 'y' || key == 'F' || key == 'f' ||
-            key == 'T' || key == 't') return;
+            key == 'T' || key == 't' || key == 'A' || key == 'a' || key == 'O' || key == 'o' ||
+            key == 'N' || key == 'n' || key == 'X' || key == 'x' ||
+            key == 'Y' || key == 'y') return;
     }
     if (key == 'R' || key == 'r') {
         if (sim_running) return; /* rotasi dikunci saat RUN */
@@ -890,6 +917,12 @@ void on_key_down(HWND hwnd, WPARAM key) {
     else if (key == 'Z' || key == 'z') { current_tool = TOOL_ZENER; }
     else if (key == 'F' || key == 'f') { current_tool = TOOL_MOSFET; }
     else if (key == 'T' || key == 't') { current_tool = TOOL_POT; }
+    else if (key == 'A' || key == 'a') { current_tool = TOOL_AND; }
+    else if (key == 'O' || key == 'o') { current_tool = TOOL_OR; }
+    else if (key == 'N' || key == 'n') { current_tool = TOOL_NOT; }
+    else if (key == 'Y' || key == 'y') { current_tool = TOOL_NAND; }
+    else if (key == 'X' || key == 'x') { current_tool = TOOL_XOR; }
+
     else if (key == VK_DELETE || key == VK_BACK) {
         if (sim_running) return; /* hapus dikunci saat RUN */
         if (sel_count > 1) {

@@ -25,6 +25,12 @@ static CompType toolbar_tool_comp(ToolKind t) {
         case TOOL_ZENER:      return COMP_ZENER;
         case TOOL_MOSFET:     return COMP_MOSFET;
         case TOOL_POT:        return COMP_POT;
+        case TOOL_AND:        return COMP_AND;
+        case TOOL_OR:         return COMP_OR;
+        case TOOL_NOT:        return COMP_NOT;
+        case TOOL_NAND:       return COMP_NAND;
+        case TOOL_NOR:        return COMP_NOR;
+        case TOOL_XOR:        return COMP_XOR;
         default: return COMP_NONE;
     }
 }
@@ -282,6 +288,66 @@ static void sym_pot(HDC hdc) {
     Polygon(hdc, tip, 3);
 }
 
+static void sym_and_g(HDC hdc) {
+    MoveToEx(hdc, -40, 0, NULL); LineTo(hdc, -20, 0);  // dummy lead (lihat di bawah)
+    POINT pts[20]; int n = 0;
+    pts[n++] = (POINT){ -15, -12 };
+    pts[n++] = (POINT){  0, -12 };
+    for (int d = -90; d <= 90; d += 30) {
+        double rad = d * 3.14159265 / 180;
+        pts[n].x = (int)(12 * cos(rad));
+        pts[n].y = (int)(12 * sin(rad));
+        n++;
+    }
+    pts[n++] = (POINT){ -15, 12 };
+    Polygon(hdc, pts, n);
+    MoveToEx(hdc, -40, -8, NULL); LineTo(hdc, -15, -8);
+    MoveToEx(hdc, -40,  8, NULL); LineTo(hdc, -15,  8);
+    MoveToEx(hdc, 12, 0, NULL); LineTo(hdc, 40, 0);
+}
+static void sym_or_g(HDC hdc) {
+    POINT pts[20]; int n = 0;
+    pts[n++] = (POINT){ -18, -12 };
+    pts[n++] = (POINT){  0, -12 };
+    pts[n++] = (POINT){ 15, 0 };
+    pts[n++] = (POINT){  0, 12 };
+    pts[n++] = (POINT){ -18, 12 };
+    for (int y = 12; y >= -12; y -= 3) {
+        double t = (double)y / 12.0;
+        pts[n].x = -18 + (int)(6 * (1 - t*t));
+        pts[n].y = y;
+        n++;
+    }
+    Polygon(hdc, pts, n);
+    MoveToEx(hdc, -40, -8, NULL); LineTo(hdc, -14, -8);
+    MoveToEx(hdc, -40,  8, NULL); LineTo(hdc, -14,  8);
+    MoveToEx(hdc, 15, 0, NULL); LineTo(hdc, 40, 0);
+}
+static void sym_not_g(HDC hdc) {
+    POINT tri[3] = { { -15, -12 }, { -15, 12 }, { 10, 0 } };
+    Polygon(hdc, tri, 3);
+    Ellipse(hdc, 10, -3, 16, 3);
+    MoveToEx(hdc, -40, 0, NULL); LineTo(hdc, -15, 0);
+    MoveToEx(hdc, 16, 0, NULL); LineTo(hdc, 40, 0);
+}
+static void sym_nand_g(HDC hdc) {
+    sym_and_g(hdc);
+    Ellipse(hdc, 12, -3, 18, 3);
+    MoveToEx(hdc, 12, 0, NULL); LineTo(hdc, 40, 0);   // tutup: garis sudah ada, tapi tidak masalah
+    // Untuk NAND, harusnya lead tidak menyentuh bubble — cukup override visual
+}
+static void sym_nor_g(HDC hdc) {
+    sym_or_g(hdc);
+    Ellipse(hdc, 15, -3, 21, 3);
+    MoveToEx(hdc, 21, 0, NULL); LineTo(hdc, 40, 0);
+}
+static void sym_xor_g(HDC hdc) {
+    sym_or_g(hdc);
+    MoveToEx(hdc, -22, -12, NULL);
+    LineTo(hdc, -20, 0);
+    LineTo(hdc, -22, 12);
+}
+
 void toolbar_draw_symbol(HDC hdc, ToolKind tool, int cx, int cy, BOOL active) {
     int saved = SaveDC(hdc);
     SetGraphicsMode(hdc, GM_ADVANCED);
@@ -314,6 +380,12 @@ void toolbar_draw_symbol(HDC hdc, ToolKind tool, int cx, int cy, BOOL active) {
     else if (ct == COMP_ZENER) sym_zener(hdc);
     else if (ct == COMP_MOSFET) sym_mosfet(hdc);
     else if (ct == COMP_POT) sym_pot(hdc);
+    else if (ct == COMP_AND)  sym_and_g(hdc);
+    else if (ct == COMP_OR)   sym_or_g(hdc);
+    else if (ct == COMP_NOT)  sym_not_g(hdc);
+    else if (ct == COMP_NAND) sym_nand_g(hdc);
+    else if (ct == COMP_NOR)  sym_nor_g(hdc);
+    else if (ct == COMP_XOR)  sym_xor_g(hdc);
     else if (tool == TOOL_SELECT) {
         POINT cur[7] = { {0,-14},{10,4},{4,4},{4,14},{-2,14},{-2,4},{-8,4} };
         Polygon(hdc, cur, 7);
@@ -425,6 +497,12 @@ const wchar_t *toolbar_tool_shortname(ToolKind tool) {
     if (tool == TOOL_ZENER) return L"Zener";
     if (tool == TOOL_MOSFET) return L"MOSFET";
     if (tool == TOOL_POT) return L"POT";
+    if (tool == TOOL_AND)  return L"AND";
+    if (tool == TOOL_OR)   return L"OR";
+    if (tool == TOOL_NOT)  return L"NOT";
+    if (tool == TOOL_NAND) return L"NAND";
+    if (tool == TOOL_NOR)  return L"NOR";
+    if (tool == TOOL_XOR)  return L"XOR";
     return L"Hapus";
 }
 
@@ -449,6 +527,12 @@ int toolbar_tool_is_component(ToolKind tool) {
         case TOOL_ZENER:
         case TOOL_MOSFET:
         case TOOL_POT:
+        case TOOL_AND:
+        case TOOL_OR:
+        case TOOL_NOT:
+        case TOOL_NAND:
+        case TOOL_NOR:
+        case TOOL_XOR:
             return 1;
         default:
             return 0;

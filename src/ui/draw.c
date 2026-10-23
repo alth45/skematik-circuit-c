@@ -166,6 +166,12 @@ void draw_component(HDC hdc, Component *c) {
         case COMP_ZENER:       draw_k_zener(hdc, c);       break;
         case COMP_MOSFET:      draw_k_mosfet(hdc, c);      break;
         case COMP_POT:         draw_k_pot(hdc, c);         break;
+        case COMP_AND:         draw_k_and(hdc, c);         break;
+        case COMP_OR:          draw_k_or(hdc, c);          break;
+        case COMP_NOT:         draw_k_not(hdc, c);         break;
+        case COMP_NAND:        draw_k_nand(hdc, c);        break;
+        case COMP_NOR:         draw_k_nor(hdc, c);         break;
+        case COMP_XOR:         draw_k_xor(hdc, c);         break;
         default: break;
     }
         if (!g_minimap_mode) {

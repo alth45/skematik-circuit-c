@@ -33,6 +33,12 @@ static const wchar_t *comp_type_name(CompType t) {
         case COMP_ZENER:     return L"zener";
         case COMP_MOSFET:    return L"mosfet";
         case COMP_POT:       return L"potentiometer";
+        case COMP_AND:       return L"and";
+        case COMP_OR:        return L"or";
+        case COMP_NOT:       return L"not";
+        case COMP_NAND:      return L"nand";
+        case COMP_NOR:       return L"nor";
+        case COMP_XOR:       return L"xor";
 
         default: return L"none";
     }
@@ -59,6 +65,12 @@ const char *comp_type_json_name(CompType t) {
         case COMP_ZENER:      return "zener";
         case COMP_MOSFET:     return "mosfet";
         case COMP_POT:        return "potentiometer";
+        case COMP_AND:        return "and";
+        case COMP_OR:         return "or";
+        case COMP_NOT:        return "not";
+        case COMP_NAND:       return "nand";
+        case COMP_NOR:        return "nor";
+        case COMP_XOR:        return "xor";
         default:              return "none";
     }
 }
@@ -107,6 +119,12 @@ static int comp_type_from_name(const char *s) {
     if (strcmp(s, "potentiometer") == 0 || strcmp(s, "Potentiometer") == 0 ||
         strcmp(s, "pot") == 0 || strcmp(s, "POT") == 0 ||
         strcmp(s, "trimmer") == 0 || strcmp(s, "rheostat") == 0) return COMP_POT;
+    if (strcmp(s, "and")  == 0 || strcmp(s, "AND")  == 0) return COMP_AND;
+    if (strcmp(s, "or")   == 0 || strcmp(s, "OR")   == 0) return COMP_OR;
+    if (strcmp(s, "not")  == 0 || strcmp(s, "NOT")  == 0) return COMP_NOT;
+    if (strcmp(s, "nand") == 0 || strcmp(s, "NAND") == 0) return COMP_NAND;
+    if (strcmp(s, "nor")  == 0 || strcmp(s, "NOR")  == 0) return COMP_NOR;
+    if (strcmp(s, "xor")  == 0 || strcmp(s, "XOR")  == 0) return COMP_XOR;
     return COMP_NONE;
 }
 

@@ -60,6 +60,7 @@ static int vmconn_[MAX_COMP];
 static int hot_[MAX_WIRES];
 static double amread_[MAX_COMP];
 static int zener_bd_[MAX_COMP];   /* 1 = Zener sedang reverse breakdown */
+static int gate_state_[MAX_COMP]; /* -1 unknown, 0 LOW, 1 HIGH */
 /* ============================================================================
    Bagian 1: Union-Find & helper node
 ============================================================================ */
@@ -88,6 +89,166 @@ static double na_x[NA_MAX];
 static int na_n = 0;
 static int root_to_idx_[MAX_COMP * 3];
 static int idx_to_root_[NA_MAX];
+
+
+/* ===================== Logika Gerbang Digital =====================
+   Level logika dibaca dari net:
+     HIGH = root dari pin adalah root dari (+) sumber (BAT pin0 / AC Live)
+     LOW  = root terhubung ke (−)/ground / floating
+   Output gate di-union ke (+)/(−) sesuai state-nya. */
+
+static int is_logic_gate(CompType t) {
+    return t == COMP_AND || t == COMP_OR || t == COMP_NOT ||
+           t == COMP_NAND || t == COMP_NOR || t == COMP_XOR;
+}
+
+static int gate_output_pin(CompType t) {
+    return (t == COMP_NOT) ? 1 : 2;
+}
+
+static int is_plus_root(int root) {
+    for (int i = 0; i < comp_count; i++) {
+        if (comps[i].type == COMP_BATTERY || comps[i].type == COMP_ACSOURCE) {
+            if (find_root(node_of(i, 0)) == root) return 1;
+        }
+    }
+    return 0;
+}
+
+static int is_minus_root(int root) {
+    for (int i = 0; i < comp_count; i++) {
+        if (comps[i].type == COMP_BATTERY || comps[i].type == COMP_ACSOURCE) {
+            if (find_root(node_of(i, 1)) == root) return 1;
+        }
+        if (comps[i].type == COMP_GROUND) {
+            if (find_root(node_of(i, 0)) == root) return 1;
+        }
+    }
+    return 0;
+}
+
+static int read_logic_level(int comp_idx, int pin) {
+    int root = find_root(node_of(comp_idx, pin));
+    return is_plus_root(root) ? 1 : 0;   /* HIGH jika (+) ; LOW jika tidak */
+}
+
+static int compute_gate_output(int idx) {
+    Component *c = &comps[idx];
+    int a, b, r;
+    switch (c->type) {
+        case COMP_NOT:
+            a = read_logic_level(idx, 0);
+            return a ? 0 : 1;
+        case COMP_AND:
+        case COMP_NAND:
+            a = read_logic_level(idx, 0);
+            b = read_logic_level(idx, 1);
+            r = (a && b) ? 1 : 0;
+            return (c->type == COMP_NAND) ? !r : r;
+        case COMP_OR:
+        case COMP_NOR:
+            a = read_logic_level(idx, 0);
+            b = read_logic_level(idx, 1);
+            r = (a || b) ? 1 : 0;
+            return (c->type == COMP_NOR) ? !r : r;
+        case COMP_XOR:
+            a = read_logic_level(idx, 0);
+            b = read_logic_level(idx, 1);
+            return (a != b) ? 1 : 0;
+    }
+    return 0;
+}
+
+/* Union output gate sesuai gate_state_. Dipanggil dari build_unions. */
+static void union_gate_outputs(void) {
+    for (int i = 0; i < comp_count; i++) {
+        if (!is_logic_gate(comps[i].type)) continue;
+        int out_pin = gate_output_pin(comps[i].type);
+        if (gate_state_[i] == 1) {
+            /* HIGH -> union ke (+); kalau tidak ada sumber, biarkan floating */
+            for (int k = 0; k < comp_count; k++) {
+                if (comps[k].type == COMP_BATTERY || comps[k].type == COMP_ACSOURCE) {
+                    unite(node_of(i, out_pin), node_of(k, 0));
+                    break;
+                }
+            }
+        } else if (gate_state_[i] == 0) {
+            /* LOW -> utamakan ground; kalau tidak ada, pakai (−) sumber */
+            int done = 0;
+            for (int k = 0; k < comp_count; k++) {
+                if (comps[k].type == COMP_GROUND) {
+                    unite(node_of(i, out_pin), node_of(k, 0));
+                    done = 1; break;
+                }
+            }
+            if (!done) {
+                for (int k = 0; k < comp_count; k++) {
+                    if (comps[k].type == COMP_BATTERY || comps[k].type == COMP_ACSOURCE) {
+                        unite(node_of(i, out_pin), node_of(k, 1));
+                        break;
+                    }
+                }
+            }
+        }
+    }
+}
+
+/* Bangun ulang seluruh state union-find dari nol, memakai gate_state_ saat ini.
+   Dipanggil berulang dalam loop stabilisasi di sim_recompute(). */
+static void build_unions(void) {
+    for (int i = 0; i < MAX_COMP * 3; i++) parent_[i] = i;
+    for (int i = 0; i < MAX_COMP; i++) { dfwd_[i] = 0; cond_[i] = 0; }
+
+    /* Union kabel */
+    for (int i = 0; i < wire_count; i++) {
+        Component *ca = find_comp_by_id(wires[i].a.comp_id);
+        Component *cb = find_comp_by_id(wires[i].b.comp_id);
+        if (!ca || !cb) continue;
+        int ia = (int)(ca - comps), ib = (int)(cb - comps);
+        if (ia < 0 || ia >= comp_count || ib < 0 || ib >= comp_count) continue;
+        unite(node_of(ia, wires[i].a.pin_idx), node_of(ib, wires[i].b.pin_idx));
+    }
+
+    /* Pass 1: saklar ON + induktor DC */
+    for (int i = 0; i < comp_count; i++) {
+        if (comps[i].type == COMP_SWITCH && comps[i].on)
+            unite(node_of(i, 0), node_of(i, 1));
+        if (comps[i].type == COMP_INDUCTOR && !sim_ac_mode)
+            unite(node_of(i, 0), node_of(i, 1));
+    }
+
+    /* Pass 1b: dioda forward (+ Zener forward) */
+    for (int i = 0; i < comp_count; i++) {
+        if (comps[i].type != COMP_DIODE && comps[i].type != COMP_ZENER) continue;
+        int ra = find_root(node_of(i, 0));
+        if (is_plus_root(ra)) {
+            dfwd_[i] = 1;
+            unite(node_of(i, 0), node_of(i, 1));
+        }
+    }
+
+    /* Pass 2: transistor/MOSFET ON */
+    for (int i = 0; i < comp_count; i++) {
+        if (comps[i].type != COMP_TRANSISTOR && comps[i].type != COMP_MOSFET) continue;
+        int rb = find_root(node_of(i, 2));
+        int re = find_root(node_of(i, 1));
+        if (is_plus_root(rb) && is_minus_root(re)) {
+            cond_[i] = 1;
+            unite(node_of(i, 0), node_of(i, 1));
+        }
+    }
+
+    /* Pass 3: gerbang logika (berdasarkan gate_state_) */
+    union_gate_outputs();
+}
+
+/* Akses publik: true bila gerbang HIGH saat RUN (untuk pewarnaan). */
+int sim_gate_out_high(const Component *c) {
+    if (!c || !is_logic_gate(c->type)) return 0;
+    int i = (int)(c - comps);
+    if (i < 0 || i >= comp_count) return 0;
+    return gate_state_[i] == 1;
+}
 
 /* Bangun daftar node (= root unik yang dipakai pin komponen). */
 static void na_build_nodes(void) {
@@ -445,6 +606,7 @@ void sim_recompute(void) {
     vmconn_[i] = 0;
     amread_[i] = -1.0;
     zener_bd_[i] = 0;
+    gate_state_[i] = -1;       /* BARU: semua gerbang belum diketahui */
   }
   for (int i = 0; i < MAX_WIRES; i++)
     hot_[i] = 0;
@@ -460,43 +622,45 @@ void sim_recompute(void) {
   sim_exploded = 0;
   sim_overcur = 0;
 
-  /* ---- Union kabel ---- */
-  for (int i = 0; i < wire_count; i++) {
-    Component *ca = find_comp_by_id(wires[i].a.comp_id);
-    Component *cb = find_comp_by_id(wires[i].b.comp_id);
-    if (!ca || !cb)
-      continue;
-    int ia = (int)(ca - comps), ib = (int)(cb - comps);
-    if (ia < 0 || ia >= comp_count || ib < 0 || ib >= comp_count)
-      continue;
-    unite(node_of(ia, wires[i].a.pin_idx), node_of(ib, wires[i].b.pin_idx));
-  }
-
-  /* ---- Deteksi sumber ---- */
-  int has_ac = 0, has_dc = 0;
-  for (int i = 0; i < comp_count; i++) {
-    if (comps[i].type == COMP_ACSOURCE)
-      has_ac = 1;
-    if (comps[i].type == COMP_BATTERY)
-      has_dc = 1;
-  }
-  sim_has_ac = has_ac;
-  sim_has_battery = has_dc;
-  sim_ac_mode = (has_ac && !has_dc);
-
-  /* ---- Pass 1: union penghantar IDEAL 0 Ω saja (BUKAN resistor). ---- */
-  for (int i = 0; i < comp_count; i++) {
-    if (comps[i].type == COMP_SWITCH && comps[i].on) {
-      unite(node_of(i, 0), node_of(i, 1));
+  /* ---- Deteksi sumber (WAJIB sebelum union loop, karena build_unions
+     membaca sim_ac_mode untuk induktor) ---- */
+  {
+    int has_ac = 0, has_dc = 0;
+    for (int i = 0; i < comp_count; i++) {
+      if (comps[i].type == COMP_ACSOURCE) has_ac = 1;
+      if (comps[i].type == COMP_BATTERY)  has_dc = 1;
     }
-    if (comps[i].type == COMP_INDUCTOR && !sim_ac_mode) {
-      unite(node_of(i, 0), node_of(i, 1));
-    }
-    /* Kapasitor di mode murni-AC: dianggap short (Xc besar dimodelkan
-       sebagai edge, BUKAN short) — jadi di sini TIDAK di-union. */
+    sim_has_ac      = has_ac;
+    sim_has_battery = has_dc;
+    sim_ac_mode     = (has_ac && !has_dc);
   }
 
-  /* Short deteksi (+)-(−). */
+  /* ---- Iterative stabilization: union graph + gate output ----
+     Rangkaian dengan gerbang multi-tingkat butuh beberapa putaran:
+       iter 1: union graph (gate_state_ semua = -1 → tidak ada output
+               yang di-union) → hitung output tiap gate dari input murni.
+       iter 2: union graph sekarang memakai output gate dari iter 1 →
+               input gate downstream melihat nilai yang sudah ter-propagate.
+       ... dst. Konvergen biasanya ≤ (jumlah level gate), maksimal 8 iterasi.
+
+     Loop berhenti saat tidak ada perubahan (konvergen). Rangkaian dengan
+     feedback loop (NOT → NOT → ...) akan berosilasi; dibatasi 8 iterasi. ---- */
+  for (int iter = 0; iter < 8; iter++) {
+    build_unions();
+
+    int changed = 0;
+    for (int i = 0; i < comp_count; i++) {
+      if (!is_logic_gate(comps[i].type)) continue;
+      int new_out = compute_gate_output(i);
+      if (new_out != gate_state_[i]) {
+        gate_state_[i] = new_out;
+        changed = 1;
+      }
+    }
+    if (!changed) break;
+  }
+
+  /* ---- Short deteksi (+)-(-) ---- */
   {
     int plus_root[MAX_COMP * 3], minus_root[MAX_COMP * 3];
     int n_plus = 0, n_minus = 0;
@@ -514,67 +678,8 @@ void sim_recompute(void) {
           sim_short = 1;
   }
 
-  /* ---- Pass 1b: dioda fwd (union A-K) ---- */
-  {
-    int di_on[MAX_COMP] = {0};
-    int plus_root[MAX_COMP * 3], n_plus = 0;
-    for (int i = 0; i < comp_count; i++) {
-      if (comps[i].type == COMP_BATTERY || comps[i].type == COMP_ACSOURCE)
-        plus_root[n_plus++] = find_root(node_of(i, 0));
-    }
-    for (int i = 0; i < comp_count; i++) {
-      if (comps[i].type != COMP_DIODE && comps[i].type != COMP_ZENER)
-        continue;
-      int ra = find_root(node_of(i, 0));
-      for (int k = 0; k < n_plus; k++)
-        if (plus_root[k] == ra) {
-          di_on[i] = 1;
-          break;
-        }
-    }
-    for (int i = 0; i < comp_count; i++)
-      if (di_on[i]) {
-        dfwd_[i] = 1;
-        unite(node_of(i, 0), node_of(i, 1));
-      }
-  }
-
-  /* ---- Pass 2: transistor / MOSFET ON (union D-S atau C-E) ---- */
-  {
-    int tr_on[MAX_COMP] = {0};
-    int plus_root[MAX_COMP * 3], minus_root[MAX_COMP * 3];
-    int n_plus = 0, n_minus = 0;
-    for (int i = 0; i < comp_count; i++) {
-      if (comps[i].type == COMP_BATTERY || comps[i].type == COMP_ACSOURCE) {
-        plus_root[n_plus++] = find_root(node_of(i, 0));
-        minus_root[n_minus++] = find_root(node_of(i, 1));
-      } else if (comps[i].type == COMP_GROUND) {
-        minus_root[n_minus++] = find_root(node_of(i, 0));
-      }
-    }
-    for (int i = 0; i < comp_count; i++) {
-      if (comps[i].type != COMP_TRANSISTOR && comps[i].type != COMP_MOSFET)
-        continue;
-      /* pin2 = Basis/ Gate; pin1 = Emitor / Source. */
-      int rb = find_root(node_of(i, 2));
-      int re = find_root(node_of(i, 1));
-      int bp = 0, em = 0;
-      for (int k = 0; k < n_plus; k++)
-        if (plus_root[k] == rb) bp = 1;
-      for (int k = 0; k < n_minus; k++)
-        if (minus_root[k] == re) em = 1;
-      if (bp && em)
-        tr_on[i] = 1;
-    }
-    for (int i = 0; i < comp_count; i++)
-      if (tr_on[i]) {
-        cond_[i] = 1;
-        unite(node_of(i, 0), node_of(i, 1));
-      }
-  }
-
   /* ---- Bangun node & V-fixed ---- */
-    na_build_nodes();
+  na_build_nodes();
   double *vfix = HeapAlloc(GetProcessHeap(), 0, sizeof(double) * NA_MAX);
   if (!vfix) return;
 
@@ -592,12 +697,12 @@ void sim_recompute(void) {
       int any_change = 0;
       for (int i = 0; i < comp_count; i++) {
         if (comps[i].type != COMP_ZENER) continue;
-        if (dfwd_[i]) continue;                            /* sudah forward */
-        int i0 = root_to_idx_[find_root(node_of(i, 0))];   /* A */
-        int i1 = root_to_idx_[find_root(node_of(i, 1))];   /* K */
+        if (dfwd_[i]) continue;
+        int i0 = root_to_idx_[find_root(node_of(i, 0))];
+        int i1 = root_to_idx_[find_root(node_of(i, 1))];
         if (i0 < 0 || i1 < 0 || i0 == i1) continue;
 
-        double vrev = na_x[i1] - na_x[i0];                 /* V_K − V_A */
+        double vrev = na_x[i1] - na_x[i0];
         double vz   = (comps[i].v > 0.0) ? comps[i].v : VZENER_DEFAULT;
         double tol  = 0.02;
 
@@ -636,7 +741,7 @@ void sim_recompute(void) {
     int r0 = find_root(node_of(i, 0)); /* anoda */
     int r1 = find_root(node_of(i, 1)); /* katoda */
     if (r0 == r1)
-      continue; /* kedua pin shorted */
+      continue;
 
     int i0 = root_to_idx_[r0];
     int i1 = root_to_idx_[r1];
@@ -645,7 +750,6 @@ void sim_recompute(void) {
 
     double vth = vth_ok ? (Vth_node[i0] - Vth_node[i1]) : 0.0;
 
-    /* --- Rth: semua sumber di-short, injeksi 1 A anoda→katoda --- */
     double vfix_rth[NA_MAX];
     for (int k = 0; k < na_n; k++)
       vfix_rth[k] = (vfix[k] != V_UNKNOWN) ? 0.0 : V_UNKNOWN;
@@ -654,22 +758,19 @@ void sim_recompute(void) {
     if (na_solve()) {
       rth = na_x[i0] - na_x[i1];
       if (rth < 0.0)
-        rth = -rth; /* ambil nilai absolut */
+        rth = -rth;
     }
-    /* Kalau anoda V-fixed (short ke sumber), Rth = 0. */
     if (vfix[i0] != V_UNKNOWN && vfix[i1] == V_UNKNOWN) {
       rth = 0.0;
     }
 
     double vf = (comps[i].v > 0.0) ? comps[i].v : VF_LED_DEFAULT;
 
-    /* Loop terbuka atau tidak ada jalur konduktif. */
     if (rth < 0.0 || rth > R_OPEN_THRESH) {
       ilead_[i] = -1.0;
       continue;
     }
 
-    /* Loop tertutup tanpa R: arus pendek → MELEDAK. */
     if (rth <= R_SHORT_THRESH && vth > vf) {
       lit_[i] = 1;
       sim_led_count++;
@@ -686,14 +787,13 @@ void sim_recompute(void) {
       continue;
     }
 
-    /* Arus LED. */
     double iled = 0.0;
     if (vth > vf)
       iled = (vth - vf) / rth;
 
     if (iled <= 0.0) {
       ilead_[i] = 0.0;
-      continue; /* LED tidak menyala (Vth <= Vf) */
+      continue;
     }
 
     lit_[i] = 1;
@@ -713,7 +813,6 @@ void sim_recompute(void) {
       sim_vdrop_max = vf;
     }
 
-    /* Klasifikasi nasib LED. */
     const double tol = 1.0 + 1e-6;
     if (iled > 5.0 * VF_LED_MAX * tol ||
         (iled > VF_LED_MAX * tol && vth > V_EXPLODE)) {
@@ -743,7 +842,6 @@ void sim_recompute(void) {
     if (dv > 1.0)
       buzz_[i] = 1;
   }
-  /* Buzzer yang seri dengan LED yang menyala ikut bunyi. */
   for (int i = 0; i < comp_count; i++) {
     if (comps[i].type != COMP_BUZZER || buzz_[i])
       continue;
@@ -774,8 +872,6 @@ void sim_recompute(void) {
     if (!vth_ok)
       continue;
     double v = Vth_node[i0] - Vth_node[i1];
-    /* Cek "floating": kalau V sangat besar (regularisasi), anggap tak
-     * terhubung. */
     if (fabs(v) > 1e6)
       continue;
     vmconn_[i] = 1;
@@ -785,15 +881,15 @@ void sim_recompute(void) {
   /* ============================================================
      Pass 6: Ammeter — bacaan = |V(pin0) − V(pin1)| / R_ammeter.
      ============================================================ */
-  for (int i = 0; i < comp_count; i++){
-    if(comps[i].type != COMP_AMMETER) continue;
+  for (int i = 0; i < comp_count; i++) {
+    if (comps[i].type != COMP_AMMETER) continue;
     int i0 = root_to_idx_[find_root(node_of(i, 0))];
     int i1 = root_to_idx_[find_root(node_of(i, 1))];
-    if(i0 < 0 || i1 < 0) continue;
-    if(!vth_ok) continue;
+    if (i0 < 0 || i1 < 0) continue;
+    if (!vth_ok) continue;
 
     double dv = Vth_node[i0] - Vth_node[i1];
-    if(fabs(dv) > 1e6) continue; /* floating */
+    if (fabs(dv) > 1e6) continue;
     double current = fabs(dv) / 0.001; /* R_ammeter = 1 mOhm */
     amread_[i] = current;
   }

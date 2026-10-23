@@ -232,7 +232,8 @@ const ToolKind btnTools[BTN_COUNT] = {
     TOOL_RESISTOR, TOOL_SWITCH, TOOL_BATTERY, TOOL_ACSOURCE, TOOL_LED, TOOL_GROUND,
     TOOL_CAPACITOR, TOOL_TRANSISTOR, TOOL_DIODE, TOOL_CAPOLAR,
     TOOL_LDR, TOOL_BUZZER, TOOL_VOLTMETER, TOOL_AMMETER,
-    TOOL_OSCPROBE, TOOL_INDUCTOR, TOOL_ZENER, TOOL_MOSFET, TOOL_POT
+    TOOL_OSCPROBE, TOOL_INDUCTOR, TOOL_ZENER, TOOL_MOSFET, TOOL_POT,
+    TOOL_AND, TOOL_OR, TOOL_NOT, TOOL_NAND, TOOL_NOR, TOOL_XOR
 };
 const wchar_t *btnLabels[BTN_COUNT] = {
     L"Select / Geser (V)", L"Blok / Multi-Select (B)", L"Kabel / Wire (W)",
@@ -241,7 +242,9 @@ const wchar_t *btnLabels[BTN_COUNT] = {
     L"LED (4)", L"Ground (5)",
     L"Kapasitor (6)", L"Transistor NPN (7)", L"Dioda (8)", L"Kapasitor Polar (9)",
     L"LDR / Sensor Cahaya (L)", L"Buzzer (U)", L"Voltmeter (M)", L"Ammeter (I)",
-    L"Probe Osiloskop (P)", L"Induktor (J)", L"Dioda Zener (Z)", L"MOSFET N-Channel (F)", L"Potensiometer (T)"
+    L"Probe Osiloskop (P)", L"Induktor (J)", L"Dioda Zener (Z)", L"MOSFET N-Channel (F)", L"Potensiometer (T)", 
+    L"AND (A)", L"OR (O)", L"NOT (N)", L"NAND", L"NOR", L"XOR"
+
 };
 
 /* ===================== Utilitas ===================== */
@@ -278,8 +281,11 @@ int comp_pin_count(const Component *c) {
     if (!c) return 0;
     if (c->type == COMP_GROUND) return 1;
     if (c->type == COMP_TRANSISTOR || c->type == COMP_MOSFET || c->type == COMP_POT) return 3;
-    if (c->type == COMP_NONE) return 0;
-    return 2;
+    if (c->type == COMP_AND || c->type == COMP_OR ||
+        c->type == COMP_NAND || c->type == COMP_NOR || c->type == COMP_XOR)
+        return 3;
+     if (c->type == COMP_NONE) return 0;;
+    return 2; //termasuk NOT
 }
 
 int comp_pin_valid(const Component *c, int pin_idx) {
@@ -314,6 +320,16 @@ void comp_pin_pos(const Component *c, int pin_idx, int *px, int *py) {
         if (pin_idx == 2)      comp_local_to_world(c,   0, -35, px, py);  /* W (top center) */
         else if (pin_idx == 0) comp_local_to_world(c, -40,   0, px, py);  /* A (left) */
         else                   comp_local_to_world(c,  40,   0, px, py);  /* B (right) */
+    
+    }else if (c->type == COMP_AND || c->type == COMP_OR ||
+               c->type == COMP_NAND || c->type == COMP_NOR ||
+               c->type == COMP_XOR) {
+        if (pin_idx == 0)      comp_local_to_world(c, -40, -10, px, py);  /* A */
+        else if (pin_idx == 1) comp_local_to_world(c, -40, +10, px, py);  /* B */
+        else                   comp_local_to_world(c, +40,   0, px, py);  /* OUT */
+    } else if (c->type == COMP_NOT) {
+        comp_local_to_world(c, (pin_idx == 0) ? -40 : 40, 0, px, py);
+    
     }else {
         comp_local_to_world(c, (pin_idx == 0) ? -40 : 40, 0, px, py);
     }
