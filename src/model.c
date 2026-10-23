@@ -11,6 +11,9 @@ int  drag_dx = 0, drag_dy = 0;
 
 Wire wires[MAX_WIRES];
 int  wire_count = 0;
+/* ---- Junctions (T-junction wire-to-wire) ---- */
+Junction junctions[MAX_JUNCTIONS];
+int      junction_count = 0;
 
 int wiring_active = 0;
 PinRef wiring_from = { -1, -1 };
@@ -33,7 +36,17 @@ int g_show_status = 1;
 /* ===================== Undo / Redo (snapshot stack) =====================
    Snapshot = comps + wires + next_id + selection. Bounded UNDO_DEPTH=64;
    setiap push baru menghapus stack redo. Semua restore diikuti clear
-   status drag/box/wiring + sim_recompute agar tampilan & simulasi konsisten. */
+   status drag/box/wiring + sim_recompute agar tampilan & simulasi konsisten.
+
+   ATURAN BATCH:
+     - undo_push() di dalam batch (undo_batch > 0) hanya mengambil snapshot
+       pada push PERTAMA. Push berikutnya di-skip.
+     - undo_begin_batch()/undo_end_batch() HARUS seimbang. Jangan panggil
+       undo_end_batch() tanpa pasangan undo_begin_batch() — itu akan
+       membocorkan state batch ke pemanggil lain.
+     - Fungsi "remove_*" internal boleh memanggil undo_push(); bila
+       dipanggil dari dalam batch (mis. model_delete_selection) push
+       otomatis di-skip. */
 #define UNDO_DEPTH 64
 typedef struct {
     Component comps[MAX_COMP];
@@ -46,10 +59,10 @@ typedef struct {
     int selected_id;
 } UndoSnap;
 static UndoSnap undo_stack[UNDO_DEPTH];
-static int undo_top = 0;   /* jumlah snapshot tersimpan */
+static int undo_top = 0;
 static UndoSnap redo_stack[UNDO_DEPTH];
 static int redo_top = 0;
-static int undo_batch = 0; /* >0 = kumpulkan mutasi jadi 1 langkah */
+static int undo_batch = 0;
 static int undo_batch_pushed = 0;
 
 static void undo_capture(UndoSnap *s) {
@@ -84,7 +97,6 @@ static void undo_restore(const UndoSnap *s) {
 void undo_push(void) {
     if (sim_running) return;
     if (undo_batch > 0) {
-        /* Di dalam batch: cukup 1 snapshot untuk seluruh batch. */
         if (undo_batch_pushed) return;
         undo_batch_pushed = 1;
     }
@@ -139,8 +151,6 @@ int    g_pan_x = 0;
 int    g_pan_y = 0;
 int    g_show_minimap = 1;
 int    g_minimap_mode = 0;
-
-
 
 #define ZOOM_MIN  0.25
 #define ZOOM_MAX  8.0
@@ -221,14 +231,11 @@ void canvas_zoom_reset(void) {
     g_pan_y = 0;
 }
 
-/* Tombol toolbar (digambar manual di atas, bukan HWND).
-   Urutan: Select, Wire, Resistor, Switch, Battery, Sumber AC, LED, Ground,
-   Capacitor, Transistor, Diode, Kapasitor Polar, LDR, Buzzer, Voltmeter,
-   Delete. + 4 tombol aksi. */
+/* Tombol toolbar. Fixed-left (0..3), scrollable (4..BTN_COUNT-1). */
 const ToolKind btnTools[BTN_COUNT] = {
     /* Fixed-left group (indices 0..3): */
     TOOL_SELECT, TOOL_BOX, TOOL_WIRE, TOOL_DELETE,
-    /* Scrollable components (indices 4..20): */
+    /* Scrollable components (indices 4..BTN_COUNT-1): */
     TOOL_RESISTOR, TOOL_SWITCH, TOOL_BATTERY, TOOL_ACSOURCE, TOOL_LED, TOOL_GROUND,
     TOOL_CAPACITOR, TOOL_TRANSISTOR, TOOL_DIODE, TOOL_CAPOLAR,
     TOOL_LDR, TOOL_BUZZER, TOOL_VOLTMETER, TOOL_AMMETER,
@@ -242,10 +249,13 @@ const wchar_t *btnLabels[BTN_COUNT] = {
     L"LED (4)", L"Ground (5)",
     L"Kapasitor (6)", L"Transistor NPN (7)", L"Dioda (8)", L"Kapasitor Polar (9)",
     L"LDR / Sensor Cahaya (L)", L"Buzzer (U)", L"Voltmeter (M)", L"Ammeter (I)",
-    L"Probe Osiloskop (P)", L"Induktor (J)", L"Dioda Zener (Z)", L"MOSFET N-Channel (F)", L"Potensiometer (T)", 
+    L"Probe Osiloskop (P)", L"Induktor (J)", L"Dioda Zener (Z)",
+    L"MOSFET N-Channel (F)", L"Potensiometer (T)",
     L"AND (A)", L"OR (O)", L"NOT (N)", L"NAND", L"NOR", L"XOR"
-
 };
+
+/* ===================== Forward declarations ===================== */
+static void cleanup_orphan_junctions(void);
 
 /* ===================== Utilitas ===================== */
 int snap(int v) {
@@ -284,13 +294,31 @@ int comp_pin_count(const Component *c) {
     if (c->type == COMP_AND || c->type == COMP_OR ||
         c->type == COMP_NAND || c->type == COMP_NOR || c->type == COMP_XOR)
         return 3;
-     if (c->type == COMP_NONE) return 0;;
-    return 2; //termasuk NOT
+    if (c->type == COMP_NONE) return 0;
+    return 2;   /* termasuk NOT */
 }
 
 int comp_pin_valid(const Component *c, int pin_idx) {
     if (!c || pin_idx < 0) return 0;
     return pin_idx < comp_pin_count(c);
+}
+
+Junction *find_junction_by_id(int id) {
+    if (id < 0 || id >= MAX_JUNCTIONS) return NULL;
+    if (!junctions[id].used) return NULL;
+    return &junctions[id];
+}
+
+void pinref_pos(PinRef p, int *x, int *y) {
+    if (!x || !y) return;
+    if (p.comp_id < 0) {
+        Junction *j = find_junction_by_id(p.pin_idx);
+        if (j) { *x = j->x; *y = j->y; return; }
+        *x = 0; *y = 0; return;
+    }
+    Component *c = find_comp_by_id(p.comp_id);
+    if (c) comp_pin_pos(c, p.pin_idx, x, y);
+    else { *x = 0; *y = 0; }
 }
 
 void comp_local_to_world(const Component *c, int lx, int ly, int *wx, int *wy) {
@@ -308,20 +336,16 @@ void comp_pin_pos(const Component *c, int pin_idx, int *px, int *py) {
     if (!c || !px || !py) return;
     if (c->type == COMP_GROUND) {
         comp_local_to_world(c, 0, -30, px, py);
-    }else if (c->type == COMP_TRANSISTOR || c->type == COMP_MOSFET) {
-        /* NPN standar (B di kiri, C & E di kanan):
-           pin0 = Kolektor -> kanan-atas  (+40, -30)
-           pin1 = Emitor   -> kanan-bawah (+40, +30)  (panah keluar)
-           pin2 = Basis    -> kiri-tengah (-40,  0) */
+    } else if (c->type == COMP_TRANSISTOR || c->type == COMP_MOSFET) {
+        /* pin0 = C/D (kanan-atas), pin1 = E/S (kanan-bawah), pin2 = B/G (kiri) */
         if (pin_idx == 2)      comp_local_to_world(c, -40,  0, px, py);
         else if (pin_idx == 1) comp_local_to_world(c,  40, 30, px, py);
         else                   comp_local_to_world(c,  40, -30, px, py);
-    }else if (c->type == COMP_POT) {
-        if (pin_idx == 2)      comp_local_to_world(c,   0, -35, px, py);  /* W (top center) */
-        else if (pin_idx == 0) comp_local_to_world(c, -40,   0, px, py);  /* A (left) */
-        else                   comp_local_to_world(c,  40,   0, px, py);  /* B (right) */
-    
-    }else if (c->type == COMP_AND || c->type == COMP_OR ||
+    } else if (c->type == COMP_POT) {
+        if (pin_idx == 2)      comp_local_to_world(c,   0, -35, px, py);  /* W */
+        else if (pin_idx == 0) comp_local_to_world(c, -40,   0, px, py);  /* A */
+        else                   comp_local_to_world(c,  40,   0, px, py);  /* B */
+    } else if (c->type == COMP_AND || c->type == COMP_OR ||
                c->type == COMP_NAND || c->type == COMP_NOR ||
                c->type == COMP_XOR) {
         if (pin_idx == 0)      comp_local_to_world(c, -40, -10, px, py);  /* A */
@@ -329,8 +353,7 @@ void comp_pin_pos(const Component *c, int pin_idx, int *px, int *py) {
         else                   comp_local_to_world(c, +40,   0, px, py);  /* OUT */
     } else if (c->type == COMP_NOT) {
         comp_local_to_world(c, (pin_idx == 0) ? -40 : 40, 0, px, py);
-    
-    }else {
+    } else {
         comp_local_to_world(c, (pin_idx == 0) ? -40 : 40, 0, px, py);
     }
 }
@@ -354,6 +377,21 @@ int find_pin_at(int x, int y, PinRef *out, int *px, int *py) {
                 bx = qx; by = qy;
                 found = 1;
             }
+        }
+    }
+    /* Junction juga merupakan target wiring yang valid. */
+    for (int j = 0; j < MAX_JUNCTIONS; j++) {
+        if (!junctions[j].used) continue;
+        int dx = junctions[j].x - x;
+        int dy = junctions[j].y - y;
+        int d2 = dx * dx + dy * dy;
+        if (d2 <= best_d2) {
+            best_d2 = d2;
+            best.comp_id = -1;          /* tanda junction */
+            best.pin_idx = j;
+            bx = junctions[j].x;
+            by = junctions[j].y;
+            found = 1;
         }
     }
     if (found) {
@@ -430,8 +468,10 @@ void model_translate_selection(int dx, int dy) {
 int model_delete_selection(void) {
     if (sim_running) return 0;
     if (sel_count == 0) return 0;
+
     undo_begin_batch();
-    undo_push();
+    undo_push();   /* snapshot awal */
+
     int removed = 0;
     while (sel_count > 0) {
         Component *c = find_comp_by_id(selection[0]);
@@ -461,6 +501,7 @@ int model_duplicate_selection(int dx, int dy) {
     if (sim_running) return 0;
     if (sel_count == 0) return 0;
     if (comp_count + sel_count > MAX_COMP) return 0;
+
     undo_begin_batch();
     undo_push();
 
@@ -474,9 +515,15 @@ int model_duplicate_selection(int dx, int dy) {
         CompType t = c->type;
         double v = c->v;
         int rot = c->rot, on = c->on;
+        WaveKind wave = c->wave;
+        int led_color = c->led_color;
         model_add_component(t, c->x + dx, c->y + dy);
         Component *nc = find_comp_by_id(selected_id);
-        if (nc) { nc->v = v; nc->rot = rot; nc->on = on; }
+         if (nc) {
+            nc->v = v; nc->rot = rot; nc->on = on;
+            nc->wave = wave;
+            nc->led_color = led_color;
+        }
         new_ids[i] = selected_id;
     }
 
@@ -643,19 +690,40 @@ void model_add_component(CompType type, int x, int y) {
     c.rot = 0;
     c.on = (type == COMP_POT) ? POT_WIPER_DEFAULT : 0;
     c.v = comp_default_value(type);
+    c.wave = WAVE_SINE;
+    c.led_color = 0;
     comps[comp_count++] = c;
     selected_id = c.id;
     sim_recompute();
 }
 
+/* Hapus komponen/wire/junction di titik (x,y).
+   Undo: SETIAP path memanggil undo_push() sendiri. Bila dipanggil dari
+   dalam batch (mis. model_delete_selection), undo_push() otomatis skip. */
 void model_remove_at(int x, int y) {
     if (sim_running) return;
-    undo_begin_batch();
-    undo_push();
-    if (model_remove_wire_at(x, y)) { undo_end_batch(); return; }
+
+    /* 1) Junction (prioritas tertinggi — titik kecil, harus presisi). */
+    for (int j = 0; j < MAX_JUNCTIONS; j++) {
+        if (!junctions[j].used) continue;
+        int dx = junctions[j].x - x, dy = junctions[j].y - y;
+        if (dx * dx + dy * dy <= 100) {
+            model_remove_junction(j);
+            return;
+        }
+    }
+
+    /* 2) Wire. */
+    if (model_remove_wire_at(x, y)) {
+        cleanup_orphan_junctions();
+        return;
+    }
+
+    /* 3) Komponen. */
     Component *hit = find_comp_at(x, y);
-    if (!hit) { undo_end_batch(); return; }
+    if (!hit) return;
     undo_push();
+
     int dead_id = hit->id;
     int idx = (int)(hit - comps);
     for (int i = idx; i < comp_count - 1; i++) comps[i] = comps[i + 1];
@@ -676,12 +744,12 @@ void model_remove_at(int x, int y) {
         } else i++;
     }
     if (sel_count > 0 && selected_id < 0) selected_id = selection[sel_count - 1];
+    cleanup_orphan_junctions();
     sim_recompute();
-    undo_end_batch();
 }
 
 void model_clear_all(void) {
-    if (comp_count == 0 && wire_count == 0) return;
+    if (comp_count == 0 && wire_count == 0 && junction_count == 0) return;
     undo_push();
     comp_count = 0;
     wire_count = 0;
@@ -693,6 +761,8 @@ void model_clear_all(void) {
     group_drag_n = 0;
     box_selecting = 0;
     for (int i = 0; i < MAX_COMP; i++) { comps[i].on = 0; comps[i].v = 0.0; }
+    for (int i = 0; i < MAX_JUNCTIONS; i++) junctions[i].used = 0;
+    junction_count = 0;
     sim_recompute();
 }
 
@@ -714,19 +784,84 @@ void model_set_component_value(int comp_id, double v) {
     sim_recompute();
 }
 
+/* ===================== Junction ===================== */
+
+int model_add_junction(int x, int y) {
+    for (int i = 0; i < MAX_JUNCTIONS; i++) {
+        if (junctions[i].used && junctions[i].x == x && junctions[i].y == y)
+            return i;
+    }
+    for (int i = 0; i < MAX_JUNCTIONS; i++) {
+        if (!junctions[i].used) {
+            junctions[i].x = x;
+            junctions[i].y = y;
+            junctions[i].used = 1;
+            junction_count++;
+            return i;
+        }
+    }
+    return -1;
+}
+
+void model_remove_junction(int id) {
+    if (id < 0 || id >= MAX_JUNCTIONS || !junctions[id].used) return;
+    if (sim_running) return;
+    undo_push();
+
+    for (int i = wire_count - 1; i >= 0; i--) {
+        if ((wires[i].a.comp_id == -1 && wires[i].a.pin_idx == id) ||
+            (wires[i].b.comp_id == -1 && wires[i].b.pin_idx == id)) {
+            for (int j = i; j < wire_count - 1; j++) wires[j] = wires[j + 1];
+            wire_count--;
+        }
+    }
+    junctions[id].used = 0;
+    if (junction_count > 0) junction_count--;
+    selected_id = -1;
+    sim_recompute();
+}
+
+static void cleanup_orphan_junctions(void) {
+    for (int j = 0; j < MAX_JUNCTIONS; j++) {
+        if (!junctions[j].used) continue;
+        int refs = 0;
+        for (int i = 0; i < wire_count; i++) {
+            if (wires[i].a.comp_id == -1 && wires[i].a.pin_idx == j) refs++;
+            if (wires[i].b.comp_id == -1 && wires[i].b.pin_idx == j) refs++;
+        }
+        if (refs == 0) {
+            junctions[j].used = 0;
+            if (junction_count > 0) junction_count--;
+        }
+    }
+}
+
+/* ===================== Wire ===================== */
+
 int model_add_wire(PinRef a, PinRef b) {
-    if (a.comp_id < 0 || b.comp_id < 0) return 0;
     if (same_pin(a, b)) return 0;
-    Component *ca = find_comp_by_id(a.comp_id);
-    Component *cb = find_comp_by_id(b.comp_id);
-    if (!ca || !cb) return 0;
-    if (!comp_pin_valid(ca, a.pin_idx) || !comp_pin_valid(cb, b.pin_idx)) return 0;
+
+    /* Validasi endpoint: pin komponen (comp_id > 0) atau junction (comp_id < 0). */
+    if (a.comp_id < 0) {
+        if (!find_junction_by_id(a.pin_idx)) return 0;
+    } else {
+        Component *ca = find_comp_by_id(a.comp_id);
+        if (!ca || !comp_pin_valid(ca, a.pin_idx)) return 0;
+    }
+    if (b.comp_id < 0) {
+        if (!find_junction_by_id(b.pin_idx)) return 0;
+    } else {
+        Component *cb = find_comp_by_id(b.comp_id);
+        if (!cb || !comp_pin_valid(cb, b.pin_idx)) return 0;
+    }
+
     for (int i = 0; i < wire_count; i++) {
         if ((same_pin(wires[i].a, a) && same_pin(wires[i].b, b)) ||
             (same_pin(wires[i].a, b) && same_pin(wires[i].b, a)))
             return 0;
     }
     if (wire_count >= MAX_WIRES) return 0;
+
     undo_push();
     wires[wire_count].a = a;
     wires[wire_count].b = b;
@@ -755,20 +890,81 @@ static int wire_hit(int x, int y, int x1, int y1, int x2, int y2) {
     return 0;
 }
 
+/* Cari wire yang terdekat dengan (x,y) pada interior-nya.
+   Return 1 + isi out_wi (index wire), out_jx/out_jy (titik terdekat). */
+int find_wire_segment_at(int x, int y, int *out_wi, int *out_jx, int *out_jy) {
+    const int tol = WIRE_HIT;
+    int best_d2 = tol * tol;
+    int found = 0, bwi = -1, bjx = 0, bjy = 0;
+    for (int i = 0; i < wire_count; i++) {
+        int ax, ay, bx, by;
+        pinref_pos(wires[i].a, &ax, &ay);
+        pinref_pos(wires[i].b, &bx, &by);
+
+        /* Segmen 1 (horizontal) & 2 (vertikal), persis seperti stroke_ortho. */
+        int segs[2][4] = {
+            { ax, ay, bx, ay },
+            { bx, ay, bx, by }
+        };
+        for (int s = 0; s < 2; s++) {
+            int x1 = segs[s][0], y1 = segs[s][1];
+            int x2 = segs[s][2], y2 = segs[s][3];
+            double dx = x2 - x1, dy = y2 - y1;
+            double L2 = dx * dx + dy * dy;
+            double t = 0;
+            if (L2 > 0) {
+                t = ((x - x1) * dx + (y - y1) * dy) / L2;
+                if (t < 0) t = 0;
+                if (t > 1) t = 1;
+            }
+            double qx = x1 + t * dx, qy = y1 + t * dy;
+            int ix = (int)lround(qx), iy = (int)lround(qy);
+            /* Skip kalau titik = endpoint wire (itu bukan interior). */
+            if ((ix == ax && iy == ay) || (ix == bx && iy == by)) continue;
+            int ddx = x - ix, ddy = y - iy;
+            int d2 = ddx * ddx + ddy * ddy;
+            if (d2 < best_d2) {
+                best_d2 = d2;
+                bwi = i; bjx = ix; bjy = iy;
+                found = 1;
+            }
+        }
+    }
+    if (found) {
+        if (out_wi) *out_wi = bwi;
+        if (out_jx) *out_jx = bjx;
+        if (out_jy) *out_jy = bjy;
+    }
+    return found;
+}
+
+/* Hapus wire terdekat dengan (x,y). Wire yang endpoint-nya hilang
+   (komponen/junction sudah tidak ada) dihapus sebagai "orphan".
+   Junction endpoint (comp_id < 0) DIPERLAKUKAN SEBAGAI VALID — cek
+   via find_junction_by_id, bukan find_comp_by_id. */
 int model_remove_wire_at(int x, int y) {
     int removed_orphan = 0;
     for (int i = wire_count - 1; i >= 0; i--) {
-        Component *ca = find_comp_by_id(wires[i].a.comp_id);
-        Component *cb = find_comp_by_id(wires[i].b.comp_id);
-        if (!ca || !cb) {
+        /* Validasi endpoint: pin komponen atau junction. */
+        int valid_a = (wires[i].a.comp_id < 0)
+            ? (find_junction_by_id(wires[i].a.pin_idx) != NULL)
+            : (find_comp_by_id(wires[i].a.comp_id) != NULL);
+        int valid_b = (wires[i].b.comp_id < 0)
+            ? (find_junction_by_id(wires[i].b.pin_idx) != NULL)
+            : (find_comp_by_id(wires[i].b.comp_id) != NULL);
+
+        if (!valid_a || !valid_b) {
+            /* Orphan wire: bersihkan tanpa hit-test. */
             if (!removed_orphan) { undo_push(); removed_orphan = 1; }
             for (int j = i; j < wire_count - 1; j++) wires[j] = wires[j + 1];
             wire_count--;
             continue;
         }
+
         int ax, ay, bx, by;
-        comp_pin_pos(ca, wires[i].a.pin_idx, &ax, &ay);
-        comp_pin_pos(cb, wires[i].b.pin_idx, &bx, &by);
+        pinref_pos(wires[i].a, &ax, &ay);
+        pinref_pos(wires[i].b, &bx, &by);
+
         if (wire_hit(x, y, ax, ay, bx, by)) {
             undo_push();
             for (int j = i; j < wire_count - 1; j++) wires[j] = wires[j + 1];
@@ -781,18 +977,14 @@ int model_remove_wire_at(int x, int y) {
     return removed_orphan ? 1 : 0;
 }
 
-/* ===================== Dialog Edit Nilai (Value) Komponen =====================
-   Catatan: PostQuitMessage(0) TIDAK dipakai di WM_DESTROY dialog. Loop
-   modal memakai flag ctx->done; setiap jalur penutupan memanggil
-   ve_do_close() yang mem-PostThreadMessageW(WM_NULL) sebagai wake-up
-   agar GetMessageW tidak memblokir setelah dialog dihancurkan. */
+/* ===================== Dialog Edit Nilai (Value) Komponen ===================== */
 
 typedef struct {
     Component *c;
     HWND   edit;
     wchar_t start[VALUE_STR_CAP];
-    int    ok;      /* 1 = user menekan OK dgn nilai valid */
-    int    done;    /* 1 = dialog sudah dihancurkan (WM_DESTROY) */
+    int    ok;
+    int    done;
 } ValEditCtx;
 
 #define VE_ID_EDIT 1001
@@ -805,17 +997,12 @@ static void ve_set_ctx(HWND hDlg, ValEditCtx *ctx) {
     SetWindowLongPtrW(hDlg, GWLP_USERDATA, (LONG_PTR)ctx);
 }
 
-/* Tutup dialog secara "aman": DestroyWindow + wake-up thread queue. */
 static void ve_do_close(ValEditCtx *ctx, HWND hDlg) {
     if (ctx) ctx->done = 1;
     if (hDlg && IsWindow(hDlg)) DestroyWindow(hDlg);
     PostThreadMessageW(GetCurrentThreadId(), WM_NULL, 0, 0);
 }
 
-/* Font dialog di-cache sekali per proses. Signature WAJIB `(void)`.
-   Handle yang diberikan ke control lewat WM_SETFONT tidak boleh
-   di-DeleteObject selama control masih hidup — karena itu font
-   di-cache untuk umur proses, bukan dibuat/dihapus per dialog. */
 static HFONT ve_font(void) {
     static HFONT h = NULL;
     if (!h) h = CreateFontW(15, 0, 0, 0, FW_NORMAL, 0, 0, 0,
@@ -878,7 +1065,6 @@ static LRESULT CALLBACK ValEditProc(HWND hDlg, UINT msg, WPARAM wp, LPARAM lp) {
                 SendMessageW(hOk,   WM_SETFONT, (WPARAM)hfont, TRUE);
                 SendMessageW(hCa,   WM_SETFONT, (WPARAM)hfont, TRUE);
             }
-            /* font di-cache: JANGAN DeleteObject(hfont) */
             return 0;
         }
 

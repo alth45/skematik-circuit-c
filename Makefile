@@ -30,10 +30,10 @@ TEST_BIN := run_tests.exe
 
 # --- Flags ---
 CFLAGS_PROD  := -O2 -Wall -mwindows -municode -DUNICODE -D_UNICODE -DSCHEMATIC_PRODUCTION=1 -Iinclude
-LDFLAGS_PROD := -lgdi32 -luser32 -lcomdlg32 -lm
+LDFLAGS_PROD := -lgdi32 -luser32 -lcomdlg32 -lwinmm -lm
 
 CFLAGS_TEST  := -O1 -Wall -Wextra -Wno-unused-parameter -municode -DUNICODE -D_UNICODE -DSCHEMATIC_TEST_STUBS=1 -Iinclude
-LDFLAGS_TEST := -lgdi32 -lm
+LDFLAGS_TEST := -lgdi32 -lwinmm -lm
 
 # --- Sumber PRODUKSI (disamakan dengan build.bat) ---
 # Pakai wildcard untuk src/komponen/*.c supaya komponen baru otomatis ikut.
@@ -43,6 +43,7 @@ SRC_PROD := src/main.c src/splash.c src/model.c src/fileio.c src/sim.c src/oscil
 	src/ui/toolbar_menubar.c src/ui/toolbar_symbols.c \
 	src/ui/toolbar_actions.c src/ui/toolbar_palette.c \
 	src\ui\minimap.c\
+	src\buzzer_audio.c\
 	$(wildcard src/komponen/*.c)
 
 # --- Sumber TES (disamakan dengan run_tests.sh) ---

@@ -13,6 +13,95 @@ static HFONT font_status(void) {
     return h;
 }
 
+/* Gambar marker short (lingkaran + panah + label). Ukuran tetap di
+   screen coords; posisi mengikuti transform zoom/pan canvas.
+   Dipanggil dari render_canvas_scene setelah banner. */
+static void draw_short_marker(HDC hdc, int W, int H) {
+    if (!sim_short || sim_short_x < 0) return;
+
+    int sx, sy;
+    canvas_canvas_to_screen(sim_short_x, sim_short_y, &sx, &sy);
+
+    /* Hanya hide kalau benar-benar jauh di luar viewport.
+       Margin diperlebar (200 px) supaya saat pan/zoom atau drag,
+       marker tetap dirender sesaat sebelum off-screen — mencegah
+       "hilang tiba-tiba" saat marker dekat tepi. Clip GDI akan
+       memotong bagian yang keluar canvas. */
+    if (sx < -200 || sx > W + 200 || sy < -200 || sy > H + 200) return;
+
+    COLORREF red = RGB(220, 40, 40);
+
+    /* 1) Lingkaran luar (2 lapis: tebal + tipis, memberi efek ring). */
+    HPEN outer = CreatePen(PS_SOLID, 3, red);
+    HPEN oldp = (HPEN)SelectObject(hdc, outer);
+    HBRUSH oldb = (HBRUSH)SelectObject(hdc, GetStockObject(NULL_BRUSH));
+    Ellipse(hdc, sx - 18, sy - 18, sx + 18, sy + 18);
+
+    HPEN inner = CreatePen(PS_SOLID, 1, red);
+    SelectObject(hdc, inner);
+    Ellipse(hdc, sx - 12, sy - 12, sx + 12, sy + 12);
+
+    /* 2) Titik merah pusat (solid). */
+    HBRUSH dot = CreateSolidBrush(red);
+    HBRUSH od = (HBRUSH)SelectObject(hdc, dot);
+    HPEN dotp = CreatePen(PS_SOLID, 1, red);
+    HPEN odp = (HPEN)SelectObject(hdc, dotp);
+    Ellipse(hdc, sx - 5, sy - 5, sx + 5, sy + 5);
+    SelectObject(hdc, odp);
+    SelectObject(hdc, od);
+    DeleteObject(dotp);
+    DeleteObject(dot);
+
+    /* 3) Panah: dari atas (default) atau dari bawah (bila sy < 80 agar
+       label + panah tetap terlihat di dalam canvas). */
+    int arrow_above = (sy >= 80);
+    int tail_y, tip_y;
+    if (arrow_above) { tail_y = sy - 55; tip_y = sy - 22; }
+    else             { tail_y = sy + 55; tip_y = sy + 22; }
+
+    HPEN arrow_pen = CreatePen(PS_SOLID, 3, red);
+    SelectObject(hdc, arrow_pen);
+    MoveToEx(hdc, sx, tail_y, NULL);
+    LineTo(hdc, sx, tip_y);
+
+    POINT tri[3];
+    if (arrow_above) {
+        tri[0] = (POINT){ sx,     tip_y + 6 };
+        tri[1] = (POINT){ sx - 9, tip_y - 8 };
+        tri[2] = (POINT){ sx + 9, tip_y - 8 };
+    } else {
+        tri[0] = (POINT){ sx,     tip_y - 6 };
+        tri[1] = (POINT){ sx - 9, tip_y + 8 };
+        tri[2] = (POINT){ sx + 9, tip_y + 8 };
+    }
+    HBRUSH ab = CreateSolidBrush(red);
+    HBRUSH oab = (HBRUSH)SelectObject(hdc, ab);
+    Polygon(hdc, tri, 3);
+    SelectObject(hdc, oab);
+    DeleteObject(ab);
+
+    SelectObject(hdc, oldb);
+    SelectObject(hdc, oldp);
+    DeleteObject(outer);
+    DeleteObject(inner);
+    DeleteObject(arrow_pen);
+
+    /* 4) Label "SHORT!" di seberang panah. */
+    HFONT hf = CreateFontW(14, 0, 0, 0, FW_BOLD, 0, 0, 0,
+        0, 0, 0, 0, 0, L"Segoe UI");
+    HFONT of = (HFONT)SelectObject(hdc, hf);
+    SetBkMode(hdc, TRANSPARENT);
+    SetTextColor(hdc, red);
+    const wchar_t *lbl = L"SHORT!";
+    SIZE sz;
+    GetTextExtentPoint32W(hdc, lbl, 6, &sz);
+    int lx = sx - sz.cx / 2;
+    int ly = arrow_above ? (tail_y - sz.cy - 6) : (tail_y + 6);
+    TextOutW(hdc, lx, ly, lbl, 6);
+    SelectObject(hdc, of);
+    DeleteObject(hf);
+}
+
 void splash_run(HINSTANCE hInst, HWND main_hwnd);
 
 static void setup_keyboard(HWND hwnd) { SetFocus(hwnd); }
@@ -127,6 +216,10 @@ void render_canvas_scene(HDC hdc, int W, int H, int include_ui_overlay) {
         TextOutW(hdc, bx + 14, by + 7, msg, (int)wcslen(msg));
         SelectObject(hdc, oB);
     }
+     /* Penanda panah titik korsleting (bila RUN & short terdeteksi). */
+    if (sim_running && sim_short) {
+        draw_short_marker(hdc, W, H);
+    }
      /* Minimap: hanya di live paint (include_ui_overlay), tidak ikut export PNG. */
     if (include_ui_overlay)
         minimap_render(hdc, W, H);
@@ -156,6 +249,17 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
       return 0;
     }
     setup_keyboard(hwnd);
+    /* Klik marker short → pan canvas agar titik short ter-center. */
+    if (sim_running && sim_short) {
+      RECT rc; GetClientRect(hwnd, &rc);
+      int canvas_w = rc.right;
+      int canvas_h = rc.bottom - TOOLBAR_H - (g_show_status ? STATUS_H : 0);
+      if (short_marker_hit(x, y - TOOLBAR_H)) {
+        short_marker_pan_to(canvas_w, canvas_h);
+        InvalidateRect(hwnd, NULL, FALSE);
+        return 0;
+      }
+    }
     {
       RECT rc; GetClientRect(hwnd, &rc);
       int canvas_w = rc.right;
@@ -401,6 +505,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
   }
 
   case WM_DESTROY:
+    buzzer_audio_cleanup();
     PostQuitMessage(0);
     return 0;
   }

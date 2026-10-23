@@ -291,46 +291,71 @@ static void stroke_ortho(HDC hdc, int x1, int y1, int x2, int y2) {
 
 void draw_wires(HDC hdc) {
     for (int i = 0; i < wire_count; i++) {
-        Component *ca = find_comp_by_id(wires[i].a.comp_id);
-        Component *cb = find_comp_by_id(wires[i].b.comp_id);
-        if (!ca || !cb) continue;
         int ax, ay, bx, by;
-        comp_pin_pos(ca, wires[i].a.pin_idx, &ax, &ay);
-        comp_pin_pos(cb, wires[i].b.pin_idx, &bx, &by);
+        pinref_pos(wires[i].a, &ax, &ay);
+        pinref_pos(wires[i].b, &bx, &by);
         int hot = sim_running && sim_wire_hot(i);
         HPEN pen = CreatePen(PS_SOLID, hot ? 3 : 2,
                              hot ? RGB(230,50,50) : RGB(20,20,20));
         HPEN old = (HPEN)SelectObject(hdc, pen);
         stroke_ortho(hdc, ax, ay, bx, by);
+
+        /* Endpoint dot — hanya kalau endpoint adalah PIN komponen. */
         HBRUSH dot = CreateSolidBrush(hot ? RGB(230,50,50) : RGB(20,20,20));
         HBRUSH od = (HBRUSH)SelectObject(hdc, dot);
-        Ellipse(hdc, ax - 3, ay - 3, ax + 3, ay + 3);
-        Ellipse(hdc, bx - 3, by - 3, bx + 3, by + 3);
+        if (wires[i].a.comp_id >= 0) Ellipse(hdc, ax - 3, ay - 3, ax + 3, ay + 3);
+        if (wires[i].b.comp_id >= 0) Ellipse(hdc, bx - 3, by - 3, bx + 3, by + 3);
         SelectObject(hdc, od);
         DeleteObject(dot);
         SelectObject(hdc, old);
         DeleteObject(pen);
     }
 
-    if (wiring_active) {
-        Component *ca = find_comp_by_id(wiring_from.comp_id);
-        if (ca) {
-            int ax, ay;
-            comp_pin_pos(ca, wiring_from.pin_idx, &ax, &ay);
-            HPEN pv = CreatePen(PS_DOT, 2, RGB(220, 60, 60));
-            HPEN opv = (HPEN)SelectObject(hdc, pv);
-            int mx = snap(wiring_mx), my = snap(wiring_my);
-            stroke_ortho(hdc, ax, ay, mx, my);
-            SelectObject(hdc, opv);
-            DeleteObject(pv);
-            PinRef t; int tx, ty;
-            if (find_pin_at(wiring_mx, wiring_my, &t, &tx, &ty)) {
-                HBRUSH br = CreateSolidBrush(RGB(60, 180, 60));
-                HBRUSH ob = (HBRUSH)SelectObject(hdc, br);
-                Ellipse(hdc, tx - 10, ty - 10, tx + 10, ty + 10);
-                SelectObject(hdc, ob);
-                DeleteObject(br);
+    /* Junction dots — digambar SETELAH wire supaya tampil di atas. */
+    for (int j = 0; j < MAX_JUNCTIONS; j++) {
+        if (!junctions[j].used) continue;
+        int jx = junctions[j].x, jy = junctions[j].y;
+
+        /* Warnai junction merah kalau ada wire terhubung yang hot. */
+        int hot = 0;
+        if (sim_running) {
+            for (int i = 0; i < wire_count && !hot; i++) {
+                if ((wires[i].a.comp_id == -1 && wires[i].a.pin_idx == j) ||
+                    (wires[i].b.comp_id == -1 && wires[i].b.pin_idx == j)) {
+                    if (sim_wire_hot(i)) hot = 1;
+                }
             }
+        }
+
+        COLORREF jc = hot ? RGB(230, 50, 50) : RGB(20, 20, 20);
+        HBRUSH jb = CreateSolidBrush(jc);
+        HBRUSH ojb = (HBRUSH)SelectObject(hdc, jb);
+        HPEN jp = CreatePen(PS_SOLID, 1, jc);
+        HPEN ojp = (HPEN)SelectObject(hdc, jp);
+        Ellipse(hdc, jx - 4, jy - 4, jx + 4, jy + 4);
+        SelectObject(hdc, ojp);
+        SelectObject(hdc, ojb);
+        DeleteObject(jp);
+        DeleteObject(jb);
+    }
+
+    /* Preview wiring aktif (sama seperti sebelumnya). */
+    if (wiring_active) {
+        int ax, ay;
+        pinref_pos(wiring_from, &ax, &ay);
+        HPEN pv = CreatePen(PS_DOT, 2, RGB(220, 60, 60));
+        HPEN opv = (HPEN)SelectObject(hdc, pv);
+        int mx = snap(wiring_mx), my = snap(wiring_my);
+        stroke_ortho(hdc, ax, ay, mx, my);
+        SelectObject(hdc, opv);
+        DeleteObject(pv);
+        PinRef t; int tx, ty;
+        if (find_pin_at(wiring_mx, wiring_my, &t, &tx, &ty)) {
+            HBRUSH br = CreateSolidBrush(RGB(60, 180, 60));
+            HBRUSH ob = (HBRUSH)SelectObject(hdc, br);
+            Ellipse(hdc, tx - 10, ty - 10, tx + 10, ty + 10);
+            SelectObject(hdc, ob);
+            DeleteObject(br);
         }
     }
 }

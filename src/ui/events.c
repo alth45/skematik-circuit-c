@@ -31,21 +31,23 @@ static CompType tool_to_comp(ToolKind t) {
     }
 }
 
-/* ===================== Menu Konteks & Dialog Nilai ===================== */
-
-/* ID command untuk item menu konteks (jauhi IDOK/IDCANCEL). */
+/* ===================== ID command menu konteks ===================== */
 #define IDM_V_EDIT_VALUE  0x0401
 #define IDM_V_ROTATE      0x0402
 #define IDM_V_DELETE      0x0403
 #define IDM_V_DUPLICATE   0x0404
 #define IDM_V_TOGGLE_SW   0x0405
 #define IDM_V_INFO        0x0406
-#define IDM_V_LDR_LIGHT   0x0407  /* LDR: ubah kondisi cahaya Terang/Gelap */
+#define IDM_V_LDR_LIGHT   0x0407
 #define IDM_V_WAVE_SINE     0x0408
 #define IDM_V_WAVE_SQUARE   0x0409
 #define IDM_V_WAVE_TRIANGLE 0x040A
 #define IDM_V_OPEN_OSC      0x040B
 #define IDM_V_POT_WIPER_BASE 0x0420   /* +0..6 untuk preset persen */
+#define IDM_V_LED_RED       0x0430
+#define IDM_V_LED_GREEN     0x0431
+#define IDM_V_LED_YELLOW    0x0432
+#define IDM_V_LED_BLUE      0x0433
 
 static const wchar_t *comp_kind_name(CompType t) {
     switch (t) {
@@ -74,12 +76,21 @@ static const wchar_t *comp_kind_name(CompType t) {
         case COMP_NAND:       return L"NAND Gate";
         case COMP_NOR:        return L"NOR Gate";
         case COMP_XOR:        return L"XOR Gate";
-
         default:              return L"Komponen";
     }
 }
 
-/* Tampilkan menu konteks TrackPopupMenu di posisi kursor. */
+static const wchar_t *led_color_name(int c) {
+    switch (c) {
+        case 0: return L"merah";
+        case 1: return L"hijau";
+        case 2: return L"kuning";
+        case 3: return L"biru";
+        default: return L"merah";
+    }
+}
+
+/* ===================== Context Menu ===================== */
 void show_context_menu(HWND hwnd, int sx, int sy, Component *c) {
     HMENU m = CreatePopupMenu();
     if (!m) return;
@@ -90,7 +101,7 @@ void show_context_menu(HWND hwnd, int sx, int sy, Component *c) {
     BOOL is_ac   = c && c->type == COMP_ACSOURCE;
     BOOL is_osc  = c && c->type == COMP_OSCPROBE;
     BOOL is_pot  = c && c->type == COMP_POT;
-
+    BOOL is_led  = c && c->type == COMP_LED;
 
     AppendMenuW(m, MF_STRING | (has_val ? 0 : MF_GRAYED),
         IDM_V_EDIT_VALUE, L"Edit Nilai (Value)...");
@@ -101,6 +112,8 @@ void show_context_menu(HWND hwnd, int sx, int sy, Component *c) {
         AppendMenuW(m, MF_STRING, IDM_V_LDR_LIGHT,
             c->on ? L"Cahaya: Terang (R rendah) -> ubah ke Gelap"
                   : L"Cahaya: Gelap (R tinggi) -> ubah ke Terang");
+
+    /* AC: bentuk gelombang */
     if (is_ac) {
         HMENU wm = CreatePopupMenu();
         AppendMenuW(wm, MF_STRING | (c->wave == WAVE_SINE     ? MF_CHECKED : 0),
@@ -111,14 +124,22 @@ void show_context_menu(HWND hwnd, int sx, int sy, Component *c) {
                     IDM_V_WAVE_TRIANGLE, L"Segitiga (Triangle)");
         AppendMenuW(m, MF_POPUP, (UINT_PTR)wm, L"Bentuk Gelombang");
     }
-    if (is_osc){
-        AppendMenuW(m, MF_STRING, IDM_V_OPEN_OSC, L"Buka Osiloskop...");
-        AppendMenuW(m, MF_STRING, IDM_V_ROTATE, L"Putar 90\xB0");
-        AppendMenuW(m, MF_STRING, IDM_V_DUPLICATE, L"Duplikat");
-        AppendMenuW(m, MF_SEPARATOR, 0, NULL);
-        AppendMenuW(m, MF_STRING, IDM_V_INFO, L"Informasi & Hasil Hitung");
-        AppendMenuW(m, MF_STRING, IDM_V_DELETE, L"Hapus Komponen");
+
+    /* LED: warna */
+    if (is_led) {
+        HMENU cm = CreatePopupMenu();
+        AppendMenuW(cm, MF_STRING | (c->led_color == 0 ? MF_CHECKED : 0),
+                    IDM_V_LED_RED,    L"Merah");
+        AppendMenuW(cm, MF_STRING | (c->led_color == 1 ? MF_CHECKED : 0),
+                    IDM_V_LED_GREEN,  L"Hijau");
+        AppendMenuW(cm, MF_STRING | (c->led_color == 2 ? MF_CHECKED : 0),
+                    IDM_V_LED_YELLOW, L"Kuning");
+        AppendMenuW(cm, MF_STRING | (c->led_color == 3 ? MF_CHECKED : 0),
+                    IDM_V_LED_BLUE,   L"Biru");
+        AppendMenuW(m, MF_POPUP, (UINT_PTR)cm, L"Warna LED");
     }
+
+    /* POT: posisi wiper */
     if (is_pot) {
         static const int pcts[] = { 0, 10, 25, 50, 75, 90, 100 };
         HMENU wm = CreatePopupMenu();
@@ -132,6 +153,17 @@ void show_context_menu(HWND hwnd, int sx, int sy, Component *c) {
         AppendMenuW(m, MF_POPUP, (UINT_PTR)wm, L"Posisi Wiper");
     }
 
+    /* Oscilloscope shortcut */
+    if (is_osc)
+        AppendMenuW(m, MF_STRING, IDM_V_OPEN_OSC, L"Buka Osiloskop...");
+
+    /* Item umum — SELALU tersedia untuk semua komponen. */
+    AppendMenuW(m, MF_STRING, IDM_V_ROTATE, L"Putar 90\xB0");
+    AppendMenuW(m, MF_STRING, IDM_V_DUPLICATE, L"Duplikat");
+    AppendMenuW(m, MF_SEPARATOR, 0, NULL);
+    AppendMenuW(m, MF_STRING, IDM_V_INFO, L"Informasi & Hasil Hitung");
+    AppendMenuW(m, MF_STRING, IDM_V_DELETE, L"Hapus Komponen");
+
     SetForegroundWindow(hwnd);
     int cmd = TrackPopupMenu(m,
         TPM_RETURNCMD | TPM_RIGHTBUTTON | TPM_NONOTIFY,
@@ -139,7 +171,6 @@ void show_context_menu(HWND hwnd, int sx, int sy, Component *c) {
     DestroyMenu(m);
     if (cmd == 0) return;
 
-    /* komponen mungkin sudah tidak ada setelah aksi -> selalu cari ulang */
     switch (cmd) {
         case IDM_V_EDIT_VALUE:
             edit_value_dialog(hwnd, c);
@@ -155,7 +186,7 @@ void show_context_menu(HWND hwnd, int sx, int sy, Component *c) {
         case IDM_V_LDR_LIGHT:
             if (c && c->type == COMP_LDR && !sim_running) {
                 undo_push();
-                c->on = !c->on;   /* on = 1 => TERANG (R rendah), 0 => GELAP */
+                c->on = !c->on;
                 sim_recompute();
                 double reff = sim_ldr_effective_r(c);
                 wchar_t rs[32];
@@ -164,26 +195,47 @@ void show_context_menu(HWND hwnd, int sx, int sy, Component *c) {
                     c->id, c->on ? L"TERANG" : L"GELAP", rs);
             }
             break;
-        case IDM_V_ROTATE:
-            if (c) {
-                selected_id = c->id;
-                model_rotate_selected();
+
+        case IDM_V_LED_RED:
+        case IDM_V_LED_GREEN:
+        case IDM_V_LED_YELLOW:
+        case IDM_V_LED_BLUE:
+            if (c && c->type == COMP_LED && !sim_running) {
+                int nc = cmd - IDM_V_LED_RED;   /* 0..3 */
+                if (nc != c->led_color) {
+                    undo_push();
+                    c->led_color = nc;
+                    set_status(L"LED #%d: warna %ls.", c->id, led_color_name(nc));
+                }
             }
             break;
+
+        case IDM_V_ROTATE:
+            if (c) { selected_id = c->id; model_rotate_selected(); }
+            break;
+
         case IDM_V_DUPLICATE:
             if (c && !sim_running) {
                 undo_begin_batch();
-                CompType t = c->type;
-                double v = c->v;
-                int rot = c->rot, on = c->on;
+                CompType t   = c->type;
+                double v     = c->v;
+                int rot      = c->rot, on = c->on;
+                WaveKind wave = c->wave;
+                int led_color = c->led_color;
                 int nx = c->x + 3 * GRID, ny = c->y + 3 * GRID;
                 model_add_component(t, nx, ny);
                 Component *n = find_comp_by_id(selected_id);
-                if (n) { n->v = v; n->rot = rot; n->on = on; sim_recompute(); }
+                if (n) {
+                    n->v = v; n->rot = rot; n->on = on;
+                    n->wave = wave;
+                    n->led_color = led_color;
+                    sim_recompute();
+                }
                 undo_end_batch();
-                set_status(L"Komponen diduplikat (nilai ikut tersalin).");
+                set_status(L"Komponen diduplikat (nilai & warna ikut tersalin).");
             }
             break;
+
         case IDM_V_INFO:
             if (c) {
                 wchar_t buf[512];
@@ -194,7 +246,6 @@ void show_context_menu(HWND hwnd, int sx, int sy, Component *c) {
                     swprintf(buf, 512, L"%s #%d — Nilai: %ls",
                         comp_kind_name(c->type), c->id, vs);
                     if (c->type == COMP_LDR) {
-                        /* tampilkan juga resistansi efektif sesuai cahaya */
                         wchar_t rs[32];
                         format_value(sim_ldr_effective_r(c), L"\x03A9", rs, 32);
                         wchar_t extra[96];
@@ -211,6 +262,11 @@ void show_context_menu(HWND hwnd, int sx, int sy, Component *c) {
                 } else {
                     swprintf(buf, 512, L"%s #%d", comp_kind_name(c->type), c->id);
                 }
+                if (c->type == COMP_LED) {
+                    wchar_t extra[64];
+                    swprintf(extra, 64, L"\nWarna: %ls", led_color_name(c->led_color));
+                    wcscat_s(buf, 512, extra);
+                }
                 if (sim_running && c->type == COMP_LED) {
                     double i = sim_comp_current(c);
                     if (i >= 1e8)       wcscat_s(buf, 512, L"\nArus: ~TAK HINGGA (korslet!)");
@@ -225,7 +281,6 @@ void show_context_menu(HWND hwnd, int sx, int sy, Component *c) {
                     }
                 }
                 if (c->type == COMP_VOLTMETER) {
-                    /* informasi alat ukur: bacaan beda potensial saat RUN */
                     wchar_t extra[160];
                     if (!sim_running) {
                         wcscpy_s(extra, 160, L"\nPasang paralel: pin (+) ke titik A, pin (-) ke titik B."
@@ -242,7 +297,6 @@ void show_context_menu(HWND hwnd, int sx, int sy, Component *c) {
                     wcscat_s(buf, 512, extra);
                 }
                 if (c->type == COMP_AMMETER) {
-                    /* informasi alat ukur: bacaan arus cabang saat RUN */
                     wchar_t extra[200];
                     if (!sim_running) {
                         wcscpy_s(extra, 200, L"\nPasang SERI pada cabang yang diukur: putuskan kabel, "
@@ -294,8 +348,7 @@ void show_context_menu(HWND hwnd, int sx, int sy, Component *c) {
                     swprintf(extra, 128,
                         L"\nVz = %.3g V\n"
                         L"Forward: Vf ≈ 0.7 V | Breakdown: V_K = V_A + Vz\n"
-                        L"Status RUN: %ls",
-                        vz, st);
+                        L"Status RUN: %ls", vz, st);
                     wcscat_s(buf, 512, extra);
                 }
                 if (c->type == COMP_MOSFET) {
@@ -308,8 +361,7 @@ void show_context_menu(HWND hwnd, int sx, int sy, Component *c) {
                         L"\nTipe: N-Channel Enhancement MOSFET\n"
                         L"Vth (threshold gate) = %.3g V\n"
                         L"pin 0 = D (Drain), 1 = S (Source), 2 = G (Gate)\n"
-                        L"Status RUN: %ls",
-                        vth, st);
+                        L"Status RUN: %ls", vth, st);
                     wcscat_s(buf, 512, extra);
                 }
                 if (c->type == COMP_POT) {
@@ -358,6 +410,7 @@ void show_context_menu(HWND hwnd, int sx, int sy, Component *c) {
                 MessageBoxW(hwnd, buf, L"Informasi Komponen", MB_OK | MB_ICONINFORMATION);
             }
             break;
+
         case IDM_V_POT_WIPER_BASE + 0:
         case IDM_V_POT_WIPER_BASE + 1:
         case IDM_V_POT_WIPER_BASE + 2:
@@ -367,7 +420,8 @@ void show_context_menu(HWND hwnd, int sx, int sy, Component *c) {
         case IDM_V_POT_WIPER_BASE + 6: {
             static const int pcts[] = { 0, 10, 25, 50, 75, 90, 100 };
             int k = cmd - IDM_V_POT_WIPER_BASE;
-            if (c && c->type == COMP_POT && k >= 0 && k < 7) {
+            if (c && c->type == COMP_POT && k >= 0 && k < 7 && !sim_running) {
+                if (c->on != pcts[k]) undo_push();
                 c->on = pcts[k];
                 sim_recompute();
                 osc_refresh();
@@ -376,6 +430,7 @@ void show_context_menu(HWND hwnd, int sx, int sy, Component *c) {
             }
             break;
         }
+
         case IDM_V_DELETE:
             if (c) {
                 int idx = (int)(c - comps);
@@ -384,7 +439,8 @@ void show_context_menu(HWND hwnd, int sx, int sy, Component *c) {
                 sim_recompute();
             }
             break;
-                case IDM_V_WAVE_SINE:
+
+        case IDM_V_WAVE_SINE:
         case IDM_V_WAVE_SQUARE:
         case IDM_V_WAVE_TRIANGLE:
             if (c && c->type == COMP_ACSOURCE && !sim_running) {
@@ -401,6 +457,7 @@ void show_context_menu(HWND hwnd, int sx, int sy, Component *c) {
                 set_status(L"Sumber AC #%d: gelombang %ls.", c->id, nm);
             }
             break;
+
         case IDM_V_OPEN_OSC:
             osc_open(hwnd);
             break;
@@ -410,18 +467,14 @@ void show_context_menu(HWND hwnd, int sx, int sy, Component *c) {
 
 /* ===================== Event Handler ===================== */
 
-/* Helper: mulai drag GRUP (semua anggota seleksi bergerak rigid).
-   Menyimpan posisi awal tiap anggota + offset grab agar on_mouse_move
-   bisa menempatkan ulang seluruh blok tanpa akumulasi error pembulatan. */
 static void begin_group_drag(HWND hwnd, Component *hit, int x, int y) {
     group_drag_n = 0;
-    /* item[0] HARUS komponen yang di-grab (anchor delta drag) */
     group_drag_items[group_drag_n].idx = (int)(hit - comps);
     group_drag_items[group_drag_n].x0 = hit->x;
     group_drag_items[group_drag_n].y0 = hit->y;
     group_drag_n++;
     for (int i = 0; i < sel_count && group_drag_n < MAX_GROUP_DRAG; i++) {
-        if (selection[i] == hit->id) continue;   /* sudah tercatat sebagai anchor */
+        if (selection[i] == hit->id) continue;
         Component *c = find_comp_by_id(selection[i]);
         if (!c) continue;
         group_drag_items[group_drag_n].idx = (int)(c - comps);
@@ -429,23 +482,19 @@ static void begin_group_drag(HWND hwnd, Component *hit, int x, int y) {
         group_drag_items[group_drag_n].y0 = c->y;
         group_drag_n++;
     }
-    group_drag_ox = hit->x - x;   /* offset grab dalam pixel mentah */
+    group_drag_ox = hit->x - x;
     group_drag_oy = hit->y - y;
     group_dragging = 1;
     dragging_id = -1;
     SetCapture(hwnd);
 }
 
-/* Mulai "marquee" (kotak blok) saat klik kiri ditekan dan user menyeret.
-   box_x1..box_y2 = titik asal penekanan tombol (koordinat canvas). */
 static void begin_box_select(int x, int y) {
     box_selecting = 1;
     box_x1 = box_x2 = x;
     box_y1 = box_y2 = y;
 }
 
-/* Diselesaikan saat mouse-move: terapkan seleksi kotak + status pesan.
-   add=1 (Shift) -> gabungkan dengan seleksi yang sudah ada. */
 static void apply_box_select(HWND hwnd, BOOL add) {
     int n = model_select_rect(box_x1, box_y1, box_x2, box_y2, add ? 1 : 0);
     if (n > 0) {
@@ -459,22 +508,16 @@ static void apply_box_select(HWND hwnd, BOOL add) {
     InvalidateRect(hwnd, NULL, FALSE);
 }
 
-/* State "marquee tertunda": klik kiri sudah DITEKAN di area kosong canvas,
-   tetapi kotak blok baru dianggap dimulai setelah kursor bergeser lebih dari
-   BOX_DRAG_MIN piksel. Dengan begitu klik biasa (tanpa geser) tetap berfungsi
-   membatalkan seleksi, sementara tekan + seret langsung memblok rangkaian. */
-/* Undo-once per sesi drag: snapshot diambil saat drag pertama bergerak,
-   sehingga 1x drag = 1 langkah undo (bukan N langkah per mouse-move). */
-static int drag_undo_armed = 0;   /* 1 = drag tunggal butuh snapshot */
-static int group_undo_armed = 0;  /* 1 = group drag butuh snapshot */
-
+/* Undo per sesi drag. */
+static int drag_undo_armed = 0;
+static int group_undo_armed = 0;
 static void drag_undo_reset(void) { drag_undo_armed = 0; group_undo_armed = 0; }
 
 static int box_pending = 0;
 static int box_pending_x = 0, box_pending_y = 0;
 
 void on_lbutton_down(HWND hwnd, int x, int y) {
-    /* MODE RUN: klik saklar = toggle ON/OFF, klik LDR = toggle Terang/Gelap */
+    /* MODE RUN */
     if (sim_running) {
         Component *hit = find_comp_at(x, y);
         if (hit && hit->type == COMP_SWITCH) {
@@ -484,7 +527,7 @@ void on_lbutton_down(HWND hwnd, int x, int y) {
             set_status(L"RUN: saklar %ls. %ls",
                 hit->on ? L"ON (tertutup)" : L"OFF (terbuka)", sim_message());
         } else if (hit && hit->type == COMP_LDR) {
-            hit->on = !hit->on;   /* on = 1 => TERANG */
+            hit->on = !hit->on;
             selected_id = hit->id;
             sim_recompute();
             wchar_t rs[32];
@@ -500,7 +543,7 @@ void on_lbutton_down(HWND hwnd, int x, int y) {
         return;
     }
 
-    /* Tool placement komponen */
+    /* Tool placement */
     CompType ct = tool_to_comp(current_tool);
     if (ct != COMP_NONE) {
         model_add_component(ct, x, y);
@@ -509,7 +552,6 @@ void on_lbutton_down(HWND hwnd, int x, int y) {
     }
 
     if (current_tool == TOOL_DELETE) {
-        /* Delete di atas anggota seleksi = hapus SELURUH blok (multi-delete) */
         Component *hit = find_comp_at(x, y);
         if (hit && sel_count > 1) {
             int i;
@@ -538,9 +580,6 @@ void on_lbutton_down(HWND hwnd, int x, int y) {
         return;
     }
 
-    /* TOOL_BOX: mulai drag kotak seleksi (blok rangkaian). Klik kiri DITEKAN
-       lalu diseret -> marquee; saat dilepas semua komponen di dalamnya terseleksi
-       dan bisa langsung di-drag and drop sebagai satu grup. */
     if (current_tool == TOOL_BOX) {
         box_pending = 0;
         group_dragging = 0;
@@ -552,10 +591,6 @@ void on_lbutton_down(HWND hwnd, int x, int y) {
         return;
     }
 
-    /* TOOL_SELECT: prioritas pin -> mulai wiring cepat,
-       kalau tidak kena pin -> pilih/drag (tunggal atau grup).
-       Di area kosong: klik kiri ditekan + seret = blok marquee (multi-select),
-       sama seperti canvas umumnya — tanpa perlu berpindah tool. */
     if (current_tool == TOOL_SELECT) {
         PinRef p; int px, py;
         if (find_pin_at(x, y, &p, &px, &py)) {
@@ -569,10 +604,12 @@ void on_lbutton_down(HWND hwnd, int x, int y) {
         }
 
         BOOL ctrl = (GetKeyState(VK_CONTROL) & 0x8000) != 0;
+        BOOL shift = (GetKeyState(VK_SHIFT) & 0x8000) != 0;
+        BOOL multi = ctrl || shift;
         Component *hit = find_comp_at(x, y);
         if (hit) {
-            if (ctrl) {
-                toggle_selection(hit->id);          /* Ctrl+klik: tambah/keluar */
+            if (multi) {
+                toggle_selection(hit->id);
                 InvalidateRect(hwnd, NULL, FALSE);
                 return;
             }
@@ -580,23 +617,20 @@ void on_lbutton_down(HWND hwnd, int x, int y) {
             for (int i = 0; i < sel_count; i++)
                 if (selection[i] == hit->id) { already = 1; break; }
             if (already && sel_count > 1) {
-                begin_group_drag(hwnd, hit, x, y);  /* drag seluruh blok */
+                begin_group_drag(hwnd, hit, x, y);
                 group_undo_armed = 1;
             } else {
-                clear_selection();                  /* seleksi tunggal baru */
+                clear_selection();
                 add_to_selection(hit->id);
-                dragging_id = hit->id;              /* drag satu komponen */
+                dragging_id = hit->id;
                 drag_undo_armed = 1;
                 drag_dx = hit->x - x;
                 drag_dy = hit->y - y;
                 SetCapture(hwnd);
             }
         } else {
-            /* area kosong: siapkan marquee. box_selecting baru benar-benar
-               aktif setelah kursor bergeser > BOX_DRAG_MIN (lihat mouse-move),
-               sehingga klik biasa tetap membatalkan seleksi. */
             begin_box_select(x, y);
-            box_selecting = 0;      /* tunggu ambang geser dulu */
+            box_selecting = 0;
             group_dragging = 0;
             dragging_id = -1;
             SetCapture(hwnd);
@@ -609,8 +643,6 @@ void on_lbutton_down(HWND hwnd, int x, int y) {
 }
 
 void on_lbutton_up(HWND hwnd, int x, int y) {
-    /* Marquee tertunda dilepas tanpa pernah melewati ambang geser:
-       berarti ini klik biasa di area kosong -> batalkan seleksi. */
     if (box_pending) {
         box_pending = 0;
         box_selecting = 0;
@@ -629,11 +661,42 @@ void on_lbutton_up(HWND hwnd, int x, int y) {
     }
     if (wiring_active) {
         PinRef dst;
+        int did_connect = 0;
         if (find_pin_at(x, y, &dst, NULL, NULL)) {
-            model_add_wire(wiring_from, dst);
-            sim_recompute();
-            selected_id = dst.comp_id;
+            if (model_add_wire(wiring_from, dst)) {
+                sim_recompute();
+                selected_id = (dst.comp_id >= 0) ? dst.comp_id : -1;
+                did_connect = 1;
+            }
+        } else {
+            int wi = -1, jx = 0, jy = 0;
+            if (find_wire_segment_at(x, y, &wi, &jx, &jy)) {
+                int self_hit = 0;
+                if (wires[wi].a.comp_id == wiring_from.comp_id &&
+                    wires[wi].a.pin_idx  == wiring_from.pin_idx)  self_hit = 1;
+                if (wires[wi].b.comp_id == wiring_from.comp_id &&
+                    wires[wi].b.pin_idx  == wiring_from.pin_idx)  self_hit = 1;
+
+                if (!self_hit) {
+                    int jid = model_add_junction(jx, jy);
+                    if (jid >= 0) {
+                        PinRef jref = { -1, jid };
+                        PinRef a_orig = wires[wi].a;
+                        PinRef b_orig = wires[wi].b;
+                        wires[wi].a = a_orig;
+                        wires[wi].b = jref;
+                        model_add_wire(jref, b_orig);
+                        if (model_add_wire(wiring_from, jref)) {
+                            sim_recompute();
+                            selected_id = -1;
+                            set_status(L"T-junction dibuat di (%d, %d).", jx, jy);
+                        }
+                        did_connect = 1;
+                    }
+                }
+            }
         }
+        (void)did_connect;
         wiring_active = 0;
         wiring_from.comp_id = -1;
         ReleaseCapture();
@@ -659,7 +722,7 @@ void on_lbutton_up(HWND hwnd, int x, int y) {
 }
 
 void on_rbutton_down(HWND hwnd, int x, int y) {
-    if (sim_running) return; /* edit dikunci saat RUN */
+    if (sim_running) return;
     dragging_id = -1;
     group_dragging = 0;
     wiring_active = 0;
@@ -672,7 +735,6 @@ void on_rbutton_down(HWND hwnd, int x, int y) {
         InvalidateRect(hwnd, NULL, FALSE);
         show_context_menu(hwnd, pt.x, pt.y, hit);
     } else {
-        /* kosong: menu global */
         HMENU m = CreatePopupMenu();
         AppendMenuW(m, MF_STRING, IDM_V_DELETE + 100, L"Hapus Semua Kabel di Titik Ini");
         AppendMenuW(m, MF_STRING, IDM_V_DELETE + 101, L"Clear Canvas");
@@ -699,7 +761,6 @@ void on_rbutton_dblclk(HWND hwnd, int x, int y) {
     InvalidateRect(hwnd, NULL, FALSE);
 }
 
-/* Double-klik kiri pada komponen bernilai -> dialog Edit Nilai. */
 void on_lbutton_dblclk(HWND hwnd, int x, int y) {
     if (sim_running) return;
     Component *hit = find_comp_at(x, y);
@@ -708,6 +769,7 @@ void on_lbutton_dblclk(HWND hwnd, int x, int y) {
     if (comp_has_value(hit->type)) {
         edit_value_dialog(hwnd, hit);
     } else if (hit->type == COMP_SWITCH) {
+        undo_push();
         hit->on = !hit->on;
         sim_recompute();
         set_status(L"Saklar %ls.", hit->on ? L"ON (tertutup)" : L"OFF (terbuka)");
@@ -722,9 +784,6 @@ void on_lbutton_dblclk(HWND hwnd, int x, int y) {
 }
 
 void on_mouse_move(HWND hwnd, int x, int y) {
-    /* Klik kiri sedang ditekan di area kosong: aktifkan marquee begitu
-       kursor bergeser melewati ambang -> semua rangkaian dalam kotak ikut
-       terseleksi secara LIVE saat menyeret (feedback visual langsung). */
     if (box_pending && !box_selecting) {
         if (abs(x - box_pending_x) > BOX_DRAG_MIN ||
             abs(y - box_pending_y) > BOX_DRAG_MIN) {
@@ -738,7 +797,6 @@ void on_mouse_move(HWND hwnd, int x, int y) {
     }
     if (box_selecting) {
         box_x2 = x; box_y2 = y;
-        /* pratinjau seleksi real-time (marquee umum di canvas lain) */
         BOOL shift = (GetKeyState(VK_SHIFT) & 0x8000) != 0;
         model_select_rect(box_x1, box_y1, box_x2, box_y2, shift ? 1 : 0);
         InvalidateRect(hwnd, NULL, FALSE);
@@ -750,88 +808,63 @@ void on_mouse_move(HWND hwnd, int x, int y) {
         return;
     }
     if (group_dragging && group_drag_n > 0) {
-        /* posisi "ideal" komponen yang di-grab, lalu dibulatkan ke grid;
-           seluruh grup digeser dengan delta yang sama (rigid, tetap se-grid).
-           items[0] selalu anggota yang sedang di-grab (lihat begin_group_drag). */
         int nx = snap(x + group_drag_ox);
         int ny = snap(y + group_drag_oy);
         int dx = nx - group_drag_items[0].x0;
         int dy = ny - group_drag_items[0].y0;
-        if ((dx != 0 || dy != 0) && group_undo_armed) { undo_push(); group_undo_armed = 0; }
         for (int i = 0; i < group_drag_n; i++) {
             Component *c = &comps[group_drag_items[i].idx];
             c->x = group_drag_items[i].x0 + dx;
             c->y = group_drag_items[i].y0 + dy;
         }
+        sim_update_short_position();
         InvalidateRect(hwnd, NULL, FALSE);
         return;
     }
     if (dragging_id >= 0) {
         Component *c = find_comp_by_id(dragging_id);
         if (c) {
-            int nx = snap(x + drag_dx), ny = snap(y + drag_dy);
-            if ((nx != c->x || ny != c->y) && drag_undo_armed) { undo_push(); drag_undo_armed = 0; }
-            c->x = nx;
-            c->y = ny;
+            c->x = snap(x + drag_dx);
+            c->y = snap(y + drag_dy);
+            sim_update_short_position();
             InvalidateRect(hwnd, NULL, FALSE);
         }
     }
 }
 
 void on_key_down(HWND hwnd, WPARAM key) {
-    /* Ctrl+S = save JSON, Ctrl+O = open JSON */
     if (GetKeyState(VK_CONTROL) & 0x8000) {
-        /* Ctrl + +/-/0 = zoom canvas */
         if (key == VK_OEM_PLUS || key == VK_ADD) {
-            canvas_zoom_center(hwnd, 1.25);
-            InvalidateRect(hwnd, NULL, FALSE);
-            return;
+            canvas_zoom_center(hwnd, 1.25); InvalidateRect(hwnd, NULL, FALSE); return;
         }
         if (key == VK_OEM_MINUS || key == VK_SUBTRACT) {
-            canvas_zoom_center(hwnd, 1.0 / 1.25);
-            InvalidateRect(hwnd, NULL, FALSE);
-            return;
+            canvas_zoom_center(hwnd, 1.0 / 1.25); InvalidateRect(hwnd, NULL, FALSE); return;
         }
         if (key == '0' || key == VK_NUMPAD0) {
             RECT rc; GetClientRect(hwnd, &rc);
             int canvas_h = rc.bottom - TOOLBAR_H - (g_show_status ? STATUS_H : 0);
-            canvas_zoom_fit(rc.right, canvas_h);
-            InvalidateRect(hwnd, NULL, FALSE);
-            return;
+            canvas_zoom_fit(rc.right, canvas_h); InvalidateRect(hwnd, NULL, FALSE); return;
         }
-        if (key == 'S' || key == 's') {
-            model_save_dialog(hwnd);
-            InvalidateRect(hwnd, NULL, FALSE);
-            return;
-        }
-        if (key == 'O' || key == 'o') {
-            model_load_dialog(hwnd);
-            InvalidateRect(hwnd, NULL, FALSE);
-            return;
-        }
-        if (key == 'A' || key == 'a') {          /* Ctrl+A: pilih semua */
+        if (key == 'S' || key == 's') { model_save_dialog(hwnd); InvalidateRect(hwnd, NULL, FALSE); return; }
+        if (key == 'O' || key == 'o') { model_load_dialog(hwnd); InvalidateRect(hwnd, NULL, FALSE); return; }
+        if (key == 'A' || key == 'a') {
             current_tool = TOOL_SELECT;
             sel_count = 0; selected_id = -1;
             for (int i = 0; i < comp_count; i++) add_to_selection(comps[i].id);
             set_status(L"%d komponen terpilih (semua).", sel_count);
-            InvalidateRect(hwnd, NULL, FALSE);
-            return;
+            InvalidateRect(hwnd, NULL, FALSE); return;
         }
-        if (key == 'Z' || key == 'z') {          /* Ctrl+Z: undo */
+        if (key == 'Z' || key == 'z') {
             if (sim_running) return;
-            if (undo_undo()) set_status(L"Undo.");
-            else set_status(L"Tidak ada lagi yang bisa di-undo.");
-            InvalidateRect(hwnd, NULL, FALSE);
-            return;
+            if (undo_undo()) set_status(L"Undo."); else set_status(L"Tidak ada lagi yang bisa di-undo.");
+            InvalidateRect(hwnd, NULL, FALSE); return;
         }
-        if (key == 'Y' || key == 'y') {          /* Ctrl+Y: redo */
+        if (key == 'Y' || key == 'y') {
             if (sim_running) return;
-            if (undo_redo()) set_status(L"Redo.");
-            else set_status(L"Tidak ada lagi yang bisa di-redo.");
-            InvalidateRect(hwnd, NULL, FALSE);
-            return;
+            if (undo_redo()) set_status(L"Redo."); else set_status(L"Tidak ada lagi yang bisa di-redo.");
+            InvalidateRect(hwnd, NULL, FALSE); return;
         }
-        if (key == 'D' || key == 'd') {          /* Ctrl+D: duplikat blok */
+        if (key == 'D' || key == 'd') {
             if (sim_running) return;
             if (sel_count > 1) {
                 int n = model_duplicate_selection(3 * GRID, 3 * GRID);
@@ -842,34 +875,35 @@ void on_key_down(HWND hwnd, WPARAM key) {
                 if (c) {
                     CompType t = c->type; double v = c->v;
                     int rot = c->rot, on = c->on;
+                    WaveKind wave = c->wave;
+                    int led_color = c->led_color;
                     model_add_component(t, c->x + 3 * GRID, c->y + 3 * GRID);
                     Component *n = find_comp_by_id(selected_id);
-                    if (n) { n->v = v; n->rot = rot; n->on = on; sim_recompute(); }
+                    if (n) {
+                        n->v = v; n->rot = rot; n->on = on;
+                        n->wave = wave;
+                        n->led_color = led_color;
+                        sim_recompute();
+                    }
                     set_status(L"Komponen diduplikat.");
                 }
             }
             InvalidateRect(hwnd, NULL, FALSE);
             return;
         }
-        /* Ctrl + tool shortcut (mis. Ctrl+B untuk Blok) jangan dianggap B/LDR.
-           Tambahan 'M' (Voltmeter) & 'I' (Ammeter) diblok di sini agar
-           Ctrl+M / Ctrl+I tidak memicu pemilihan tool.
-           'Z'/'Y' sudah ditangani sebagai Undo/Redo di atas — blok di sini
-           agar tidak jatuh menjadi tool Zener (Z) saat Ctrl ditekan. */
         if (key == 'B' || key == 'b' || key == 'L' || key == 'l' ||
             key == 'U' || key == 'u' || key == 'V' || key == 'v' ||
             key == 'W' || key == 'w' || key == 'M' || key == 'm' ||
             key == 'I' || key == 'i' || key == 'P' || key == 'p' ||
             key == 'J' || key == 'j' || key == 'Z' || key == 'z' ||
             key == 'Y' || key == 'y' || key == 'F' || key == 'f' ||
-            key == 'T' || key == 't' || key == 'A' || key == 'a' || key == 'O' || key == 'o' ||
-            key == 'N' || key == 'n' || key == 'X' || key == 'x' ||
-            key == 'Y' || key == 'y') return;
+            key == 'T' || key == 't' || key == 'A' || key == 'a' ||
+            key == 'O' || key == 'o' || key == 'N' || key == 'n' ||
+            key == 'X' || key == 'x') return;
     }
+
     if (key == 'R' || key == 'r') {
-        if (sim_running) return; /* rotasi dikunci saat RUN */
-        /* Utamakan yang sedang di-drag, kalau tidak ada pakai seleksi
-           (grup terputar semua — rotasi tiap anggota di sekitar pusatnya) */
+        if (sim_running) return;
         int id = (dragging_id >= 0) ? dragging_id : selected_id;
         Component *c = find_comp_by_id(id);
         if (!c) return;
@@ -888,13 +922,13 @@ void on_key_down(HWND hwnd, WPARAM key) {
         InvalidateRect(hwnd, NULL, FALSE);
         return;
     }
-    /* F5 / F9 = toggle Run */
     if (key == VK_F5 || key == VK_F9) {
         sim_set_running(!sim_running);
         InvalidateRect(hwnd, NULL, FALSE);
         return;
     }
-    /* Shortcut tool toolbar */
+
+    /* Shortcut tool */
     if (key == 'V' || key == 'v') { current_tool = TOOL_SELECT; }
     else if (key == 'B' || key == 'b') { current_tool = TOOL_BOX; }
     else if (key == 'W' || key == 'w') { current_tool = TOOL_WIRE; }
@@ -922,11 +956,9 @@ void on_key_down(HWND hwnd, WPARAM key) {
     else if (key == 'N' || key == 'n') { current_tool = TOOL_NOT; }
     else if (key == 'Y' || key == 'y') { current_tool = TOOL_NAND; }
     else if (key == 'X' || key == 'x') { current_tool = TOOL_XOR; }
-
     else if (key == VK_DELETE || key == VK_BACK) {
-        if (sim_running) return; /* hapus dikunci saat RUN */
+        if (sim_running) return;
         if (sel_count > 1) {
-            /* multi-select: hapus SELURUH blok sekaligus */
             int n = model_delete_selection();
             set_status(L"%d komponen (blok terpilih) dihapus.", n);
             InvalidateRect(hwnd, NULL, FALSE);

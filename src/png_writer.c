@@ -24,7 +24,7 @@
      N bytes : data mentah
    ============================================================ */
 
-/* ---- CRC32 (polinomial PNG) ---- */
+/* ---- CRC32 (polinomial PNG) — tabel diinisialisasi lazy. ---- */
 static unsigned long crc_table[256];
 static int crc_table_ready = 0;
 
@@ -37,14 +37,6 @@ static void crc_init(void) {
         crc_table[n] = c;
     }
     crc_table_ready = 1;
-}
-
-static unsigned long crc32_buf(const unsigned char *buf, size_t len) {
-    crc_init();
-    unsigned long c = 0xffffffffUL;
-    for (size_t i = 0; i < len; i++)
-        c = crc_table[(c ^ buf[i]) & 0xff] ^ (c >> 8);
-    return c ^ 0xffffffffUL;
 }
 
 /* ---- Adler32 (untuk stream zlib) ---- */
@@ -128,10 +120,10 @@ int png_write_rgb(const wchar_t *path, int width, int height,
     for (size_t b = 0; b < nblocks; b++) {
         size_t blk = remaining > 65535 ? 65535 : remaining;
         int final = (b == nblocks - 1);
-        zlib[zp++] = final ? 0x01 : 0x00;                 /* BFINAL|BTYPE=00 */
-        put_le16(zlib + zp, (unsigned)blk);                    zp += 2;
-        put_le16(zlib + zp, (unsigned)(~blk) & 0xffff);        zp += 2;
-        memcpy(zlib + zp, raw + src_off, blk);                 zp += blk;
+        zlib[zp++] = final ? 0x01 : 0x00;              /* BFINAL|BTYPE=00 */
+        put_le16(zlib + zp, (unsigned)blk);            zp += 2;
+        put_le16(zlib + zp, (unsigned)(~blk) & 0xffff);zp += 2;
+        memcpy(zlib + zp, raw + src_off, blk);         zp += blk;
         src_off += blk;
         remaining -= blk;
     }
@@ -152,7 +144,7 @@ int png_write_rgb(const wchar_t *path, int width, int height,
         put_be32(ihdr + 0, (unsigned long)width);
         put_be32(ihdr + 4, (unsigned long)height);
         ihdr[8]  = 8;   /* bit depth */
-        ihdr[9]  = 2;   /* color type = RGB (no alpha) */
+        ihdr[9]  = 2;   /* color type = RGB */
         ihdr[10] = 0;   /* compression = deflate */
         ihdr[11] = 0;   /* filter = adaptive */
         ihdr[12] = 0;   /* interlace = none */

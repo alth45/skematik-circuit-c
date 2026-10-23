@@ -29,6 +29,10 @@ double sim_iled_max = 0.0;
 double sim_vdrop_max = 0.0;
 int sim_exploded = 0;
 int sim_overcur = 0;
+int sim_short_x = -1;
+int sim_short_y = -1;
+int sim_short_comp_id = -1;
+int sim_short_wire_idx = -1;
 
 /* ---- Konstanta model listrik ---- */
 #define BUZZER_R_DEFAULT 100.0 /* impedansi buzzer tipikal (Ohm) */
@@ -47,7 +51,7 @@ int sim_overcur = 0;
 #define VM_DISCONNECTED (-1e30)
 
 /* ---- State per-komponen ---- */
-static int parent_[MAX_COMP * 3];
+static int parent_[NODE_SPACE]; /* union-find untuk node */
 static int lit_[MAX_COMP];
 static int cond_[MAX_COMP];
 static int dfwd_[MAX_COMP];
@@ -77,17 +81,30 @@ static void unite(int a, int b) {
     parent_[ra] = rb;
 }
 static int node_of(int ci, int pin) { return ci * 3 + pin; }
+/* Konversi PinRef → node index. comp_id < 0 = junction. */
+static int pinref_node(PinRef p) {
+    if (p.comp_id < 0) {
+        if (!find_junction_by_id(p.pin_idx)) return -1;
+        return MAX_COMP * 3 + p.pin_idx;
+    }
+    Component *c = find_comp_by_id(p.comp_id);
+    if (!c) return -1;
+    int idx = (int)(c - comps);
+    if (idx < 0 || idx >= comp_count) return -1;
+    return idx * 3 + p.pin_idx;
+}
 
 /* ============================================================================
    Bagian 2: Matriks nodal — Gauss solver
 ============================================================================ */
 #define NA_MAX (MAX_COMP * 3) /* 768 */
 
+static int parent_[NODE_SPACE];
 static double na_A[NA_MAX][NA_MAX];
 static double na_b[NA_MAX];
 static double na_x[NA_MAX];
 static int na_n = 0;
-static int root_to_idx_[MAX_COMP * 3];
+static int root_to_idx_[NODE_SPACE];
 static int idx_to_root_[NA_MAX];
 
 
@@ -155,6 +172,8 @@ static int compute_gate_output(int idx) {
             a = read_logic_level(idx, 0);
             b = read_logic_level(idx, 1);
             return (a != b) ? 1 : 0;
+        default:
+          break;
     }
     return 0;
 }
@@ -201,12 +220,10 @@ static void build_unions(void) {
 
     /* Union kabel */
     for (int i = 0; i < wire_count; i++) {
-        Component *ca = find_comp_by_id(wires[i].a.comp_id);
-        Component *cb = find_comp_by_id(wires[i].b.comp_id);
-        if (!ca || !cb) continue;
-        int ia = (int)(ca - comps), ib = (int)(cb - comps);
-        if (ia < 0 || ia >= comp_count || ib < 0 || ib >= comp_count) continue;
-        unite(node_of(ia, wires[i].a.pin_idx), node_of(ib, wires[i].b.pin_idx));
+        int na = pinref_node(wires[i].a);
+        int nb = pinref_node(wires[i].b);
+        if (na < 0 || nb < 0) continue;
+        unite(na, nb);
     }
 
     /* Pass 1: saklar ON + induktor DC */
@@ -249,10 +266,43 @@ int sim_gate_out_high(const Component *c) {
     if (i < 0 || i >= comp_count) return 0;
     return gate_state_[i] == 1;
 }
+/* ============================================================
+   Update posisi marker short dari state model saat ini.
+   Murah — tidak rebuild union-find. Cukup hitung ulang titik dari
+   komponen/wire yang sebelumnya terdeteksi culprit (sim_short_*).
+   Dipanggil dari events.c saat drag untuk tracking real-time.
+   ============================================================ */
+void sim_update_short_position(void) {
+    if (!sim_short) return;
+
+    /* Culprit = WIRE (prioritas 2 lama): midpoint dari 2 endpoint-nya. */
+    if (sim_short_wire_idx >= 0 && sim_short_wire_idx < wire_count) {
+        int i = sim_short_wire_idx;
+        Component *ca = find_comp_by_id(wires[i].a.comp_id);
+        Component *cb = find_comp_by_id(wires[i].b.comp_id);
+        if (ca && cb) {
+            int ax, ay, bx, by;
+            comp_pin_pos(ca, wires[i].a.pin_idx, &ax, &ay);
+            comp_pin_pos(cb, wires[i].b.pin_idx, &bx, &by);
+            sim_short_x = (ax + bx) / 2;
+            sim_short_y = (ay + by) / 2;
+        }
+        return;
+    }
+
+    /* Culprit = KOMPONEN (prioritas 1 baru atau 3 fallback): pusat komponen. */
+    if (sim_short_comp_id >= 0) {
+        Component *c = find_comp_by_id(sim_short_comp_id);
+        if (c) {
+            sim_short_x = c->x;
+            sim_short_y = c->y;
+        }
+    }
+}
 
 /* Bangun daftar node (= root unik yang dipakai pin komponen). */
 static void na_build_nodes(void) {
-  for (int i = 0; i < MAX_COMP * 3; i++)
+  for (int i = 0; i < NODE_SPACE; i++)
     root_to_idx_[i] = -1;
   na_n = 0;
   for (int i = 0; i < comp_count; i++) {
@@ -421,10 +471,6 @@ static void na_assign_fixed_mode(double *vfix, SrcMode mode, int target) {
     if (rg >= 0 && vfix[rg] == V_UNKNOWN) vfix[rg] = 0.0;
   }
 }
-/* Wrapper kompat: perilaku lama. */
-static void na_assign_fixed(double *vfix) {
-  na_assign_fixed_mode(vfix, SRC_MODE_NORMAL, -1);
-}
 
 
 
@@ -592,7 +638,7 @@ void sim_recompute(void) {
   /* ---- Reset state ---- */
   {extern int _sim_probe_resp_ready; _sim_probe_resp_ready = 0;}
 
-  for (int i = 0; i < MAX_COMP * 3; i++)
+  for (int i = 0; i < NODE_SPACE; i++)
     parent_[i] = i;
   for (int i = 0; i < MAX_COMP; i++) {
     lit_[i] = 0;
@@ -660,7 +706,19 @@ void sim_recompute(void) {
     if (!changed) break;
   }
 
-  /* ---- Short deteksi (+)-(-) ---- */
+     /* ---- Short deteksi (+)-(-) + tentukan lokasi visual ----
+     Prioritas DIURUTKAN ulang untuk akurasi:
+       1. Komponen KONDUKTIF yang menjembatani (+)-(−) — INI PENYEBAB short
+          (saklar-ON, dioda-fwd, transistor-ON, induktor-DC).
+          Marker di pusat komponen.
+       2. Kabel yang KEDUA endpoint di net short — korban pasif
+          (mis. user menarik kabel langsung dari BAT+ ke BAT−).
+       3. Fallback: pin (+) sumber pertama.
+  ---- */
+  sim_short_x = -1;
+  sim_short_y = -1;
+  sim_short_comp_id = -1;
+  sim_short_wire_idx = -1;
   {
     int plus_root[MAX_COMP * 3], minus_root[MAX_COMP * 3];
     int n_plus = 0, n_minus = 0;
@@ -672,10 +730,68 @@ void sim_recompute(void) {
         minus_root[n_minus++] = find_root(node_of(i, 0));
       }
     }
-    for (int a = 0; a < n_plus; a++)
+
+    int short_root = -1;
+    for (int a = 0; a < n_plus && short_root < 0; a++)
       for (int b = 0; b < n_minus; b++)
-        if (plus_root[a] == minus_root[b])
-          sim_short = 1;
+        if (plus_root[a] == minus_root[b]) {
+          short_root = plus_root[a];
+          break;
+        }
+
+    if (short_root >= 0) {
+      sim_short = 1;
+
+      /* PRIORITAS 1: KOMPONEN KONDUKTIF — penyebab short. */
+      for (int i = 0; i < comp_count; i++) {
+        if (comp_pin_count(&comps[i]) < 2) continue;
+        int is_culprit = 0;
+        if (comps[i].type == COMP_SWITCH && comps[i].on) is_culprit = 1;
+        else if (comps[i].type == COMP_INDUCTOR && !sim_ac_mode) is_culprit = 1;
+        else if (dfwd_[i]) is_culprit = 1;
+        else if (cond_[i]) is_culprit = 1;
+        if (!is_culprit) continue;
+        int r0 = find_root(node_of(i, 0));
+        int r1 = find_root(node_of(i, 1));
+        if (r0 == short_root && r1 == short_root) {
+          sim_short_x = comps[i].x;
+          sim_short_y = comps[i].y;
+          sim_short_comp_id = comps[i].id;
+          break;
+        }
+      }
+
+      /* PRIORITAS 2: kabel yang kedua endpoint di net short — korban pasif. */
+      if (sim_short_x < 0) {
+        for (int i = 0; i < wire_count; i++) {
+          Component *ca = find_comp_by_id(wires[i].a.comp_id);
+          Component *cb = find_comp_by_id(wires[i].b.comp_id);
+          if (!ca || !cb) continue;
+          int ra = find_root(node_of((int)(ca - comps), wires[i].a.pin_idx));
+          int rb = find_root(node_of((int)(cb - comps), wires[i].b.pin_idx));
+          if (ra == short_root && rb == short_root) {
+            int ax, ay, bx, by;
+            comp_pin_pos(ca, wires[i].a.pin_idx, &ax, &ay);
+            comp_pin_pos(cb, wires[i].b.pin_idx, &bx, &by);
+            sim_short_x = (ax + bx) / 2;
+            sim_short_y = (ay + by) / 2;
+            sim_short_wire_idx = i;
+            break;
+          }
+        }
+      }
+
+      /* PRIORITAS 3: fallback — pin (+) sumber pertama. */
+      if (sim_short_x < 0) {
+        for (int i = 0; i < comp_count; i++) {
+          if (comps[i].type == COMP_BATTERY || comps[i].type == COMP_ACSOURCE) {
+            comp_pin_pos(&comps[i], 0, &sim_short_x, &sim_short_y);
+            sim_short_comp_id = comps[i].id;
+            break;
+          }
+        }
+      }
+    }
   }
 
   /* ---- Bangun node & V-fixed ---- */
@@ -890,21 +1006,18 @@ void sim_recompute(void) {
 
     double dv = Vth_node[i0] - Vth_node[i1];
     if (fabs(dv) > 1e6) continue;
-    double current = fabs(dv) / 0.001; /* R_ammeter = 1 mOhm */
+    double current = fabs(dv) / R_AMMETER_OHM; /* R_ammeter = 1 mOhm */
     amread_[i] = current;
   }
 
   /* ============================================================
      Hot-wire: kabel di net (+) → merah.
      ============================================================ */
-  for (int i = 0; i < wire_count; i++) {
-    Component *ca = find_comp_by_id(wires[i].a.comp_id);
-    if (!ca)
-      continue;
-    int ia = (int)(ca - comps);
-    if (ia < 0 || ia >= comp_count)
-      continue;
-    int r = find_root(node_of(ia, wires[i].a.pin_idx));
+    for (int i = 0; i < wire_count; i++) {
+    int ra = pinref_node(wires[i].a);
+    int rb = pinref_node(wires[i].b);
+    int r = (ra >= 0) ? find_root(ra) : (rb >= 0 ? find_root(rb) : -1);
+    if (r < 0) continue;
     for (int k = 0; k < comp_count; k++) {
       if (comps[k].type != COMP_BATTERY && comps[k].type != COMP_ACSOURCE)
         continue;
@@ -916,6 +1029,10 @@ void sim_recompute(void) {
   }
 
   HeapFree(GetProcessHeap(), 0, vfix);
+
+    /* Update audio sesuai state RUN terbaru. Idempoten — aman dipanggil
+     setiap recompute (hanya restart kalau freq / status berubah). */
+  buzzer_audio_update();
 }
 
 /* ============================================================================
@@ -1120,6 +1237,21 @@ int sim_ammeter_connected(const Component *c) {
     int i = (int)(c - comps);
     if (i < 0 || i >= comp_count) return 0;
     return (amread_[i] >= 0.0);
+}
+/* Hit-test marker short. Marker terletak di (sim_short_x, sim_short_y)
+   dalam koordinat canvas; dikonversi ke screen oleh canvas_canvas_to_screen. */
+int short_marker_hit(int sx, int sy) {
+    if (!sim_running || !sim_short || sim_short_x < 0) return 0;
+    int mx, my;
+    canvas_canvas_to_screen(sim_short_x, sim_short_y, &mx, &my);
+    int dx = sx - mx, dy = sy - my;
+    return (dx * dx + dy * dy) <= (25 * 25);
+}
+
+void short_marker_pan_to(int canvas_w, int canvas_h) {
+    if (sim_short_x < 0) return;
+    g_pan_x = sim_short_x - (int)(canvas_w / 2.0 / g_zoom);
+    g_pan_y = sim_short_y - (int)(canvas_h / 2.0 / g_zoom);
 }
 int sim_zener_fwd(const Component *c) {
     if (!c || c->type != COMP_ZENER) return 0;

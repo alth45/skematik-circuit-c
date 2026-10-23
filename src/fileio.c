@@ -28,18 +28,17 @@ static const wchar_t *comp_type_name(CompType t) {
         case COMP_AMMETER:    return L"ammeter";
         case COMP_LDR:        return L"ldr";
         case COMP_BUZZER:     return L"buzzer";
-        case COMP_OSCPROBE:  return L"oscprobe";
-        case COMP_INDUCTOR:  return L"inductor";
-        case COMP_ZENER:     return L"zener";
-        case COMP_MOSFET:    return L"mosfet";
-        case COMP_POT:       return L"potentiometer";
-        case COMP_AND:       return L"and";
-        case COMP_OR:        return L"or";
-        case COMP_NOT:       return L"not";
-        case COMP_NAND:      return L"nand";
-        case COMP_NOR:       return L"nor";
-        case COMP_XOR:       return L"xor";
-
+        case COMP_OSCPROBE:   return L"oscprobe";
+        case COMP_INDUCTOR:   return L"inductor";
+        case COMP_ZENER:      return L"zener";
+        case COMP_MOSFET:     return L"mosfet";
+        case COMP_POT:        return L"potentiometer";
+        case COMP_AND:        return L"and";
+        case COMP_OR:         return L"or";
+        case COMP_NOT:        return L"not";
+        case COMP_NAND:       return L"nand";
+        case COMP_NOR:        return L"nor";
+        case COMP_XOR:        return L"xor";
         default: return L"none";
     }
 }
@@ -132,6 +131,8 @@ int comp_type_from_json_name(const char *s) {
     return comp_type_from_name(s);
 }
 
+/* ===================== SAVE ===================== */
+
 int model_save_json(const wchar_t *path, wchar_t *err, int err_cap) {
     FILE *f = _wfopen(path, L"w, ccs=UTF-8");
     if (!f) {
@@ -141,23 +142,48 @@ int model_save_json(const wchar_t *path, wchar_t *err, int err_cap) {
     fwprintf(f, L"{\n");
     fwprintf(f, L"  \"app\": \"schematic-c\",\n");
     fwprintf(f, L"  \"version\": 1,\n");
+
+    /* ---- components ---- */
     fwprintf(f, L"  \"components\": [\n");
     for (int i = 0; i < comp_count; i++) {
         wchar_t vnum[40];
         swprintf(vnum, 40, L"%.6g", comps[i].v);
-        fwprintf(f, L"    {\"id\": %d, \"type\": \"%ls\", \"x\": %d, \"y\": %d, \"rot\": %d, \"on\": %d, \"wave\": %d, \"value\": %ls}%ls\n",
+          fwprintf(f, L"    {\"id\": %d, \"type\": \"%ls\", \"x\": %d, \"y\": %d, \"rot\": %d, \"on\": %d, \"wave\": %d, \"led_color\": %d, \"value\": %ls}%ls\n",
             comps[i].id, comp_type_name(comps[i].type),
             comps[i].x, comps[i].y, comps[i].rot % 4, comps[i].on,
-            (int)comps[i].wave, vnum,
+            (int)comps[i].wave, comps[i].led_color, vnum,
             (i + 1 < comp_count) ? L"," : L"");
     }
     fwprintf(f, L"  ],\n");
+
+    /* ---- junctions ---- */
+    fwprintf(f, L"  \"junctions\": [\n");
+    int first_j = 1;
+    for (int i = 0; i < MAX_JUNCTIONS; i++) {
+        if (!junctions[i].used) continue;
+        if (!first_j) fwprintf(f, L",\n");
+        fwprintf(f, L"    {\"id\": %d, \"x\": %d, \"y\": %d}",
+                 i, junctions[i].x, junctions[i].y);
+        first_j = 0;
+    }
+    fwprintf(f, L"\n  ],\n");
+
+    /* ---- wires ---- */
     fwprintf(f, L"  \"wires\": [\n");
     for (int i = 0; i < wire_count; i++) {
-        fwprintf(f, L"    {\"a\": {\"id\": %d, \"pin\": %d}, \"b\": {\"id\": %d, \"pin\": %d}}%ls\n",
-            wires[i].a.comp_id, wires[i].a.pin_idx,
-            wires[i].b.comp_id, wires[i].b.pin_idx,
-            (i + 1 < wire_count) ? L"," : L"");
+        wchar_t aw[64], bw[64];
+        if (wires[i].a.comp_id < 0)
+            swprintf(aw, 64, L"{\"j\": %d}", wires[i].a.pin_idx);
+        else
+            swprintf(aw, 64, L"{\"id\": %d, \"pin\": %d}",
+                     wires[i].a.comp_id, wires[i].a.pin_idx);
+        if (wires[i].b.comp_id < 0)
+            swprintf(bw, 64, L"{\"j\": %d}", wires[i].b.pin_idx);
+        else
+            swprintf(bw, 64, L"{\"id\": %d, \"pin\": %d}",
+                     wires[i].b.comp_id, wires[i].b.pin_idx);
+        fwprintf(f, L"    {\"a\": %ls, \"b\": %ls}%ls\n",
+                 aw, bw, (i + 1 < wire_count) ? L"," : L"");
     }
     fwprintf(f, L"  ]\n");
     fwprintf(f, L"}\n");
@@ -165,7 +191,8 @@ int model_save_json(const wchar_t *path, wchar_t *err, int err_cap) {
     return 1;
 }
 
-/* ---- Parser JSON minimal (tanpa library) ---- */
+/* ===================== PARSER JSON MINIMAL ===================== */
+
 static void skip_ws(const char **p) {
     while (**p == ' ' || **p == '\t' || **p == '\r' || **p == '\n') (*p)++;
 }
@@ -220,12 +247,6 @@ static int parse_double(const char **p, double *out) {
     return 1;
 }
 
-/* Cari key JSON pada level struktur (BUKAN di dalam string value).
-   `key` sudah termasuk tanda kutip pembuka-penutup, mis. "\"components\"".
-   Cocokkan hanya bila karakter saat ini berada di luar string DAN
-   substring persis sama (termasuk tanda kutip) diikuti `:` (boleh
-   dipisah whitespace). Ini menggantikan strstr() naif yang bisa
-   salah cocok di dalam string value komponen mana pun. */
 static int find_key(const char **p, const char *key) {
     const char *s = *p;
     int in_str = 0, esc = 0;
@@ -255,6 +276,8 @@ static int find_key(const char **p, const char *key) {
     }
     return 0;
 }
+
+/* ===================== LOAD ===================== */
 
 int model_load_json(const wchar_t *path, wchar_t *err, int err_cap) {
     FILE *f = _wfopen(path, L"rb");
@@ -287,8 +310,18 @@ int model_load_json(const wchar_t *path, wchar_t *err, int err_cap) {
     int tmp_n = 0, tmp_next = 1;
     Wire tmp_wires[MAX_WIRES];
     int tmp_wn = 0;
+    Junction tmp_junc[MAX_JUNCTIONS];
+
+    /* ---- Reset junction buffer ---- */
+    for (int i = 0; i < MAX_JUNCTIONS; i++) {
+        tmp_junc[i].used = 0;
+        tmp_junc[i].x = 0;
+        tmp_junc[i].y = 0;
+    }
 
     const char *q = p;
+
+    /* ===================== 1) COMPONENTS ===================== */
     if (!find_key(&q, "\"components\"") || !expect_char(&q, '[')) {
         free(buf);
         if (err) swprintf(err, err_cap, L"JSON rusak: 'components' hilang.");
@@ -298,7 +331,7 @@ int model_load_json(const wchar_t *path, wchar_t *err, int err_cap) {
     if (*q == ']') { q++; }
     else {
         while (1) {
-            int id = tmp_next, x = 0, y = 0, rot = 0, on = 0, wave = 0;
+            int id = tmp_next, x = 0, y = 0, rot = 0, on = 0, wave = 0, led_color = 0;
             double v = -1.0;
             char tname[32] = "";
             if (!expect_char(&q, '{')) goto bad;
@@ -324,9 +357,14 @@ int model_load_json(const wchar_t *path, wchar_t *err, int err_cap) {
                     } else {
                         if (!parse_double(&q, &v)) goto bad;
                     }
-                }else if (strcmp(key, "wave") == 0) {
+                }
+                else if (strcmp(key, "wave") == 0) {
                     if (!parse_int(&q, &wave)) goto bad;
-                }else if (strcmp(key, "on") == 0 || strcmp(key, "closed") == 0 ||
+                }
+                else if (strcmp(key, "led_color") == 0) {
+                    if (!parse_int(&q, &led_color)) goto bad;
+                }
+                else if (strcmp(key, "on") == 0 || strcmp(key, "closed") == 0 ||
                          strcmp(key, "state") == 0) {
                     if (*q == '"') {
                         char sv[16] = "";
@@ -349,29 +387,36 @@ int model_load_json(const wchar_t *path, wchar_t *err, int err_cap) {
             if (tmp_n < MAX_COMP) {
                 int tp = comp_type_from_name(tname);
                 if (tp != COMP_NONE) {
-                    tmp_comps[tmp_n].type = (CompType)tp;
-                    tmp_comps[tmp_n].x = x;
-                    tmp_comps[tmp_n].y = y;
-                    tmp_comps[tmp_n].id = id;
-                    tmp_comps[tmp_n].rot = ((rot % 4) + 4) % 4;
+                    Component *dst = &tmp_comps[tmp_n];
+                    dst->type = (CompType)tp;
+                    dst->x = x;
+                    dst->y = y;
+                    dst->id = id;
+                    dst->rot = ((rot % 4) + 4) % 4;
+
+                    /* 'on': 0..100 untuk POT; 0/1 untuk SWITCH & LDR; 0 lainnya. */
                     if (tp == COMP_POT) {
                         if (on < 0) on = 0;
                         if (on > 100) on = 100;
-                        tmp_comps[tmp_n].on = on;
+                        dst->on = on;
                     } else {
-                        tmp_comps[tmp_n].on =
-                            ((tp == COMP_SWITCH || tp == COMP_LDR) && on) ? 1 : 0;
+                        dst->on = ((tp == COMP_SWITCH || tp == COMP_LDR) && on) ? 1 : 0;
                     }
-                    // tmp_comps[tmp_n].on =
-                    //     ((tp == COMP_SWITCH || tp == COMP_LDR) && on) ? 1 : 0;
-                    if (v > 0.0) tmp_comps[tmp_n].v = v;
-                    else         tmp_comps[tmp_n].v = comp_default_value((CompType)tp);
-                    tmp_n++;
-                    if (id >= tmp_next) tmp_next = id + 1;
-                    tmp_comps[tmp_n].wave =
+
+                    dst->v = (v > 0.0) ? v : comp_default_value((CompType)tp);
+
+                    /* PENTING: wave HARUS di-set SEBELUM tmp_n++ — kalau
+                       ditaruh setelah, kita menulis ke slot berikutnya
+                       (out-of-bounds bila tmp_n == MAX_COMP). */
+                    dst->wave =
                         (tp == COMP_ACSOURCE && wave >= 0 && wave <= 2)
                         ? (WaveKind)wave : WAVE_SINE;
+                    dst->led_color =
+                        (tp == COMP_LED && led_color >= 0 && led_color <= 3)
+                        ? led_color : 0;
 
+                    tmp_n++;
+                    if (id >= tmp_next) tmp_next = id + 1;
                 }
             }
             skip_ws(&q);
@@ -381,6 +426,47 @@ int model_load_json(const wchar_t *path, wchar_t *err, int err_cap) {
         }
     }
 
+    /* ===================== 2) JUNCTIONS (opsional — file lama tanpa
+       blok ini tetap valid; junction dianggap kosong) ===================== */
+    if (find_key(&q, "\"junctions\"")) {
+        if (!expect_char(&q, '[')) {
+            free(buf);
+            if (err) swprintf(err, err_cap, L"JSON rusak: 'junctions' bukan array.");
+            return 0;
+        }
+        skip_ws(&q);
+        if (*q == ']') { q++; }
+        else {
+            while (1) {
+                int jid = -1, jx = 0, jy = 0;
+                if (!expect_char(&q, '{')) goto bad;
+                while (1) {
+                    char key[16] = "";
+                    if (!parse_string(&q, key, sizeof key)) goto bad;
+                    if (!expect_char(&q, ':')) goto bad;
+                    if (strcmp(key, "id") == 0) { if (!parse_int(&q, &jid)) goto bad; }
+                    else if (strcmp(key, "x") == 0) { if (!parse_int(&q, &jx)) goto bad; }
+                    else if (strcmp(key, "y") == 0) { if (!parse_int(&q, &jy)) goto bad; }
+                    else { int d; if (!parse_int(&q, &d)) goto bad; }
+                    skip_ws(&q);
+                    if (*q == ',') { q++; continue; }
+                    if (*q == '}') { q++; break; }
+                    goto bad;
+                }
+                if (jid >= 0 && jid < MAX_JUNCTIONS) {
+                    tmp_junc[jid].x = jx;
+                    tmp_junc[jid].y = jy;
+                    tmp_junc[jid].used = 1;
+                }
+                skip_ws(&q);
+                if (*q == ',') { q++; continue; }
+                if (*q == ']') { q++; break; }
+                goto bad;
+            }
+        }
+    }
+
+    /* ===================== 3) WIRES ===================== */
     if (!find_key(&q, "\"wires\"") || !expect_char(&q, '[')) {
         free(buf);
         if (err) swprintf(err, err_cap, L"JSON rusak: 'wires' hilang.");
@@ -398,6 +484,8 @@ int model_load_json(const wchar_t *path, wchar_t *err, int err_cap) {
                 if (!expect_char(&q, ':')) goto bad;
                 if (strcmp(key, "a") == 0 || strcmp(key, "b") == 0) {
                     int is_a = (key[0] == 'a');
+                    int endpoint_is_junction = 0;
+                    int id_val = -1, pin_val = 0;
                     if (!expect_char(&q, '{')) goto bad;
                     while (1) {
                         char k2[32] = "";
@@ -405,15 +493,26 @@ int model_load_json(const wchar_t *path, wchar_t *err, int err_cap) {
                         if (!expect_char(&q, ':')) goto bad;
                         int v = 0;
                         if (!parse_int(&q, &v)) goto bad;
-                        if (strcmp(k2, "pin") == 0) {
-                            if (is_a) apin = v; else bpin = v;
-                        } else {
-                            if (is_a) aid = v; else bid = v;
+                        if (strcmp(k2, "j") == 0) {
+                            endpoint_is_junction = 1;
+                            id_val = v;
+                        } else if (strcmp(k2, "pin") == 0) {
+                            pin_val = v;
+                        } else if (strcmp(k2, "id") == 0) {
+                            id_val = v;
                         }
                         skip_ws(&q);
                         if (*q == ',') { q++; continue; }
                         if (*q == '}') { q++; break; }
                         goto bad;
+                    }
+                    if (endpoint_is_junction) {
+                        /* comp_id = -1 menandai junction; pin_idx = id junction. */
+                        if (is_a) { aid = -1; apin = id_val; }
+                        else      { bid = -1; bpin = id_val; }
+                    } else {
+                        if (is_a) { aid = id_val; apin = pin_val; }
+                        else      { bid = id_val; bpin = pin_val; }
                     }
                 } else {
                     int d;
@@ -425,7 +524,25 @@ int model_load_json(const wchar_t *path, wchar_t *err, int err_cap) {
                 if (*q == '}') { q++; break; }
                 goto bad;
             }
-            if (tmp_wn < MAX_WIRES && aid >= 0 && bid >= 0) {
+
+            /* Validasi endpoint: pin komponen ATAU junction. */
+            int a_valid = 0, b_valid = 0;
+            if (aid < 0) {
+                if (apin >= 0 && apin < MAX_JUNCTIONS && tmp_junc[apin].used)
+                    a_valid = 1;
+            } else if (aid > 0) {
+                for (int j = 0; j < tmp_n; j++)
+                    if (tmp_comps[j].id == aid) { a_valid = 1; break; }
+            }
+            if (bid < 0) {
+                if (bpin >= 0 && bpin < MAX_JUNCTIONS && tmp_junc[bpin].used)
+                    b_valid = 1;
+            } else if (bid > 0) {
+                for (int j = 0; j < tmp_n; j++)
+                    if (tmp_comps[j].id == bid) { b_valid = 1; break; }
+            }
+
+            if (tmp_wn < MAX_WIRES && a_valid && b_valid) {
                 tmp_wires[tmp_wn].a.comp_id = aid;
                 tmp_wires[tmp_wn].a.pin_idx = apin;
                 tmp_wires[tmp_wn].b.comp_id = bid;
@@ -440,17 +557,33 @@ int model_load_json(const wchar_t *path, wchar_t *err, int err_cap) {
     }
     free(buf);
 
+    /* ===================== 4) COMMIT ===================== */
     {
+        /* Filter akhir wire — komponen harus ada, junction harus ada.
+           (Validasi sudah dilakukan saat parse, ini hanya sanity net.) */
         Wire keep[MAX_WIRES];
         int kn = 0;
         for (int i = 0; i < tmp_wn; i++) {
-            int fa = 0, fb = 0;
-            for (int j = 0; j < tmp_n; j++) {
-                if (tmp_comps[j].id == tmp_wires[i].a.comp_id) fa = 1;
-                if (tmp_comps[j].id == tmp_wires[i].b.comp_id) fb = 1;
+            int fa = (tmp_wires[i].a.comp_id < 0);
+            int fb = (tmp_wires[i].b.comp_id < 0);
+            if (!fa) {
+                for (int j = 0; j < tmp_n; j++)
+                    if (tmp_comps[j].id == tmp_wires[i].a.comp_id) { fa = 1; break; }
+            }
+            if (!fb) {
+                for (int j = 0; j < tmp_n; j++)
+                    if (tmp_comps[j].id == tmp_wires[i].b.comp_id) { fb = 1; break; }
             }
             if (fa && fb) keep[kn++] = tmp_wires[i];
         }
+
+        /* Commit junction state dulu (wires akan mereferensi). */
+        for (int i = 0; i < MAX_JUNCTIONS; i++)
+            junctions[i] = tmp_junc[i];
+        junction_count = 0;
+        for (int i = 0; i < MAX_JUNCTIONS; i++)
+            if (junctions[i].used) junction_count++;
+
         for (int i = 0; i < tmp_n; i++) comps[i] = tmp_comps[i];
         comp_count = tmp_n;
         for (int i = 0; i < kn; i++) wires[i] = keep[i];
@@ -459,7 +592,7 @@ int model_load_json(const wchar_t *path, wchar_t *err, int err_cap) {
         selected_id = -1;
         dragging_id = -1;
         wiring_active = 0;
-        undo_reset();
+        undo_reset();   /* hapus baris ini kalau modul undo belum ada */
         sim_recompute();
     }
     return 1;
@@ -469,6 +602,8 @@ bad:
     if (err) swprintf(err, err_cap, L"JSON rusak / format tak dikenal.");
     return 0;
 }
+
+/* ===================== DIALOG HELPERS ===================== */
 
 static void show_msg(HWND hwnd, const wchar_t *title, const wchar_t *fmt, ...) {
     wchar_t buf[512];
@@ -532,7 +667,6 @@ void model_load_dialog(HWND hwnd) {
         show_err(hwnd, L"Open JSON", err[0] ? err : L"Gagal membuka.");
     }
 }
-
 
 void model_export_png_dialog(HWND hwnd) {
     wchar_t file[MAX_PATH] = L"schematic.png";

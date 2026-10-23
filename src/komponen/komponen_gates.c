@@ -10,7 +10,7 @@
 
    Warna hijau saat RUN dan output HIGH. */
 
-/* --- helper: parabola back curve untuk OR/NOR/XOR ---
+/* ---- helper: parabola back curve untuk OR/NOR/XOR ----
    x(t) = base + bulge * (1 - t²),  t = y/15
    base=-20 (body edge), bulge=8 → vertex di (-12, 0), ujung di (-20, ±15). */
 static int or_back_x(int y) {
@@ -22,7 +22,7 @@ static int xor_extra_x(int y) {
     return -25 + (int)lround(8.0 * (1.0 - t * t));
 }
 
-/* --- helper: bubble (lingkaran putih dengan border) --- */
+/* ---- helper: bubble (lingkaran putih dengan border) ---- */
 static void draw_bubble(HDC hdc, int cx, int cy, COLORREF col) {
     HPEN pen = CreatePen(PS_SOLID, 2, col);
     HPEN oldp = (HPEN)SelectObject(hdc, pen);
@@ -40,8 +40,7 @@ static void draw_and_impl(HDC hdc, int x, int y, BOOL sel, int high, int bubble)
     COLORREF col = sel ? RGB(50, 128, 255) : RGB(20, 20, 20);
     if (sim_running && high) col = RGB(20, 150, 60);
 
-    /* Body: D-shape (flat left, semicircle right).
-       Arc: center (x, y), radius 15, dari -90° ke +90°. */
+    /* Body: D-shape (flat left, semicircle right). */
     POINT pts[32];
     int n = 0;
     pts[n++] = (POINT){ x - 20, y - 15 };
@@ -75,20 +74,13 @@ static void draw_and_impl(HDC hdc, int x, int y, BOOL sel, int high, int bubble)
     DeleteObject(pen);
 }
 
-static void draw_and_body(HDC hdc, int x, int y, BOOL sel) {
-    draw_and_impl(hdc, x, y, sel, 0, 0);
-}
-static void draw_nand_body(HDC hdc, int x, int y, BOOL sel) {
-    draw_and_impl(hdc, x, y, sel, 0, 1);
-}
-
 /* ===================== OR / NOR / XOR ===================== */
 static void draw_or_impl(HDC hdc, int x, int y, BOOL sel, int high,
                          int bubble, int extra_curve) {
     COLORREF col = sel ? RGB(50, 128, 255) : RGB(20, 20, 20);
     if (sim_running && high) col = RGB(20, 150, 60);
 
-    /* Body polygon: top-left → top-front → point → bottom-front → back curve */
+    /* Body polygon */
     POINT pts[64];
     int n = 0;
     pts[n++] = (POINT){ x - 20, y - 15 };
@@ -124,7 +116,7 @@ static void draw_or_impl(HDC hdc, int x, int y, BOOL sel, int high,
         tip_x += 6;
     }
 
-    /* Leads: pin A/B masuk ke kurva yang tepat */
+    /* Leads */
     {
         int back_top = extra_curve ? xor_extra_x(-10) : or_back_x(-10);
         int back_bot = extra_curve ? xor_extra_x( 10) : or_back_x( 10);
@@ -138,29 +130,9 @@ static void draw_or_impl(HDC hdc, int x, int y, BOOL sel, int high,
     DeleteObject(pen);
 }
 
-static void draw_or_body(HDC hdc, int x, int y, BOOL sel) {
-    draw_or_impl(hdc, x, y, sel, 0, 0, 0);
-}
-static void draw_nor_body(HDC hdc, int x, int y, BOOL sel) {
-    draw_or_impl(hdc, x, y, sel, 0, 1, 0);
-}
-static void draw_xor_body(HDC hdc, int x, int y, BOOL sel) {
-    draw_or_impl(hdc, x, y, sel, 0, 0, 1);
-}
-
 /* ===================== NOT ===================== */
-static void draw_not_body(HDC hdc, int x, int y, BOOL sel) {
-    COLORREF col = sel ? RGB(50, 128, 255) : RGB(20, 20, 20);
-    if (sim_running && sim_gate_out_high(0)) col = RGB(20, 150, 60); /* overridden below */
-
-    /* CORRECTION: draw_not dipanggil tanpa tahu state; coloring dilakukan
-       di draw_k_not yang menyetel variabel statis. */
-    (void)col;
-}
-
-/* Karena draw_not perlu state, kita pakai wrapper statis seperti pola
-   komponen lain. */
 static int not_high = 0;
+
 static void draw_not_do(HDC hdc, int x, int y, BOOL sel) {
     COLORREF col = sel ? RGB(50, 128, 255) : RGB(20, 20, 20);
     if (sim_running && not_high) col = RGB(20, 150, 60);
