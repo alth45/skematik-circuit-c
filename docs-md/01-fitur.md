@@ -11,7 +11,7 @@
 | **Multi-select / blok** | Drag di area kosong untuk memblok banyak komponen; drag grup terpilih untuk memindahkan satu kesatuan; `Ctrl+D` menduplikat blok + kabel internalnya. |
 | **Undo / Redo** | `Ctrl+Z` / `Ctrl+Y` atau Edit > Undo/Redo (depth 64). Mencakup tambah, geser/drag, putar, hapus, kabel, edit nilai, toggle saklar/LDR, waveform AC, duplikat & clear. Klik saklar saat RUN tidak di-undo. |
 | **Zoom & Pan canvas** | Wheel = zoom di kursor, `Ctrl++`/`Ctrl+-` = zoom di tengah, `Ctrl+0` = zoom-fit, **mouse tengah + drag** = pan. Rentang 25 %–800 %. Status bar menampilkan `zoom XX%`. |
-| Toolbar ikon | **23 tombol palet** (Select, Blok, Wire, Hapus + 19 komponen: R, SW, BAT, AC, LED, GND, C, Q, D, CP, LDR, BZR, VM, AM, OSC, L, Zener, MOSFET, POT — area komponen bisa di-scroll) + 4 tombol aksi: Clear, Save, Open, Run/Stop. |
+| Toolbar ikon | **29 tombol palet** (Select, Blok, Wire, Hapus + 25 komponen: R, SW, BAT, AC, LED, GND, C, Q, D, CP, LDR, BZR, VM, AM, OSC, L, Zener, MOSFET, POT, AND, OR, NOT, NAND, NOR, XOR — area komponen bisa di-scroll) + 4 tombol aksi: Clear, Save, Open, Run/Stop. |
 | Komponen | Resistor, Saklar, Baterai, Sumber AC, LED, Ground, Kapasitor, Transistor NPN, Dioda, Kapasitor Polar, LDR, Buzzer, Voltmeter, Ammeter, **Probe Osiloskop**, **Induktor**, **Dioda Zener**, **MOSFET N-Channel**, **Potensiometer**. |
 | **Dioda Zener** | Pin A–K, arah sama dengan dioda biasa. **Forward**: menghantar seperti dioda. **Reverse**: breakdown bila $V_K - V_A > V_Z$ (default 5,1 V, edit via *Edit Nilai*, satuan `Vz`). Status forward/breakdown tampil saat RUN. |
 | **MOSFET N-Channel** | 3 pin (gate, source, drain), model biner seperti transistor: **ON** (D–S di-union 0 Ω) bila gate tersambung ke net (+) dan source ke net (−). Nilai = $V_{th}$ (default 2 V). Saat RUN simbol hijau + label ON/OFF. |
@@ -29,7 +29,7 @@
 | **Minimap** | Overview seluruh canvas di pojok kanan-bawah (**View → Minimap**, default ON). Kotak merah = viewport saat ini; klik/drag di minimap = pan canvas ke titik itu. Otomatis tersembunyi bila canvas kosong. |
 | Mode Run | Klik Run → klik saklar ON/OFF → LED menyala + kabel (+) merah + dioda forward (panah hijau) + deteksi korslet + hitung arus loop + bacaan voltmeter/ammeter. |
 | **About dialog** | Menu **Bantu → Tentang Schematic Editor** menampilkan ringkasan fitur & versi. |
-| Shortcut | V/W/B, 0–9, J (Induktor), L (LDR), M (Voltmeter), I (Ammeter), P (OSC probe), Z (Zener), F (MOSFET), T (Potensiometer), R, F5, F12, Ctrl+S/O/A/D/E, Ctrl+Z/Y, Ctrl+/−/0, Del, Esc. |
+| Shortcut | V/W/B, 0–9, J (Induktor), L (LDR), M (Voltmeter), I (Ammeter), P (OSC probe), Z (Zener), F (MOSFET), T (Potensiometer), A/O/N/Y/X (gerbang AND/OR/NOT/NAND/XOR), R, F5, F12, Ctrl+S/O/A/D/E, Ctrl+Z/Y, Ctrl+/−/0, Del, Esc. |
 | Status bar | Pesan terakhir + counter komponen & kabel + zoom level. |
 
 ---
@@ -37,7 +37,7 @@
 ## Tampilan
 
 ```
-[Sel][Blk][Wir][ R ][ SW ][BAT ][AC ][LED][GND][ C ][ Q ][ D ][ CP][LDR][BZR][ VM][ AM][OSC][ L ][ZEN][FET][POT][Hapus]
+[Sel][Blk][Wir][ R ][ SW ][BAT ][AC ][LED][GND][ C ][ Q ][ D ][ CP][LDR][BZR][ VM][ AM][OSC][ L ][ZEN][FET][POT][AND][OR][NOT][NAND][NOR][XOR][Hapus]
      [Clear][Save][Open][Run]
 tool aktif | F5: run/stop   R: rotate   Ctrl +/-/0: zoom   Ctrl+Z/Y: undo/redo   double-klik: edit nilai
 +------------------------------------------------------------+

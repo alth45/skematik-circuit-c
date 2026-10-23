@@ -18,7 +18,7 @@ schematic-c/
                        undo/redo stack (snapshot bounded, batch)
     fileio.c           save/load JSON + dialog + export PNG dialog + status
                        (termasuk ldr/buzzer/oscprobe/inductor/ammeter/zener/mosfet/potentiometer)
-    sim.c              analisis nodal (MNA + Gauss) + union-find + perhitungan LED (Vth/Rth)
+        sim.c              analisis nodal (MNA + Gauss) + union-find + perhitungan LED (Vth/Rth)
                        + Xc kapasitor + XL induktor + voltmeter + ammeter + buzzer
                        + hot-wire + probe osiloskop (sim_ac_voltage, sim_probe_voltage)
                        + zener forward/breakdown iteratif + MOSFET-ON
@@ -28,13 +28,13 @@ schematic-c/
       draw.c           dispatcher simbol + utilitas rotasi (with_rotation, komposisi zoom)
                        + label nilai + pin + kabel hot/preview + overlay seleksi + marquee
       events.c         mouse (drag/wiring/toggle/double-klik/klik-kanan/minimap) +
-                       keyboard (0-9, J, I, P, L, M, U, R, Z, F, T, F5, F12,
+                       keyboard (0-9, J, I, P, L, M, U, R, Z, F, T, A, O, N, Y, X, F5, F12,
                                  Ctrl+S/O/A/D/E/Z/Y, Ctrl +/-/0, Del, Esc)
                        + menu konteks + waveform picker + preset wiper potensiometer
       minimap.c        overview canvas + viewport merah + klik/drag pan (View > Minimap)
       export_png.c     render canvas bersih (tanpa overlay) ke RGB buffer → png_writer
       toolbar_menubar.c  menu File/Edit/View/Simulasi/Bantu + popup + aksi + About dialog
-      toolbar_symbols.c  ikon mini tiap tool + shortname R/SW/BAT/AC/LED/…/OSC/L/Zener/MOSFET/POT
+      toolbar_symbols.c  ikon mini tiap tool + shortname R/SW/BAT/AC/LED/…/OSC/L/Zener/MOSFET/POT/AND/OR/NOT/NAND/NOR/XOR
       toolbar_actions.c  gambar tombol aksi Clear/Save/Open/Run
       toolbar_palette.c  hit-test + draw_toolbar strip tombol + status
     komponen/
@@ -57,6 +57,8 @@ schematic-c/
       komponen_zener.c       simbol dioda zener (balik + Z) + status fwd/breakdown
       komponen_mosfet.c      simbol MOSFET N-channel enhancement + label ON/OFF
       komponen_pot.c         simbol potensiometer IEC + panah wiper posisi %
+      komponen_gates.c       simbol IEC/ANSI 6 gerbang logika (AND/OR/NOT/NAND/
+                             NOR/XOR) + hijau saat RUN & output HIGH
   tests/                 suite uji (target `make tests` / `make test`):
                          model, sim, selection, undo
   docs/                  dokumentasi HTML API (index per modul + halaman per fungsi;

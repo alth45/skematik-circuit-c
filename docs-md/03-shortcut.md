@@ -22,6 +22,12 @@
 | `Z` | Dioda Zener |
 | `F` | MOSFET N-Channel |
 | `T` | Potensiometer |
+| `A` | Gerbang AND |
+| `O` | Gerbang OR |
+| `N` | Gerbang NOT |
+| `Y` | Gerbang NAND |
+| `X` | Gerbang XOR |
+| *(toolbar)* | Gerbang **NOR** (klik ikon NOR di toolbar) |
 | `Ctrl+A` | Pilih semua komponen |
 | `Ctrl+D` | Duplikat seleksi/blok |
 | `Ctrl+Z` | Undo |

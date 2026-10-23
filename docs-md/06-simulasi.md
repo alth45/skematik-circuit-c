@@ -1,6 +1,3 @@
-## `docs/06-simulasi.md`
-
-
 # Aturan Simulasi (Analisis Nodal)
 
 [← Kembali ke readme](../readme.md)
@@ -19,10 +16,16 @@ lalu **analisis nodal (MNA-lite)** untuk menyelesaikan tegangan/arus.
      ($K = +$), status breakdown dicari iteratif (maks. 20 iterasi) sampai stabil.
 3. Net (+): semua pin0 baterai + pin0 (Live) sumber AC. Net (−): pin1 sumber +
    pin ground.
+4. **Gerbang logika (iteratif)**: level tiap gerbang dihitung dari topologi —
+   **HIGH** bila node input terhubung ke net **+**, selain itu **LOW**. Output
+   gerbang di-union ke net (+) saat HIGH / ground·(−) saat LOW. Karena gerbang
+   berikutnya bergantung pada output gerbang sebelumnya, blok ini dijalankan
+   **berulang** (loop stabilisasi) sampai tak ada level yang berubah — sehingga
+   rangkaian **multi-tingkat** (mis. AND → NOT → LED) tetap benar.
 
 ## Tahap 2 — Analisis nodal
 
-4. Matriks konduktansi $G$ dibangun dari semua edge resistif:
+5. Matriks konduktansi $G$ dibangun dari semua edge resistif:
    - Resistor → $R = c_v$
    - LDR → $R_{\text{gelap}} \times 1\%$ saat Terang, atau $R_{\text{gelap}}$ saat Gelap
    - Buzzer → $R = 100\,\Omega$ (tipikal)
@@ -35,18 +38,18 @@ lalu **analisis nodal (MNA-lite)** untuk menyelesaikan tegangan/arus.
      R_B = R \cdot \frac{100-\text{pos}}{100}
      $$
      dengan clamp minimum 1 mΩ.
-5. Sumber tegangan → node dengan $V$ **tetap** (baris constraint identitas).
-6. Solve $G \cdot V = I$ dengan **Gauss + partial pivoting**. Regularisasi
+6. Sumber tegangan → node dengan $V$ **tetap** (baris constraint identitas).
+7. Solve $G \cdot V = I$ dengan **Gauss + partial pivoting**. Regularisasi
    $10^{-12}$ cegah singular.
 
 ## Tahap 3 — Perhitungan LED
 
-7. Per LED: hitung $V_{th}$ (V anoda − V katoda dari solve global) dan $R_{th}$
+8. Per LED: hitung $V_{th}$ (V anoda − V katoda dari solve global) dan $R_{th}$
    (semua sumber di-short, injeksi 1 A, solve ulang).
    $$
    I = \frac{V_{th} - V_f}{R_{th}}
    $$
-8. Klasifikasi:
+9. Klasifikasi:
    - $R_{th} \approx 0$ & $V_{th} > V_f$ → **MELEDAK**.
    - $I > 100\,\text{mA}$ → **MELEDAK**.
    - $20\,\text{mA} < I \le 100\,\text{mA}$ → **overcurrent** (peringatan).
@@ -54,18 +57,21 @@ lalu **analisis nodal (MNA-lite)** untuk menyelesaikan tegangan/arus.
 
 ## Tahap 4 — Periferal
 
-9. Korsleting: (+) & (−) satu root (termasuk lewat dioda forward).
-10. **Buzzer** ON bila $\left|V(\text{pin0}) - V(\text{pin1})\right| > 1\,\text{V}$,
+10. Korsleting: (+) & (−) satu root (termasuk lewat dioda forward).
+11. **Buzzer** ON bila $\left|V(\text{pin0}) - V(\text{pin1})\right| > 1\,\text{V}$,
     atau seri/paralel dengan LED yang menyala.
-11. **Voltmeter** ideal → baca $V(\text{pin0}) - V(\text{pin1})$. Kedua pin tidak
+12. **Voltmeter** ideal → baca $V(\text{pin0}) - V(\text{pin1})$. Kedua pin tidak
     pernah di-union.
-12. **Ammeter** → baca
+13. **Ammeter** → baca
     $$
     I = \frac{\left|V(\text{pin0}) - V(\text{pin1})\right|}{0.1\,\Omega}
     $$
-13. **Probe OSC** → baca $V_{dc} + \sum_k g_k \cdot V_{ac,k}(t)$ via superposisi
+14. **Probe OSC** → baca $V_{dc} + \sum_k g_k \cdot V_{ac,k}(t)$ via superposisi
     (dihitung lazy setelah `sim_recompute`).
-14. Kabel hot: net yang memuat (+) sumber → merah tebal.
+15. Kabel hot: net yang memuat (+) sumber → merah tebal.
+16. **Buzzer audio**: bila ada buzzer aktif (beda pin > 1 V), nada sinus pada
+    frekuensi `v` diputar via `PlaySound` (WAV in-memory); restart otomatis bila
+    frekuensi berubah, stop saat tidak ada buzzer aktif / RUN berhenti.
 
 ## Bentuk gelombang AC
 
@@ -93,6 +99,10 @@ lalu **analisis nodal (MNA-lite)** untuk menyelesaikan tegangan/arus.
   non-linear); akurat sesuai pembagian $\text{pos}\%$.
 - **Induktor**: DC = short ideal, AC = $X_L$ linier.
 - **Probe OSC**: eksak via superposisi (linear).
+- **Gerbang logika**: ideal biner, tanpa delay propagasi / fan-out maksimum.
+  HIGH ditentukan semata dari keterhubungan ke net (+) (bukan ambang tegangan).
+- **Buzzer audio**: satu kanal (buzzer aktif pertama), nada sinus; frekuensi
+  di-clamp ke rentang 20 Hz–20 kHz.
 
 ## Pesan hasil
 

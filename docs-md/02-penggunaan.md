@@ -128,6 +128,39 @@ AC Netral --+------------+-- [OSC pin1]
   - $L = 1\,\text{H} \Rightarrow X_L \approx 314\,\Omega$ (LED meredup/hampir mati).
 - Double-klik untuk edit nilai (`100u`, `10m`, `1`, dst).
 
+## 2i. Gerbang logika (AND / OR / NOT / NAND / NOR / XOR)
+
+- Klik ikon gerbang di toolbar (atau shortcut **A** AND, **O** OR, **N** NOT,
+  **Y** NAND, **X** XOR; **NOR** lewat toolbar).
+- Pin gerbang 2-input: **A** (kiri-atas), **B** (kiri-bawah), **OUT** (kanan).
+  Gerbang **NOT**: **IN** (kiri) dan **OUT** (kanan).
+- Level logika ditentukan dari topologi rangkaian:
+  - **HIGH (1)** bila node (input/output) terhubung ke net **(+)**, mis. ke pin
+    baterai (+) atau ke output gerbang lain yang HIGH.
+  - **LOW (0)** bila tidak.
+- Output gerbang di-union ke net (+) saat HIGH (atau ke ground·(−) saat LOW),
+  sehingga rangkaian **multi-tingkat** diselesaikan secara **iteratif** sampai
+  stabil.
+- Saat **RUN**, gerbang yang outputnya HIGH digambar **hijau**; statuspun tampil
+  di **Info** (`Output RUN: HIGH (1)` / `LOW (0)`).
+
+```
+BAT (+) --+-- [A]                       
+          |         \
+          +-- [B]  [AND] -- OUT -- LED anoda
+          |         /
+BAT (-) --+---------+----------- LED katoda   (mis. OUT drive LED)
+```
+
+## 2j. Buzzer berbunyi
+
+- Klik **BZR** (`U`), taruh di rangkaian, beri catu (beda tegangan pin > 1 V).
+- Saat **RUN**, buzzer aktif **berbunyi** pada frekuensi `v` (default 1000 Hz)
+  sebagai nada **sinus** (loop mulus, tanpa klik).
+- Double-klik buzzer untuk mengubah frekuensi (mis. `440`, `2k`, `8k`).
+- Hanya **buzzer aktif pertama** yang diputar; restart otomatis bila frekuensi
+  berubah. Nada berhenti saat **Stop**.
+
 ## 3. Run simulasi
 
 1. Klik tombol hijau **Run** (atau `F5`).

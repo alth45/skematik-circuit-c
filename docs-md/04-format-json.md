@@ -64,6 +64,9 @@ Alias juga diterima:
 | `mosfet` | $V_{th}$ (V) |
 | `potentiometer` | $R$ total (Ω) |
 
+Gerbang logika (`and`/`or`/`not`/`nand`/`nor`/`xor`) tidak memakai `value` (diabaikan).
+
+
 - **Potentiometer**: posisi wiper 0–100 disimpan di field **`on`** (bukan `value`).
 - Voltmeter & Ammeter tidak memakai `value` (selalu 0).
 - Key lama `"v"` juga terbaca.
@@ -95,6 +98,8 @@ Umumnya `0`/`1`:
 - `transistor` NPN → `0` = Kolektor, `1` = Emitor, `2` = Basis.
 - `mosfet` → 3 pin (gate/source/drain).
 - `potentiometer` → `0` = A, `1` = B, `2` = W (wiper).
+- `and` / `or` / `nand` / `nor` / `xor` → `0` = A, `1` = B, `2` = OUT.
+- `not` → `0` = IN, `1` = OUT.
 - `acsource` → `0` = Live, `1` = Netral.
 
 ## Batas

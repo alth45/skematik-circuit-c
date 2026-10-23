@@ -42,7 +42,7 @@ make CC_PROD=i686-w64-mingw32-gcc
 make CC_TEST=gcc
 ```
 
-> ⚠️ **Toolbar overflow**: dengan 23 tombol palet + 4 aksi (27 total), pada
+> ⚠️ **Toolbar overflow**: dengan 29 tombol palet + 4 aksi (33 total), pada
 > jendela sempit tombol **Save / Open / Run** mungkin **terpotong** di kanan.
 > Area komponen bisa di-scroll (wheel di toolbar); juga tersedia shortcut
 > **F5** (Run), **Ctrl+S** (Save), **Ctrl+O** (Open), atau perlebar/maximize

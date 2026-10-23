@@ -20,6 +20,9 @@
 - **LED $V_f$ dinamis** ($V_f = V_{f0} + R_s \cdot I$).
 - **Net label** / port untuk multi-sheet.
 - **Autosave** + folder `examples/*.json`.
+- **Model gerbang non-ideal**: ambang tegangan $V_{IH}/V_{IL}$, delay propagasi, fan-out.
+- **Gerbang tambahan**: XNOR, buffer, tri-state, flip-flop (latch D/SR).
+- **Buzzer lebih kaya**: pilih waveform (kotak/segitiga), volume, multi-nada.
 - **Komponen tambahan**: push-button, saklar SPDT, PNP, IC op-amp sederhana, IC 555.
 
 ---

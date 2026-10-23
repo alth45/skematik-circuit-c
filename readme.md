@@ -32,9 +32,9 @@ dan **visualisasikan bentuk gelombang AC** lewat probe osiloskop.
 ## Ringkasan Singkat
 
 - **Fitur utama**: drag & drop, wiring antar pin, rotate, multi-select, undo/redo
-  (depth 64), zoom & pan, toolbar 23 tombol, 19 komponen, save/open JSON,
+  (depth 64), zoom & pan, toolbar 29 tombol palet, 25 komponen, save/open JSON,
   export PNG, minimap, mode run dengan deteksi korslet + simulasi LED + voltmeter
-  + ammeter + probe osiloskop.
+  + ammeter + probe osiloskop + **gerbang logika** + **buzzer berbunyi**.
 - **Platform**: Windows (Win32 GDI).
 - **Bahasa**: C (MinGW-w64 `gcc`).
 - **Build**: `make` / `make rebuild` / `make test`.
@@ -53,6 +53,7 @@ docs/07-build.md.
 V / B / W	Select / Blok / Wire
 1–9, 0	Komponen (R, SW, BAT, LED, GND, C, Q, D, CP, AC)
 L U M I P J Z F T	LDR, Buzzer, VM, AM, OSC, Induktor, Zener, MOSFET, POT
+A O N Y X	Gerbang logika AND, OR, NOT, NAND, XOR (NOR via toolbar)
 R	Rotate 90°
 F5	Run/Stop
 F12	Oscilloscope

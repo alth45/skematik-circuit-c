@@ -28,5 +28,11 @@
 | Rotasi simbol "pecah" (simbol keluar dari kotak seleksi / pin lepas) | Fitur zoom + rotasi harus dikomposisi di `with_rotation`. Pastikan `draw.c` memakai versi terbaru (yang menyimpan transform parent via `GetWorldTransform` dan memanggil `SetWorldTransform(&prev)` setelah `RestoreDC`). |
 | Tombol Save/Open/Run di toolbar tidak terlihat | Toolbar overflow. Gunakan `Ctrl+S`, `Ctrl+O`, `F5`, atau maximize jendela. |
 | Save lalu Open menghilangkan LDR/Buzzer | Sudah diperbaiki. Kalau masih hilang, cek versi `fileio.c` — pastikan `comp_type_name`/`comp_type_from_name` sudah mencakup `"ldr"` & `"buzzer"`. |
+| Gerbang logika selalu LOW | Level HIGH ditentukan dari keterhubungan ke net **(+)**: sambungkan input ke pin baterai (+) (atau output gerbang HIGH lain). Input mengambang = LOW. |
+| Output gerbang tidak menggerakkan beban | Output yang HIGH di-union ke net (+); pastikan beban (LED) punya jalur balik ke (−)/ground. |
+| Gerbang multi-tingkat salah | Rantai gerbang diselesaikan **iteratif**; pastikan wiring antar tahap benar. Loop stabilisasi berhenti saat semua level tetap. |
+| Buzzer tidak berbunyi | Saat RUN, buzzer butuh beda tegangan pin > 1 V. Cek kabel (+)/(−) & saklar. Frekuensi 20 Hz–20 kHz (di luar itu di-clamp). |
+| Buzzer bersuara walau tidak diminta | Buzzer aktif otomatis bila tercatu. Hapus/nonaktifkan jalurnya, atau Stop simulasi. |
+| `undefined reference to buzzer_audio_update` | `buzzer_audio.c` belum masuk `SRC_PROD` di `Makefile`; linkage butuh `-lwinmm`. |
 
 ---

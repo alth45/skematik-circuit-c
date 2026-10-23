@@ -6,6 +6,19 @@
 
 | Bagian | Yang berubah |
 |---|---|
+| **Gerbang Logika** | 6 gerbang baru: **AND, OR, NOT, NAND, NOR, XOR** (`komponen_gates.c`). Pin A/B/OUT (NOT: IN/OUT). Level **HIGH** bila node terhubung ke net (+), LOW bila tidak; output di-union ke (+)/(−) secara **iteratif** sampai stabil (`sim_gate_out_high`). Hijau saat RUN & HIGH. Toolbar kini **29 tombol palet** (25 komponen). |
+| **Buzzer Audio** | `buzzer_audio.c`: saat RUN buzzer aktif memutar **nada sinus** pada frekuensi `v` via `PlaySound` (WAV in-memory, loop mulus). Frekuensi di-clamp 20 Hz–20 kHz; restart otomatis bila frekuensi berubah. |
+| **Shortcut** | `A` (AND), `O` (OR), `N` (NOT), `Y` (NAND), `X` (XOR); NOR via toolbar. |
+| **Format JSON** | `type` baru: `and \| or \| not \| nand \| nor \| xor` (+ alias huruf besar). Pin: gerbang 2-input `0=A,1=B,2=OUT`; `not` `0=IN,1=OUT`. |
+| **Aturan Simulasi** | Tahap 1: gerbang logika dihitung **iteratif** (loop stabilisasi multi-tingkat). Tahap 4: **buzzer audio** diputar. Akurasi mencantumkan batas model gerbang (biner) & buzzer (mono, sinus). |
+| **Struktur Proyek** | `komponen_gates.c`, `buzzer_audio.c`; `sim.c` (gerbang + stabilisasi). |
+| **Troubleshooting** | Tambah entri gerbang (selalu LOW / multi-tingkat) & buzzer (tidak berbunyi / tak diminta / link `-lwinmm`). |
+| **Ide Pengembangan** | Tambah model gerbang non-ideal, gerbang tambahan (XNOR/buffer/flip-flop), buzzer lebih kaya. |
+
+## Perubahan sebelumnya
+
+| Bagian | Yang berubah |
+|---|---|
 | **Fitur table** | Baris **Undo/Redo** (Ctrl+Z/Y, depth 64), **Dioda Zener**, **MOSFET N-Channel**, **Potensiometer**, **Export PNG**, **Minimap** ditambahkan. Toolbar kini **23 tombol palet**; daftar komponen & nilai (Zener $V_Z$, MOSFET $V_{th}$, Pot Ω + wiper) diperbarui. |
 | **Tampilan (ASCII)** | Baris toolbar 23 tombol (termasuk ZEN/FET/POT); status bar `zoom XX%`. |
 | **Shortcut** | `Z` (Zener), `F` (MOSFET), `T` (Potensiometer), `Ctrl+Z/Y` (undo/redo), `Ctrl+E` (export PNG), `I`, `P`, `J`, `F12`, `Ctrl +/-/0`, mouse wheel, mouse tengah. |
